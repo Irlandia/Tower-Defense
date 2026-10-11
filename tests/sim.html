@@ -274,6 +274,14 @@ try {
     check(`bosses: ${md} with ${np} player(s) -> ${np} boss(es) within 5 s`, count === np && first >= 0 && first < 100, `count=${count} first=${first}`);
   }
 
+  // multi-lane waves: every entry starts its own stream at once (not alternating packs)
+  const par = createGame(3, { mode: "circle", players: 2 });
+  step(par, [{ type: "nextWave", p: 0 }]);
+  const firstSecs = par.queue.filter((q) => q.at <= par.tick + 3 * 20 && q.type !== "boss");
+  check("circle 2p: both entries spawn within the first seconds of a wave", new Set(firstSecs.map((q) => q.lane)).size === 2, `lanes=${[...new Set(firstSecs.map((q) => q.lane))]}`);
+  const perLane = [0, 1].map((l) => par.queue.filter((q) => q.lane === l).length);
+  check("circle 2p: the wave is split evenly between entries", Math.abs(perLane[0] - perLane[1]) <= 3, `${perLane}`);
+
   // co-op: separate wallets, talents and ownership
   const co = createGame(9, { players: 2 });
   const [c1, c2] = free(co, 2);

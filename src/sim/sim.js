@@ -583,20 +583,25 @@ function startWave(s) {
   const hpMul = (1 + 0.22 * (w - 1) + 0.017 * (w - 1) * (w - 1)) * s.opts.hpMul * MODES.circle.endlessHpGrowth ** over20;
   const pool = Object.keys(UNLOCKS).filter((k) => UNLOCKS[k] <= w);
   // co-op: a bit more enemies so two players still have to work
-  let budget = (8 + w * 6) * (s.players.length > 1 ? 1.5 : 1);
-  let at = s.tick + T;
-  // Enemies come in small packs of one type, each pack on one of the planned lanes.
-  while (budget > 0) {
-    const type = pool[randInt(s, pool.length)];
-    const lane = lanes[randInt(s, lanes.length)];
-    const pack = 2 + randInt(s, 3);
-    for (let i = 0; i < pack && budget > 0; i++) {
-      s.queue.push({ type, lane, at, hpMul });
-      at += type === 'runner' ? 7 : 12;
-      budget -= ENEMIES[type].cost;
+  const budget = (8 + w * 6) * (s.players.length > 1 ? 1.5 : 1);
+  // Every planned lane gets its own stream starting at the same moment (two entries = two
+  // simultaneous attacks, not alternating packs); the wave budget is split between them.
+  for (const lane of lanes) {
+    let left = budget / lanes.length;
+    let at = s.tick + T;
+    // small packs of one type: readable and interesting to counter
+    while (left > 0) {
+      const type = pool[randInt(s, pool.length)];
+      const pack = 2 + randInt(s, 3);
+      for (let i = 0; i < pack && left > 0; i++) {
+        s.queue.push({ type, lane, at, hpMul });
+        at += type === "runner" ? 7 : 12;
+        left -= ENEMIES[type].cost;
+      }
+      at += T;
     }
-    at += T;
   }
+  s.queue.sort((a, b) => a.at - b.at || a.lane - b.lane);
   // A rare gold thief: kill it for a pile of coins, or it steals from you.
   if (w >= 3 && rand(s) < 0.4) {
     const mid = s.queue[Math.floor(s.queue.length / 2)].at;
