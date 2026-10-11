@@ -172,7 +172,7 @@ function newPlayer(opts) {
       dmg: { arrow: 1, cannon: 1, frost: 1, tesla: 1, fire: 1 },
       rate: 1, range: 1, chain: 0, burn: 1, wet: 0, steam: 1, gold: 1, interest: 0, crit: 0.1,
       meteorCd: opts.meteorCd || 1, wall: 1,
-      critMul: 2, aura: 1, moveCd: 1, novaCd: 1, barrel: 1, lapDmg: 0, hunter: 0,
+      critMul: 2, aura: 1, moveCd: 1, novaCd: 1, barrel: 1, lapDmg: 0, hunter: 0, thief: 0,
     },
     picked: {}, // talent id -> times taken (cards have a max)
     cds: { meteor: 0, nova: 0, wall: 0 },
@@ -551,7 +551,7 @@ function applyCmd(s, c) {
 
 // Weighted draw without repeats from the cards valid for this mode and not maxed out by this player.
 export function pickCards(s, n, pl, guaranteeRare = false) {
-  const pool = CARDS.filter((c) => (!c.modes || c.modes.includes(s.mode)) && !(c.needs && s.opts.locked.includes(c.needs)) && (pl.picked[c.id] || 0) < c.max);
+  const pool = CARDS.filter((c) => (!c.modes || c.modes.includes(s.mode)) && !(c.needs && s.opts.locked.includes(c.needs)) && !(c.coop && s.players.length < 2) && (pl.picked[c.id] || 0) < c.max);
   const out = [];
   if (guaranteeRare) {
     const rares = pool.filter((c) => c.rarity === "rare");
@@ -571,6 +571,13 @@ function startWave(s) {
   s.wave++;
   const w = s.wave;
   for (const b of s.barrels) b.ready = true;
+  // co-op prank: pickpockets take a cut of their partner's gold at every wave start
+  for (let i = 0; i < s.players.length; i++) {
+    const pl = s.players[i], other = s.players[1 - i];
+    if (!pl.mods.thief || !other) continue;
+    const cut = Math.min(20, Math.floor(other.gold * pl.mods.thief));
+    if (cut > 0) { other.gold -= cut; pl.gold += cut; s.events.push({ type: "steal", p: i, from: 1 - i, gold: cut }); }
+  }
   for (let i = 0; i < s.players.length; i++) {
     const pl = s.players[i];
     if (pl.mods.interest > 0) {

@@ -53,6 +53,8 @@ export class Critters {
   constructor() {
     this.list = [];
     this.map = null;
+    this.jumps = []; // fish leaping out of ponds
+    this.fishT = 2;
   }
 
   grass(x, y) {
@@ -80,6 +82,8 @@ export class Critters {
   reset(map) {
     this.map = map;
     this.list = [];
+    this.jumps = [];
+    this.fishT = rnd(1, 3);
     const add = (kind, at) => at && this.list.push({ kind, x: at.x, y: at.y, state: 'idle', t: rnd(0.5, 3), dir: Math.random() < 0.5 ? 1 : -1, hop: 0, frame: 0, say: null, sayT: 0, flee: 0 });
     // a small herd of cows around one spot
     const herd = this.randomSpot();
@@ -110,6 +114,7 @@ export class Critters {
   }
 
   update(dt, enemies) {
+    this.updateFish(dt);
     for (const c of this.list) {
       const K = KIND[c.kind];
       c.t -= dt;
@@ -135,6 +140,53 @@ export class Critters {
         if (to) { c.state = 'walk'; c.tx = to.x; c.ty = to.y; c.t = 8; }
         else { c.state = Math.random() < 0.5 ? 'graze' : 'idle'; c.t = rnd(2, 5); }
       }
+    }
+  }
+
+  // Every few seconds a fish leaps out of a random pond tile, flips in the air and splashes back.
+  updateFish(dt) {
+    for (const j of this.jumps) j.t += dt;
+    this.jumps = this.jumps.filter((j) => j.t < j.dur + 0.6);
+    if (!this.map.water.size) return;
+    this.fishT -= dt;
+    if (this.fishT > 0) return;
+    this.fishT = rnd(1.5, 4.5);
+    const tiles = [...this.map.water];
+    const [tx, ty] = tiles[Math.floor(Math.random() * tiles.length)].split(",").map(Number);
+    const dir = Math.random() < 0.5 ? 1 : -1;
+    const x = tx * TILE + rnd(6, TILE - 6), y = ty * TILE + rnd(8, TILE - 4);
+    const to = x + dir * rnd(8, 16);
+    // land back in water (or stay in place if the leap would leave the pond)
+    const back = this.map.water.has(Math.floor(to / TILE) + "," + ty) ? to : x;
+    this.jumps.push({ x, y, x2: back, t: 0, dur: rnd(0.55, 0.8), h: rnd(9, 15), dir: back >= x ? 1 : -1, gold: Math.random() < 0.15 });
+  }
+
+  drawFish(g) {
+    for (const j of this.jumps) {
+      const k = Math.min(1, j.t / j.dur);
+      // splash rings where it left and where it lands
+      for (const [sx, st] of [[j.x, j.t], [j.x2, j.t - j.dur]]) {
+        if (st < 0 || st > 0.6) continue;
+        const r = 2 + st * 10;
+        g.globalAlpha = 1 - st / 0.6;
+        g.fillStyle = "#f4f4f4";
+        g.fillRect(Math.round(sx - r), Math.round(j.y), 2, 1);
+        g.fillRect(Math.round(sx + r - 1), Math.round(j.y), 2, 1);
+        if (st < 0.15) { g.fillRect(Math.round(sx - 1), Math.round(j.y - 3 - st * 20), 1, 2); g.fillRect(Math.round(sx + 2), Math.round(j.y - 2 - st * 16), 1, 2); }
+        g.globalAlpha = 1;
+      }
+      if (k >= 1) continue;
+      const x = j.x + (j.x2 - j.x) * k, y = j.y - Math.sin(k * Math.PI) * j.h;
+      const tilt = k < 0.5 ? -1 : 1; // nose up, then nose down
+      const body = j.gold ? "#ffcd75" : "#94b0c2", belly = j.gold ? "#ef7d57" : "#f4f4f4";
+      for (let i = 0; i < 6; i++) {
+        const px = Math.round(x + (i - 3) * j.dir), py = Math.round(y + (i - 3) * tilt * 0.5);
+        g.fillStyle = i === 0 ? "#566c86" : body;
+        g.fillRect(px, py, 1, 2);
+        if (i > 1 && i < 5) { g.fillStyle = belly; g.fillRect(px, py + 1, 1, 1); }
+      }
+      g.fillStyle = "#1a1c2c";
+      g.fillRect(Math.round(x + 2 * j.dir), Math.round(y + 2 * tilt * 0.5), 1, 1);
     }
   }
 

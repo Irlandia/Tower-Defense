@@ -732,6 +732,17 @@ function handleEvents(events, quiet = false) {
       case 'nova': sfx.play('frost'); sfx.play('explode'); break;
       case 'wallup': case 'wallbreak': sfx.play('cannon'); break;
       case 'bonus': if (mine(e)) banner(`+${e.gold} золота`, 'gold'); break;
+      // co-op pranks
+      case 'roulette': {
+        const lucky = e.p === me();
+        sfx.play(lucky ? 'card' : 'leak');
+        banner(lucky ? 'РУЛЕТКА: +250 ТОБІ!' : `Рулетка: ${partnerNick || 'друг'} виграв 250`, 'gold', e.by === me() ? 'ти крутив' : `крутив ${partnerNick || 'друг'}`, 2200);
+        break;
+      }
+      case 'steal':
+        if (e.from === me()) { sfx.play('leak'); banner(`${partnerNick || 'Друг'} поцупив у тебе ${e.gold}!`, 'gold', 'кишеньковий злодій', 1800); }
+        else if (e.p === me()) banner(`Поцупив у друга +${e.gold} 😏`, 'gold', '', 1500);
+        break;
       case 'draft':
         if (e.p === me()) { sfx.play('card'); if (!net.online && !talentOpen) openTalent(); }
         break;

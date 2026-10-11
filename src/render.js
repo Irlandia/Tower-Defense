@@ -280,6 +280,7 @@ export class Renderer {
     g.translate(MX + sx + qx, MY + sy);
     g.drawImage(this.bg, 0, 0);
     this.drawWater(s);
+    this.critters.drawFish(g);
     if (!s.queue.length && !s.over) this.drawLanePreview(s);
 
     // relocation: highlight every free tile the tower can move to

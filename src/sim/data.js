@@ -1,11 +1,12 @@
 // All balance lives here. Simulation reads it, renderer never changes it.
 // Distances/speeds are in world pixels (1 tile = 24 px).
+import { rand } from './rng.js';
 export const TILE = 24;
 export const COLS = 26;
 export const ROWS = 14;
 export const TICK_RATE = 20;
 // Bump on every change to sim/data: co-op peers refuse to play with a different version.
-export const VERSION = 20;
+export const VERSION = 21;
 
 export const CONFIG = {
   startGold: 160,
@@ -119,7 +120,7 @@ export const UNLOCKS = { slime: 1, runner: 2, splitter: 3, knight: 4, healer: 6 
 
 // Talents: each player picks one after every boss kill (one card in each offer is guaranteed rare). rarity: common / rare (rare is stronger and drawn less often);
 // max = how many times one player can take it; modes = where it can appear (default: everywhere);
-// needs = tower that must be unlocked for the card to make sense.
+// needs = tower that must be unlocked for the card to make sense. coop = only offered with two players.
 export const RARITY = { common: { weight: 3, name: 'Звичайний' }, rare: { weight: 1, name: 'Рідкісний' } };
 export const CARDS = [
   // --- towers (common) ---
@@ -143,6 +144,11 @@ export const CARDS = [
   { id: 'meteor', name: 'Зорепад', desc: 'Метеор заряджається на 30% швидше', rarity: 'rare', max: 2, apply: (s, p) => { p.mods.meteorCd *= 0.7; } },
   { id: 'winter', name: 'Вічна зима', desc: 'Крижана нова: −30% перезарядки', rarity: 'rare', max: 2, apply: (s, p) => { p.mods.novaCd *= 0.7; } },
   { id: 'mason', name: 'Каменяр', desc: 'Твоя барикада вдвічі міцніша', rarity: 'rare', max: 1, apply: (s, p) => { p.mods.wall *= 2; } },
+  // --- co-op only, just for fun ---
+  { id: "roulette", name: "Рулетка дружби", desc: "Монетка: 250 золота отримаєш або ти, або друг", rarity: "common", max: 2, coop: true,
+    apply: (s, p) => { const i = rand(s) < 0.5 ? s.players.indexOf(p) : s.players.findIndex((q) => q !== p); s.players[i].gold += 250; s.events.push({ type: "roulette", p: i, by: s.players.indexOf(p) }); } },
+  { id: "thief", name: "Кишеньковий злодій", desc: "Щохвилі тягнеш у друга 4% його золота (до 20). Хехе.", rarity: "rare", max: 1, coop: true,
+    apply: (s, p) => { p.mods.thief += 0.04; } },
   // --- classic only: castle, lives, barrels ---
   { id: 'walls', name: 'Мури', desc: "+8 життів замку", rarity: "common", max: 2, modes: ['classic'], apply: (s) => { s.lives += 8; } },
   { id: 'powder', name: 'Порохові бочки', desc: 'Бочки на карті: x2 шкоди', rarity: 'common', max: 1, modes: ['classic'], apply: (s, p) => { p.mods.barrel *= 2; } },

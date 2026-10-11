@@ -295,6 +295,20 @@ try {
   check("talents: no cards for locked towers", lockOk);
   check("talents: steam is not offered in circle mode", !circSteam);
 
+  // co-op prank talents: only with two players; roulette pays one of them; pickpocket skims at wave start
+  let soloPrank = false;
+  for (let seed = 1; seed <= 60; seed++) { const sp = createGame(seed); for (let i = 0; i < 8; i++) if (pickCards(sp, 3, sp.players[0]).some((id) => id === "roulette" || id === "thief")) soloPrank = true; }
+  check("prank talents never offered in solo", !soloPrank);
+  const pr = createGame(5, { players: 2 });
+  const before = pr.players[0].gold + pr.players[1].gold;
+  CARDS.find((c) => c.id === "roulette").apply(pr, pr.players[0]);
+  check("roulette: exactly one player gets 250", pr.players[0].gold + pr.players[1].gold === before + 250);
+  CARDS.find((c) => c.id === "thief").apply(pr, pr.players[0]);
+  pr.players[1].gold = 400;
+  const pg0 = pr.players[0].gold;
+  step(pr, [{ type: "nextWave", p: 0 }]);
+  check("thief: takes 4% of partner gold (max 20) at wave start", pr.players[1].gold === 384 && pr.players[0].gold === pg0 + 16, `${pr.players[1].gold}`);
+
   // co-op: separate wallets, talents and ownership
   const co = createGame(9, { players: 2 });
   const [c1, c2] = free(co, 2);
