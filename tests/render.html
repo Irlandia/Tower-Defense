@@ -28,6 +28,7 @@ for (const mode of ['classic', 'circle']) {
           { me, selected: 't' + s.towers[0].id, hover: { tx: 1, ty: 1 } },
           { me, ability: 'meteor', mouse: { x: 120, y: 120 }, hover: { tx: 5, ty: 5 } },
           { me, ability: 'wall', hover: { tx: 5, ty: 5 } },
+          { me, moving: s.towers[0].id, hover: { tx: free[5][0], ty: free[5][1] } },
           { me },
         ];
         r.onEvents([{ type: "bossSpawn", id: s.enemies[0]?.id ?? 0, kind: "boss", wave: 5 }, { type: "bossRage", id: s.enemies[0]?.id ?? 0, wave: 5 }]);

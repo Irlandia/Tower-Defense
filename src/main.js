@@ -3,7 +3,7 @@
 import { TILE, TICK_RATE, TOWERS, TOWER_ORDER, BRANCHES, CARDS, CONFIG, ABILITIES, MODES, VERSION, BOSSES } from './sim/data.js';
 import {
   createGame, step, canPlace, towerAt, obstacleAt, barrelAt, towerStats, upgradeCost, canEvolve, sellValue, clearCost,
-  enemyAt, abilityMax, isRoad,
+  enemyAt, abilityMax, isRoad, canMove,
 } from './sim/sim.js';
 import { Renderer, W, H, MX, MY, PLAYER_COLORS } from './render.js';
 import { drawTower, C } from './sprites.js';
@@ -16,6 +16,7 @@ const $ = (id) => document.getElementById(id);
 const canvas = $('game');
 const renderer = new Renderer(canvas);
 const sfx = new Sfx();
+renderer.onStomp = (king) => sfx.play(king ? 'stompBig' : 'stomp');
 const net = new Net();
 const meta = Meta.load();
 
@@ -26,7 +27,7 @@ let diff = 'normal';
 let mode = 'classic';
 let nick = '';
 let partnerNick = '';
-const ui = { build: null, selected: null, hover: null, mouse: null, ability: null, hoverEnemy: null, partner: null, me: 0 };
+const ui = { build: null, selected: null, hover: null, mouse: null, ability: null, hoverEnemy: null, partner: null, me: 0, moving: null };
 let speed = 1;
 let paused = false;
 let draftPause = false; // solo only: the talent window pauses the game
@@ -188,6 +189,13 @@ canvas.addEventListener('mousedown', (ev) => {
   if (ev.button !== 0 || !running) return;
   const m = toMap(ev);
   if (m.y < 0) return;
+  if (ui.moving) {
+    // relocating a tower: click a highlighted free tile
+    const mt = state.towers.find((k) => k.id === ui.moving);
+    if (mt && canMove(state, mt, m.tx, m.ty)) { send({ type: "move", id: mt.id, tx: m.tx, ty: m.ty }); ui.moving = null; ui.selected = null; }
+    else if (!mt) ui.moving = null;
+    return;
+  }
   if (ui.ability === 'meteor') { send({ type: 'meteor', x: m.x, y: m.y }); ui.ability = null; return; }
   if (ui.ability === 'wall') {
     if (isRoad(state, m.tx, m.ty)) { send({ type: 'wall', tx: m.tx, ty: m.ty }); ui.ability = null; }
@@ -211,7 +219,12 @@ canvas.addEventListener('mousedown', (ev) => {
 });
 
 function select(key) { ui.selected = key; sfx.play('click'); }
-function cancel() { ui.build = null; ui.selected = null; ui.ability = null; }
+function cancel() { ui.build = null; ui.selected = null; ui.ability = null; ui.moving = null; }
+function startMove() {
+  const t = selTower();
+  if (!t || t.owner !== me() || t.moveCd > 0) return;
+  ui.moving = t.id; ui.build = null; ui.ability = null;
+}
 const selTower = () => ui.selected && ui.selected[0] === 't' ? state.towers.find((k) => 't' + k.id === ui.selected) : null;
 const selObstacle = () => ui.selected && ui.selected[0] === 'o' ? state.obstacles.find((k) => 'o' + k.id === ui.selected) : null;
 
@@ -247,6 +260,7 @@ window.addEventListener('keydown', (ev) => {
   else if (k === 'e') useAbility('wall');
   else if (k === 't') openTalent();
   else if (k === ' ') { ev.preventDefault(); nextWave(); }
+  else if (k === "m") startMove();
   else if (k === 'u') upgradeSel();
   else if (k === 's') sellSel();
   else if (k === 'f') toggleSpeed();
@@ -309,7 +323,8 @@ $('pop').addEventListener('click', (ev) => {
   if (!a || a.disabled) return;
   const t = selTower();
   if (a.dataset.act === 'upgrade') upgradeSel();
-  if (a.dataset.act === 'sell') sellSel();
+  if (a.dataset.act === "sell") sellSel();
+  if (a.dataset.act === "move") startMove();
   if (a.dataset.act === 'evolve' && t) send({ type: 'evolve', id: t.id, kind: a.dataset.kind });
   if (a.dataset.act === 'clear') { const o = selObstacle(); if (o) send({ type: 'clear', id: o.id }); ui.selected = null; }
 });
@@ -337,7 +352,7 @@ function updatePop() {
     const mine = t.owner === me();
     const up = upgradeCost(t);
     const evo = canEvolve(t);
-    key = `t${t.id}:${t.kind}:${t.level}:${Math.floor(gold / 5)}:${Math.round(st.dmg)}:${st.buff}`;
+    key = `t${t.id}:${t.kind}:${t.level}:${Math.floor(gold / 5)}:${Math.round(st.dmg)}:${st.buff}:${Math.ceil((t.moveCd || 0) / TICK_RATE)}`;
     html = `<div class="pop-title"><b>${def.name}</b> <span>${def.from ? '★ еволюція' : 'рів. ' + t.level}</span></div>
       <div class="pop-stats"><span>⚔ ${Math.round(st.dmg)}</span><span>◎ ${Math.round(st.range)}</span><span>⏱ ${(TICK_RATE / st.period).toFixed(1)}/с</span>${st.buff ? `<span class="buff">⚡+${Math.round(st.buff * 100)}%</span>` : ''}</div>`;
     if (!mine) {
@@ -353,6 +368,8 @@ function updatePop() {
         }
         html += '</div>';
       }
+      const mcd = Math.ceil((t.moveCd || 0) / TICK_RATE);
+      html += `<button data-act="move" ${mcd ? 'disabled' : ''}>↔ Перемістити [M] <i>${mcd ? mcd + ' с' : `до ${CONFIG.moveRange} кл.`}</i></button>`;
       html += `<button data-act="sell" class="sell">Продати <i>+${sellValue(t)}</i></button>`;
     }
   } else {
@@ -406,6 +423,9 @@ function updateUI() {
     const def = TOWERS[ui.build];
     key = 'b' + ui.build;
     html = `<b>${def.name}</b><br>${def.desc}<br><span class="hint">Shift — ставити кілька · ПКМ — скасувати</span>`;
+  } else if (ui.moving) {
+    key = 'mv';
+    html = `<b>Переміщення вежі</b><br>Клікни по підсвіченій клітинці (до ${CONFIG.moveRange} клітинок). Після переїзду вежа 1 с розгортається, перезарядка ${CONFIG.moveCd} с.<br><span class="hint">ПКМ / Esc — скасувати</span>`;
   } else if (ui.ability) {
     const a = ABILITIES[ui.ability];
     key = 'a' + ui.ability;

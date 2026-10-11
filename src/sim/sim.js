@@ -306,6 +306,11 @@ export function canEvolve(t) {
   return !TOWERS[t.kind].from && t.level >= CONFIG.maxLevel;
 }
 
+// Relocation: free tile within moveRange tiles, tower off cooldown.
+export function canMove(s, t, tx, ty) {
+  return !(t.moveCd > 0) && Math.hypot(tx - t.tx, ty - t.ty) <= CONFIG.moveRange && canPlace(s, tx, ty);
+}
+
 export function sellValue(t) {
   return Math.floor(t.spent * CONFIG.sellRatio);
 }
@@ -399,6 +404,16 @@ function applyCmd(s, c) {
       t.kind = c.kind;
       t.cd = 0;
       s.events.push({ type: 'evolve', x: t.x, y: t.y, kind: c.kind, p: pi });
+      return;
+    }
+    case "move": {
+      const t = s.towers.find((k) => k.id === c.id && k.owner === pi);
+      if (!t || !canMove(s, t, c.tx, c.ty)) return;
+      const from = { x: t.x, y: t.y };
+      Object.assign(t, { tx: c.tx, ty: c.ty, ...center(c.tx, c.ty) });
+      t.moveCd = CONFIG.moveCd * T;
+      t.cd = Math.max(t.cd, CONFIG.moveSetup * T);
+      s.events.push({ type: "move", fx: from.x, fy: from.y, x: t.x, y: t.y, p: pi });
       return;
     }
     case 'sell': {
@@ -639,6 +654,7 @@ function inRange(s, x, y, range) {
 }
 
 function updateTower(s, t) {
+  if (t.moveCd > 0) t.moveCd--;
   if (t.cd > 0) { t.cd--; return; }
   const def = TOWERS[t.kind];
   const st = towerStats(s, t);

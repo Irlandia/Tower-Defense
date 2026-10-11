@@ -38,6 +38,8 @@ export class Sfx {
     const now = this.ctx.currentTime;
     if (this.last[name] && now - this.last[name] < 0.05) return; // throttle spam
     this.last[name] = now;
+    if (name === 'stomp') return this.noise(0.18, 0.12, 180);
+    if (name === 'stompBig') return this.noise(0.28, 0.2, 140);
     if (name === 'rumble') return this.noise(1.8, 0.22, 260);
     if (name === 'explode' || name === 'meteor') return this.noise(name === 'meteor' ? 0.6 : 0.25, name === 'meteor' ? 0.25 : 0.1);
     if (name === 'wave') return [330, 440, 660].forEach((f, i) => this.tone({ type: 'square', f0: f, f1: f, d: 0.1, v: 0.04 }, i * 0.1));

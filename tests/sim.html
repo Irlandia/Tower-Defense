@@ -155,6 +155,30 @@ try {
   step(w2, [{ type: "nextWave", p: 0 }]);
   check("circle 2p: wave comes from both spawns", new Set(w2.queue.map((q) => q.lane)).size === 2);
 
+  // tower relocation: range, cooldown, ownership
+  const mv = createGame(11, { players: 2 });
+  const [m1] = free(mv, 1);
+  step(mv, [{ type: "place", kind: "arrow", tx: m1[0], ty: m1[1], p: 0 }]);
+  const mt = mv.towers[0];
+  let far = null, near = null;
+  for (let ty = 0; ty < ROWS; ty++) for (let tx = 0; tx < COLS; tx++) {
+    if (!canPlace(mv, tx, ty)) continue;
+    const d = Math.hypot(tx - mt.tx, ty - mt.ty);
+    if (d > 10 && !far) far = [tx, ty];
+    if (d <= 10 && d >= 2 && !near) near = [tx, ty];
+  }
+  if (far) { step(mv, [{ type: "move", id: mt.id, tx: far[0], ty: far[1], p: 0 }]); }
+  check("move: not farther than 10 tiles", !far || (mt.tx === m1[0] && mt.ty === m1[1]));
+  step(mv, [{ type: "move", id: mt.id, tx: near[0], ty: near[1], p: 1 }]);
+  check("move: cannot move partner tower", mt.tx === m1[0] && mt.ty === m1[1]);
+  step(mv, [{ type: "move", id: mt.id, tx: near[0], ty: near[1], p: 0 }]);
+  check("move: relocates within range, starts cooldown", mt.tx === near[0] && mt.ty === near[1] && mt.moveCd > 0 && !canPlace(mv, near[0], near[1]) && canPlace(mv, m1[0], m1[1]));
+  step(mv, [{ type: "move", id: mt.id, tx: m1[0], ty: m1[1], p: 0 }]);
+  check("move: cooldown blocks a second move", mt.tx === near[0]);
+  for (let i = 0; i < 30 * 20; i++) step(mv);
+  step(mv, [{ type: "move", id: mt.id, tx: m1[0], ty: m1[1], p: 0 }]);
+  check("move: allowed again after 30 s", mt.tx === m1[0] && mt.ty === m1[1]);
+
   // co-op: separate wallets, talents and ownership
   const co = createGame(9, { players: 2 });
   const [c1, c2] = free(co, 2);

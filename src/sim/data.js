@@ -5,7 +5,7 @@ export const COLS = 26;
 export const ROWS = 14;
 export const TICK_RATE = 20;
 // Bump on every change to sim/data: co-op peers refuse to play with a different version.
-export const VERSION = 10;
+export const VERSION = 11;
 
 export const CONFIG = {
   startGold: 160,
@@ -16,6 +16,9 @@ export const CONFIG = {
   steamRadius: 33,
   steamDmg: 14,
   rangePerLevel: 12,
+  moveRange: 10, // tiles a tower can be relocated
+  moveCd: 30, // s, per tower
+  moveSetup: 1, // s without shooting after a move
   maxLevel: 3,
   winWave: 20, // survive this wave (final boss) to win
   sellRatio: 0.7,

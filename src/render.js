@@ -1,6 +1,6 @@
 // Canvas renderer + visual juice. Reads sim state, never mutates it.
 import { TILE, COLS, ROWS, TICK_RATE, TOWERS, CONFIG, ABILITIES, BARREL, BOSSES } from './sim/data.js';
-import { towerStats, canPlace, posAt, isRoad } from './sim/sim.js';
+import { towerStats, canPlace, posAt, isRoad, canMove } from './sim/sim.js';
 import {
   C, SPRITES, FLASH, FROZEN, ENEMY_COLOR, drawTower, drawCastle, drawCave, drawNum, numWidth, drawIcon,
   drawObstacle, drawBarrel, drawCoin, drawChest, drawWall, ellipse,
@@ -32,6 +32,9 @@ export class Renderer {
     this.quake = 0; // seconds of gentle rolling shake (boss arrival)
     this.speech = []; // { id, text, life } bubbles above enemies
     this.bossInfo = {}; // enemy id -> BOSSES entry
+    this.decals = []; // ground cracks left by heavy footsteps
+    this.lastStomp = {}; // enemy id -> tick of its last stomp
+    this.onStomp = null; // callback for the stomp sound
   }
 
   makeBackground(map) {
@@ -217,6 +220,12 @@ export class Renderer {
           this.burst(e.x, e.y + 8, 14, C.silver, 45, -12);
           if (e.type === 'upgrade') this.burst(e.x, e.y - 6, 12, C.yellow, 50, -40);
           break;
+        case "move":
+          this.burst(e.fx, e.fy + 8, 14, "#8a6248", 45, -15);
+          this.burst(e.x, e.y + 8, 18, C.silver, 50, -15);
+          this.rings.push({ x: e.x, y: e.y + 4, r: 2, max: 18, c: C.lime, life: 0.8 });
+          this.shake = Math.max(this.shake, 1.5);
+          break;
         case 'sell':
           this.burst(e.x, e.y, 10, C.yellow, 50);
           this.text(e.x, e.y - 16, '+' + e.gold, C.yellow, 1);
@@ -264,6 +273,13 @@ export class Renderer {
     this.drawWater(s);
     if (!s.queue.length && !s.over) this.drawLanePreview(s);
 
+    // relocation: highlight every free tile the tower can move to
+    const mover = ui.moving && s.towers.find((t) => t.id === ui.moving);
+    if (mover) {
+      g.fillStyle = "rgba(167,240,112,0.28)";
+      for (let ty = 0; ty < ROWS; ty++) for (let tx = 0; tx < COLS; tx++) if (canMove(s, mover, tx, ty)) g.fillRect(tx * TILE + 1, ty * TILE + 1, TILE - 2, TILE - 2);
+      this.outline(mover.tx * TILE, mover.ty * TILE);
+    }
     // range previews
     const sel = ui.selected && s.towers.find((t) => 't' + t.id === ui.selected);
     if (sel) this.rangeCircle(sel.x, sel.y, towerStats(s, sel).range, true);
@@ -279,6 +295,7 @@ export class Renderer {
     }
 
     for (const z of s.zones) this.drawZone(z, s.tick);
+    this.drawDecals();
     if (ui.hover && !ui.ability && !ui.build) {
       g.fillStyle = 'rgba(244,244,244,0.08)';
       g.fillRect(ui.hover.tx * TILE, ui.hover.ty * TILE, TILE, TILE);
@@ -314,6 +331,11 @@ export class Renderer {
       } else this.drawEnemy(g, it.e, alpha, s.tick, ui.hoverEnemy === it.e.id);
     }
 
+    if (mover && ui.hover && canMove(s, mover, ui.hover.tx, ui.hover.ty)) {
+      g.globalAlpha = 0.6;
+      drawTower(g, mover.kind, ui.hover.tx * TILE, ui.hover.ty * TILE, TOWERS[mover.kind].from ? 4 : mover.level, mover.aim, s.tick);
+      g.globalAlpha = 1;
+    }
     // ghost tower
     if (ui.build && ui.hover) {
       const { tx, ty } = ui.hover;
@@ -458,9 +480,22 @@ export class Renderer {
     const y = e.py + (e.y - e.py) * alpha;
     const frozen = e.slowT > 0 && e.slowF === 0;
     const spr = (e.flash > 0 ? FLASH : SPRITES)[e.type];
-    const bob = frozen || e.blocked ? 0 : e.type === 'runner' ? ((tick >> 1) % 2) * 2 : (((tick + e.id * 3) >> 2) % 2) * 2;
+    const heavy = e.type === "boss" || e.type === "king";
+    let bob;
+    if (heavy) {
+      // heavy gait: slow lift, hard drop; every landing shakes the ground
+      const STEP = e.type === "king" ? 18 : 14;
+      const phase = (tick + e.id) % STEP;
+      bob = frozen || e.blocked ? 0 : Math.round(Math.sin((phase / STEP) * Math.PI) * (e.type === "king" ? 6 : 4));
+      if (phase === 0 && !frozen && this.lastStomp[e.id] !== tick) {
+        this.lastStomp[e.id] = tick;
+        this.stomp(x, y, e.type === "king");
+      }
+    } else {
+      bob = frozen || e.blocked ? 0 : e.type === "runner" ? ((tick >> 1) % 2) * 2 : (((tick + e.id * 3) >> 2) % 2) * 2;
+    }
     const dx = Math.round(x - spr.width / 2), dy = Math.round(y - spr.height + 6 - bob);
-    ellipse(g, Math.round(x), Math.round(y) + 6, Math.round(spr.width / 2.6), 2, 'rgba(0,0,0,0.3)');
+    ellipse(g, Math.round(x), Math.round(y) + 6, Math.max(2, Math.round(spr.width / 2.6) - (heavy ? Math.floor(bob / 2) : 0)), heavy ? 3 : 2, heavy ? "rgba(0,0,0,0.45)" : "rgba(0,0,0,0.3)");
     if (hovered) ellipse(g, Math.round(x), Math.round(y) + 6, Math.round(spr.width / 2) + 2, 3, 'rgba(255,205,117,0.6)');
     g.drawImage(spr, dx, dy);
     if (frozen) g.drawImage(FROZEN[e.type], dx, dy);
@@ -474,6 +509,28 @@ export class Renderer {
       g.fillStyle = C.ink; g.fillRect(bx - 1, by - 1, w + 2, 4);
       g.fillStyle = C.red; g.fillRect(bx, by, w, 2);
       g.fillStyle = C.lime; g.fillRect(bx, by, Math.max(1, Math.round((w * e.hp) / e.maxHp)), 2);
+    }
+  }
+
+  stomp(x, y, king) {
+    this.shake = Math.max(this.shake, king ? 2.5 : 1.6);
+    for (const side of [-1, 1]) this.burst(x + side * 8, y + 6, king ? 8 : 5, "#a8805e", 35, -12);
+    this.decals.push({ x: Math.round(x), y: Math.round(y) + 6, life: 4, big: king, seed: Math.random() });
+    if (this.decals.length > 40) this.decals.shift();
+    if (this.onStomp) this.onStomp(king);
+  }
+
+  drawDecals() {
+    const g = this.g;
+    for (const d of this.decals) {
+      g.globalAlpha = Math.min(1, d.life / 1.5) * 0.7;
+      g.fillStyle = "#4a3324";
+      const n = d.big ? 5 : 3;
+      for (let i = 0; i < n; i++) {
+        const a = d.seed * 6.28 + (i * 6.28) / n, len = d.big ? 9 : 6;
+        for (let k = 1; k < len; k++) g.fillRect(Math.round(d.x + Math.cos(a) * k), Math.round(d.y + Math.sin(a) * k * 0.5), 1, 1);
+      }
+      g.globalAlpha = 1;
     }
   }
 
@@ -576,6 +633,8 @@ export class Renderer {
     this.redFlash = Math.max(0, this.redFlash - dt);
     this.blueFlash = Math.max(0, this.blueFlash - dt * 1.2);
     this.quake = Math.max(0, this.quake - dt);
+    for (const d of this.decals) d.life -= dt;
+    this.decals = this.decals.filter((d) => d.life > 0);
     for (const b of this.speech) b.life -= dt;
     this.speech = this.speech.filter((b) => b.life > 0);
   }
