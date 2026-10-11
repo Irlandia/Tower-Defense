@@ -424,7 +424,7 @@ function updateUI() {
   $('next').textContent = last ? 'Фінал!' : state.queue.length ? 'Хвиля йде…' : early ? `Хвиля ▶ +${early}●` : 'Почати ▶';
   $('next').disabled = state.queue.length > 0 || last;
   const n = pl.drafts.length;
-  $('talent').classList.toggle('hidden', !n);
+  $('talent').classList.toggle('off', !n); // keep its slot so the panel never jumps
   $('talent').textContent = `✦ Талант${n > 1 ? ' x' + n : ''} [T]`;
   $('waveInfo').textContent = `${MODES[state.mode].name} · Хвиля ${state.wave} / ${CONFIG.winWave}`;
   $('waveBar').style.width = (100 * state.wave) / CONFIG.winWave + '%';

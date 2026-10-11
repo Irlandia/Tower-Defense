@@ -3,7 +3,7 @@
 <title>Sim tests</title>
 <pre id="out">running…</pre>
 <script type="module">
-import { createGame, step, canPlace, canEvolve, isRoad, posAt, towerStats, vsMult } from '../src/sim/sim.js';
+import { createGame, step, canPlace, canEvolve, isRoad, posAt, towerStats, vsMult, pickCards } from '../src/sim/sim.js';
 import { TOWERS, TOWER_ORDER, BRANCHES, COLS, ROWS, CARDS } from '../src/sim/data.js';
 
 const lines = [];
@@ -234,10 +234,8 @@ try {
       const tg2 = createGame(seed, { mode: md });
       const pl2 = tg2.players[0];
       for (let w = 0; w < 19; w++) {
-        step(tg2, [{ type: "nextWave", p: 0 }]);
-        tg2.queue = [];
-        const d = pl2.drafts[pl2.drafts.length - 1];
-        if (!d) continue;
+        const d = pickCards(tg2, 3, pl2, w % 2 === 0);
+        pl2.drafts.push(d);
         for (const id of d) {
           offered[md].add(id);
           const card = CARDS.find((c) => c.id === id);
@@ -253,7 +251,7 @@ try {
   check("talents: circle never offers classic-only cards", only("circle").every((id) => !offered.circle.has(id)));
   check("talents: mode cards do appear in their mode", offered.classic.has("walls") && offered.circle.has("dam"));
   check("talents: a card is never offered past its max", maxOk);
-  check("talents: rare cards are rarer", rare / total > 0.1 && rare / total < 0.4, `rare ${Math.round(100 * rare / total)}%`);
+  check("talents: rare cards are rarer", rare / total > 0.1 && rare / total < 0.55, `rare ${Math.round(100 * rare / total)}%`);
 
   // co-op: separate wallets, talents and ownership
   const co = createGame(9, { players: 2 });
@@ -262,9 +260,12 @@ try {
   check("co-op: each player pays from own gold", co.players[0].gold === 70 && co.players[1].gold === 110);
   step(co, [{ type: "sell", id: co.towers[0].id, p: 1 }]);
   check("co-op: cannot sell partner tower", co.towers.length === 2);
+  // talents come from boss kills: spawn a boss and finish it off
   step(co, [{ type: "nextWave", p: 0 }]);
-  while (co.wave < 2) step(co);
-  check("co-op: both players get their own talent draft", co.players.every((q) => q.drafts.length === 1));
+  co.queue = [{ type: "boss", lane: 0, at: co.tick + 1, hpMul: 0.01 }];
+  for (let i = 0; i < 4000 && !co.players[0].drafts.length; i++) step(co);
+  check("co-op: a boss kill gives both players their own talent draft", co.players.every((q) => q.drafts.length === 1));
+  check("talents: boss draft contains a rare card", co.players.every((q) => q.drafts[0].some((id) => CARDS.find((c) => c.id === id).rarity === "rare")));
   step(co, [{ type: "pick", index: 0, p: 1 }]);
   check("co-op: picking a talent is personal", co.players[1].drafts.length === 0 && co.players[0].drafts.length === 1);
 

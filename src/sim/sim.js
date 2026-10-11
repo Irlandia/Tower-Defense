@@ -549,15 +549,20 @@ function applyCmd(s, c) {
 }
 
 // Weighted draw without repeats from the cards valid for this mode and not maxed out by this player.
-function pickCards(s, n, pl) {
+export function pickCards(s, n, pl, guaranteeRare = false) {
   const pool = CARDS.filter((c) => (!c.modes || c.modes.includes(s.mode)) && (pl.picked[c.id] || 0) < c.max);
   const out = [];
+  if (guaranteeRare) {
+    const rares = pool.filter((c) => c.rarity === "rare");
+    if (rares.length) { const c = rares[randInt(s, rares.length)]; out.push(c.id); pool.splice(pool.indexOf(c), 1); }
+  }
   while (out.length < n && pool.length) {
     const total = pool.reduce((a, c) => a + RARITY[c.rarity].weight, 0);
     let r = rand(s) * total, i = 0;
     while (i < pool.length - 1 && (r -= RARITY[pool[i].rarity].weight) > 0) i++;
     out.push(pool.splice(i, 1)[0].id);
   }
+  if (guaranteeRare && out.length > 1) { const j = randInt(s, out.length); [out[0], out[j]] = [out[j], out[0]]; }
   return out;
 }
 
@@ -565,13 +570,6 @@ function startWave(s) {
   s.wave++;
   const w = s.wave;
   for (const b of s.barrels) b.ready = true;
-  // Surviving a wave earns every player their own talent choice (never pauses, never skipped by early calls).
-  if (w >= 2) {
-    for (let i = 0; i < s.players.length; i++) {
-      s.players[i].drafts.push(pickCards(s, s.opts.cards, s.players[i]));
-      s.events.push({ type: 'draft', p: i });
-    }
-  }
   for (let i = 0; i < s.players.length; i++) {
     const pl = s.players[i];
     if (pl.mods.interest > 0) {
@@ -581,7 +579,7 @@ function startWave(s) {
   }
   const lanes = s.plan;
   const over20 = Math.max(0, w - CONFIG.winWave);
-  const hpMul = (1 + 0.22 * (w - 1) + 0.021 * (w - 1) * (w - 1)) * s.opts.hpMul * MODES.circle.endlessHpGrowth ** over20;
+  const hpMul = (1 + 0.22 * (w - 1) + 0.017 * (w - 1) * (w - 1)) * s.opts.hpMul * MODES.circle.endlessHpGrowth ** over20;
   const pool = Object.keys(UNLOCKS).filter((k) => UNLOCKS[k] <= w);
   // co-op: a bit more enemies so two players still have to work
   let budget = (8 + w * 6) * (s.players.length > 1 ? 1.5 : 1);
@@ -888,6 +886,13 @@ function kill(s, e, owner) {
   pl.kills++;
   s.kills++;
   s.events.push({ type: 'death', x: e.x, y: e.y, kind: e.type, gold, p: s.players[owner] ? owner : 0 });
+  // Talents come only from bosses: every player gets a personal choice (never pauses co-op)
+  if (def.lives) {
+    for (let i = 0; i < s.players.length; i++) {
+      s.players[i].drafts.push(pickCards(s, s.opts.cards, s.players[i], true));
+      s.events.push({ type: "draft", p: i });
+    }
+  }
   // Coins drop on the map and must be picked up with the mouse (by anyone).
   const n = def.coins || (rand(s) < COIN.chance ? 1 : 0);
   for (let i = 0; i < n; i++) {
