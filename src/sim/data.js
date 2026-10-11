@@ -4,6 +4,8 @@ export const TILE = 24;
 export const COLS = 26;
 export const ROWS = 14;
 export const TICK_RATE = 20;
+// Bump on every change to sim/data: co-op peers refuse to play with a different version.
+export const VERSION = 6;
 
 export const CONFIG = {
   startGold: 160,

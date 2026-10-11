@@ -1,6 +1,6 @@
 // Client entry: menu/lobby, fixed-tick loop (solo / co-op host / co-op guest), input, DOM UI.
 // All game rules live in ./sim; meta-progression in ./meta; networking in ./net; nick + leaderboard in ./api.
-import { TILE, TICK_RATE, TOWERS, TOWER_ORDER, BRANCHES, CARDS, CONFIG, ABILITIES, MODES } from './sim/data.js';
+import { TILE, TICK_RATE, TOWERS, TOWER_ORDER, BRANCHES, CARDS, CONFIG, ABILITIES, MODES, VERSION } from './sim/data.js';
 import {
   createGame, step, canPlace, towerAt, obstacleAt, barrelAt, towerStats, upgradeCost, canEvolve, sellValue, clearCost,
   enemyAt, abilityMax, isRoad,
@@ -62,7 +62,7 @@ function startGame(seed, opts) {
 function newRun() {
   const seed = (Math.random() * 2 ** 32) >>> 0;
   const opts = Meta.gameOpts(meta, diff, mode, net.connected ? 2 : 1);
-  if (net.role === 'host') net.send({ t: 'start', seed, opts });
+  if (net.role === 'host') net.send({ t: 'start', seed, opts, v: VERSION });
   startGame(seed, opts);
 }
 
@@ -84,29 +84,66 @@ function send(cmd) {
 
 // ---------- network ----------
 let lastMsgAt = 0;
-net.onStatus = (text, kind) => {
+let partnerAlive = false;
+function netStatus(text, kind = '') {
   $('netStatus').textContent = text;
   $('netStatus').className = kind;
   $('lobbyStatus').textContent = text;
-  if (kind === 'good') net.send({ t: 'hello', nick });
-  if (kind === 'good' && net.role === 'host') {
-    // partner joined: start together, or bring a reconnecting partner up to date without restarting
-    if (running && state.players.length > 1 && !state.over) {
-      net.send({ t: 'resync', ...game, log: cmdLog, tick: state.tick });
-    } else newRun();
+}
+// Different code on the two machines would silently desync, so refuse to play.
+function mismatch(v) {
+  netStatus(`Різні версії гри (у тебе ${VERSION}, у друга ${v === undefined ? 'стара' : v}). Обом оновити сторінку: Ctrl+F5`, 'bad');
+  if (net.role === 'guest') net.leave();
+  if (running && net.role === 'guest') openMenu();
+}
+// Partner gone (closed tab, lost network): guest goes back to the lobby, host keeps playing with the room open.
+function partnerLost() {
+  if (!partnerAlive) return;
+  partnerAlive = false;
+  ui.partner = null;
+  if (net.role === 'guest') {
+    net.leave();
+    if (running) openMenu();
+    netStatus('Хост відключився — гру завершено', 'bad');
+  } else if (net.role === 'host') {
+    if (net.conn) { net.conn.close(); net.conn = null; } // free the slot so the partner can reconnect
+    netStatus('Друг відключився. Кімната відкрита — він може повернутися', 'bad');
+    if (running) banner('Друг відключився', 'boss');
   }
+}
+net.onStatus = (text, kind) => {
+  netStatus(text, kind);
+  if (kind === 'good') { partnerAlive = true; lastMsgAt = performance.now(); net.send({ t: 'hello', nick, v: VERSION }); }
+  if (kind === 'bad' && net.conn) partnerLost();
 };
 net.onMessage = (m) => {
   lastMsgAt = performance.now();
+  partnerAlive = true;
   switch (m.t) {
     case 'cmd': if (net.role === 'host') pending.push({ ...m.cmd, p: 1 }); break;
-    case 'start': startGame(m.seed, m.opts); break;
-    case 'resync': resync(m); break;
+    case 'start': if (m.v === VERSION) startGame(m.seed, m.opts); else mismatch(m.v); break;
+    case 'resync': if (m.v === VERSION) resync(m); else mismatch(m.v); break;
     case 'tick': case 'cmds': net.inbox.push(m); break;
     case 'cursor': ui.partner = { x: m.x, y: m.y, at: performance.now() }; break;
-    case 'hello': partnerNick = m.nick || 'Друг'; break;
+    case 'hello':
+      partnerNick = m.nick || 'Друг';
+      if (m.v !== VERSION) { mismatch(m.v); break; }
+      if (net.role === 'host') {
+        // partner joined: start together, or bring a reconnecting partner up to date without restarting
+        if (running && state.players.length > 1 && !state.over) {
+          net.send({ t: 'resync', ...game, log: cmdLog, tick: state.tick, v: VERSION });
+          netStatus('Друг повернувся', 'good');
+        } else newRun();
+      }
+      break;
   }
 };
+// heartbeat both ways + timeout (PeerJS 'close' is not always fired, e.g. when a tab is killed)
+setInterval(() => {
+  if (!net.online || !net.conn) return;
+  net.send({ t: 'ping' });
+  if (partnerAlive && performance.now() - lastMsgAt > 5000) partnerLost();
+}, 1000);
 
 // ---------- layout: as big as the window allows ----------
 function fit() {
@@ -637,7 +674,6 @@ const DT = 1000 / TICK_RATE;
 let acc = 0;
 let last = performance.now();
 let lastTickAt = 0;
-let lastPing = 0;
 
 function tick(cmds, advance = true) {
   step(state, cmds, advance);
@@ -663,7 +699,6 @@ function frame(now) {
       if (m.t === 'tick') lastTickAt = now;
     }
     alpha = Math.min(1, (now - lastTickAt) / DT);
-    $('netStatus').textContent = now - lastMsgAt > 4000 ? 'Хост не відповідає…' : 'На звʼязку';
   } else if (running) {
     if (state.over) acc = 0;
     else if (!paused && !draftPause && now >= freezeUntil) acc += real * speed;
@@ -676,7 +711,6 @@ function frame(now) {
     // commands issued while paused apply without advancing time
     if (pending.length) { const cmds = pending; pending = []; tick(cmds, false); }
     alpha = paused || draftPause ? 1 : acc / DT;
-    if (net.role === 'host' && now - lastPing > 1000) { lastPing = now; net.send({ t: 'ping' }); }
   }
   renderer.draw(state, alpha, ui, real / 1000);
   drawPartnerCursor();
