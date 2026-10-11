@@ -328,7 +328,9 @@ export function step(s, cmds = [], advance = true) {
   }
   while (s.queue.length && s.queue[0].at <= s.tick) {
     const q = s.queue.shift();
-    spawn(s, q.type, q.lane, 0, q.hpMul);
+    const e = spawn(s, q.type, q.lane, 0, q.hpMul);
+    e.bossWave = s.wave;
+    if (ENEMIES[q.type].lives) s.events.push({ type: "bossSpawn", id: e.id, kind: q.type, wave: s.wave });
   }
 
   for (const e of s.enemies) updateEnemy(s, e);
@@ -783,6 +785,10 @@ function damage(s, e, amount, owner, { pierce = false, crit = false, big = false
   e.hp -= d;
   e.flash = 2;
   if (!quiet) s.events.push({ type: 'hit', x: e.x, y: e.y, dmg: d, crit: crit || big });
+  if (ENEMIES[e.type].lives && !e.raged && e.hp > 0 && e.hp < e.maxHp / 2) {
+    e.raged = true;
+    s.events.push({ type: "bossRage", id: e.id, wave: e.bossWave || s.wave });
+  }
   if (e.hp <= 0) kill(s, e, owner);
 }
 

@@ -30,6 +30,7 @@ for (const mode of ['classic', 'circle']) {
           { me, ability: 'wall', hover: { tx: 5, ty: 5 } },
           { me },
         ];
+        r.onEvents([{ type: "bossSpawn", id: s.enemies[0]?.id ?? 0, kind: "boss", wave: 5 }, { type: "bossRage", id: s.enemies[0]?.id ?? 0, wave: 5 }]);
         for (const ui of uis) r.draw(s, 0.5, ui, 0.016);
         out.push('PASS ' + name);
       } catch (e) {

@@ -1,6 +1,6 @@
 // Client entry: menu/lobby, fixed-tick loop (solo / co-op host / co-op guest), input, DOM UI.
 // All game rules live in ./sim; meta-progression in ./meta; networking in ./net; nick + leaderboard in ./api.
-import { TILE, TICK_RATE, TOWERS, TOWER_ORDER, BRANCHES, CARDS, CONFIG, ABILITIES, MODES, VERSION } from './sim/data.js';
+import { TILE, TICK_RATE, TOWERS, TOWER_ORDER, BRANCHES, CARDS, CONFIG, ABILITIES, MODES, VERSION, BOSSES } from './sim/data.js';
 import {
   createGame, step, canPlace, towerAt, obstacleAt, barrelAt, towerStats, upgradeCost, canEvolve, sellValue, clearCost,
   enemyAt, abilityMax, isRoad,
@@ -491,12 +491,14 @@ function showEnd(won) {
   }
 }
 
-function banner(text, cls = '') {
-  const b = $('banner');
-  b.textContent = text;
+function banner(text, cls = "", sub = "", ms = 1600) {
+  const b = $("banner");
+  b.innerHTML = "";
+  b.append(text);
+  if (sub) { const s = document.createElement("small"); s.textContent = sub; b.append(s); }
   b.className = 'show ' + cls;
   clearTimeout(banner.t);
-  banner.t = setTimeout(() => { b.className = ''; }, 1600);
+  banner.t = setTimeout(() => { b.className = ""; }, ms);
 }
 
 // ---------- menu / lobby / shop / leaderboard ----------
@@ -644,6 +646,13 @@ function handleEvents(events, quiet = false) {
         sfx.play('wave');
         banner(e.final ? 'ФІНАЛЬНА ХВИЛЯ!' : e.boss ? `Хвиля ${e.wave} — БОС!` : `Хвиля ${e.wave}`, e.boss ? 'boss' : '');
         break;
+      case "bossSpawn": {
+        const info = BOSSES[e.wave] || BOSSES[20];
+        sfx.play("rumble");
+        banner(info.name.toUpperCase(), "boss intro", info.title, 2600);
+        break;
+      }
+      case "bossRage": sfx.play("leak"); break;
       case 'nova': sfx.play('frost'); sfx.play('explode'); break;
       case 'wallup': case 'wallbreak': sfx.play('cannon'); break;
       case 'bonus': if (mine(e)) banner(`+${e.gold} золота`, 'gold'); break;
@@ -753,6 +762,9 @@ if (new URLSearchParams(location.search).has('demo')) {
     if (canPlace(state, tx, ty) && (isRoad(state, tx, ty + 1) || isRoad(state, tx + 1, ty))) spots.push([tx, ty]);
   }
   spots.forEach(([tx, ty], i) => send({ type: 'place', kind: TOWER_ORDER[i], tx, ty }));
-  send({ type: 'nextWave' });
+  if (dm === 'boss') {
+    state.wave = 4;
+    state.queue.push({ type: 'boss', lane: 0, at: state.tick + 1, hpMul: 1 });
+  } else send({ type: 'nextWave' });
 } else openMenu();
 requestAnimationFrame(frame);

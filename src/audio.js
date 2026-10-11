@@ -38,6 +38,7 @@ export class Sfx {
     const now = this.ctx.currentTime;
     if (this.last[name] && now - this.last[name] < 0.05) return; // throttle spam
     this.last[name] = now;
+    if (name === 'rumble') return this.noise(1.8, 0.22, 260);
     if (name === 'explode' || name === 'meteor') return this.noise(name === 'meteor' ? 0.6 : 0.25, name === 'meteor' ? 0.25 : 0.1);
     if (name === 'wave') return [330, 440, 660].forEach((f, i) => this.tone({ type: 'square', f0: f, f1: f, d: 0.1, v: 0.04 }, i * 0.1));
     if (name === 'card') return [523, 659, 784, 1046].forEach((f, i) => this.tone({ type: 'square', f0: f, f1: f, d: 0.08, v: 0.04 }, i * 0.07));
@@ -60,13 +61,14 @@ export class Sfx {
     o.stop(t + p.d + 0.02);
   }
 
-  noise(d, v) {
+  noise(d, v, f0 = 1200) {
     const t = this.ctx.currentTime;
     const src = this.ctx.createBufferSource();
     src.buffer = this.noiseBuf;
+    src.loop = true; // buffer is 0.5 s; long rumbles loop it
     const f = this.ctx.createBiquadFilter();
     f.type = 'lowpass';
-    f.frequency.setValueAtTime(1200, t);
+    f.frequency.setValueAtTime(f0, t);
     f.frequency.exponentialRampToValueAtTime(80, t + d);
     const gn = this.ctx.createGain();
     gn.gain.setValueAtTime(v, t);

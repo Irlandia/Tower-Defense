@@ -1,5 +1,5 @@
 // Canvas renderer + visual juice. Reads sim state, never mutates it.
-import { TILE, COLS, ROWS, TICK_RATE, TOWERS, CONFIG, ABILITIES, BARREL } from './sim/data.js';
+import { TILE, COLS, ROWS, TICK_RATE, TOWERS, CONFIG, ABILITIES, BARREL, BOSSES } from './sim/data.js';
 import { towerStats, canPlace, posAt, isRoad } from './sim/sim.js';
 import {
   C, SPRITES, FLASH, FROZEN, ENEMY_COLOR, drawTower, drawCastle, drawCave, drawNum, numWidth, drawIcon,
@@ -29,6 +29,9 @@ export class Renderer {
     this.shake = 0;
     this.redFlash = 0;
     this.blueFlash = 0;
+    this.quake = 0; // seconds of gentle rolling shake (boss arrival)
+    this.speech = []; // { id, text, life } bubbles above enemies
+    this.bossInfo = {}; // enemy id -> BOSSES entry
   }
 
   makeBackground(map) {
@@ -132,6 +135,19 @@ export class Renderer {
           this.burst(e.x, e.y, 30, C.yellow, 90);
           this.shake = 8;
           break;
+        case "bossSpawn": {
+          const info = BOSSES[e.wave] || BOSSES[20];
+          this.bossInfo[e.id] = info;
+          this.quake = 2.2;
+          this.say(e.id, info.lines[Math.floor(Math.random() * info.lines.length)], 3.5);
+          break;
+        }
+        case "bossRage": {
+          const info = this.bossInfo[e.id] || BOSSES[e.wave] || BOSSES[20];
+          this.say(e.id, info.rage[Math.floor(Math.random() * info.rage.length)], 2.5);
+          this.shake = Math.max(this.shake, 4);
+          break;
+        }
         case 'nova':
           this.blueFlash = 0.5;
           this.shake = 4;
@@ -209,6 +225,11 @@ export class Renderer {
     }
   }
 
+  say(id, text, life) {
+    this.speech = this.speech.filter((b) => b.id !== id);
+    this.speech.push({ id, text, life, max: life });
+  }
+
   burst(x, y, n, c, spd, vy0 = 0) {
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2, v = Math.random() * spd;
@@ -229,8 +250,16 @@ export class Renderer {
     g.fillStyle = C.ink;
     g.fillRect(0, 0, W, H);
     const sx = this.shake > 0 ? Math.round((Math.random() * 2 - 1) * this.shake) : 0;
-    const sy = this.shake > 0 ? Math.round((Math.random() * 2 - 1) * this.shake) : 0;
-    g.translate(MX + sx, MY + sy);
+    let sy = this.shake > 0 ? Math.round((Math.random() * 2 - 1) * this.shake) : 0;
+    let qx = 0;
+    if (this.quake > 0) {
+      // slow rolling sway instead of jitter: feels like the ground moves
+      const k = Math.min(1, this.quake), t = performance.now();
+      qx = Math.round(Math.sin(t * 0.04) * 2.5 * k);
+      sy += Math.round(Math.sin(t * 0.065) * 1.2 * k);
+      if (Math.random() < 0.5) this.parts.push({ x: Math.random() * COLS * TILE, y: -2, vx: 0, vy: 40 + Math.random() * 40, life: 0.6, c: Math.random() < 0.5 ? "#8a6248" : C.slate, s: 2 });
+    }
+    g.translate(MX + sx + qx, MY + sy);
     g.drawImage(this.bg, 0, 0);
     this.drawWater(s);
     if (!s.queue.length && !s.over) this.drawLanePreview(s);
@@ -320,11 +349,48 @@ export class Renderer {
       drawNum(g, t.str, t.x - numWidth(t.str, t.scale) / 2, t.y, t.c, t.scale, C.ink);
       g.globalAlpha = 1;
     }
+    this.drawSpeech(s, alpha);
+    this.drawBossBar(s);
     g.restore();
 
     if (this.redFlash > 0) { g.fillStyle = `rgba(177,62,83,${this.redFlash})`; g.fillRect(0, 0, W, H); }
     if (this.blueFlash > 0) { g.fillStyle = `rgba(115,239,247,${this.blueFlash})`; g.fillRect(0, 0, W, H); }
     this.drawHud(s, ui.me || 0);
+  }
+
+  // Comic-style bubbles above talking bosses.
+  drawSpeech(s, alpha) {
+    const g = this.g;
+    g.font = "8px \"Pixelify Sans\", monospace";
+    for (const b of this.speech) {
+      const e = s.enemies.find((k) => k.id === b.id);
+      if (!e) { b.life = 0; continue; }
+      const x = Math.round(e.px + (e.x - e.px) * alpha), y = Math.round(e.py + (e.y - e.py) * alpha) - 40;
+      const w = Math.ceil(g.measureText(b.text).width) + 10;
+      const bx = Math.max(2, Math.min(COLS * TILE - w - 2, x - w / 2)), by = Math.max(2, y - 14);
+      const pop = Math.min(1, (b.max - b.life) * 8);
+      g.globalAlpha = Math.min(1, b.life * 2) * pop;
+      g.fillStyle = C.ink; g.fillRect(bx - 1, by - 1, w + 2, 15);
+      g.fillStyle = C.white; g.fillRect(bx, by, w, 13);
+      g.fillStyle = C.ink;
+      for (let i = 0; i < 4; i++) g.fillRect(x - 2 + i, by + 13 + i, 4 - i, 1);
+      g.fillStyle = C.ink; g.fillText(b.text, bx + 5, by + 10);
+      g.globalAlpha = 1;
+    }
+  }
+
+  // Wide HP bar with the boss name while a boss is alive.
+  drawBossBar(s) {
+    const e = s.enemies.find((k) => this.bossInfo[k.id]);
+    if (!e) return;
+    const g = this.g, info = this.bossInfo[e.id];
+    const w = 240, x = Math.round((COLS * TILE - w) / 2), y = 4;
+    g.fillStyle = C.ink; g.fillRect(x - 2, y - 2, w + 4, 18);
+    g.fillStyle = C.plum; g.fillRect(x, y + 10, w, 4);
+    g.fillStyle = C.red; g.fillRect(x, y + 10, Math.round(w * Math.max(0, e.hp) / e.maxHp), 4);
+    g.font = "8px \"Pixelify Sans\", monospace";
+    g.fillStyle = C.yellow;
+    g.fillText(`${info.name} — ${info.title}`, x + 2, y + 7);
   }
 
   drawWater(s) {
@@ -509,5 +575,8 @@ export class Renderer {
     this.shake = Math.max(0, this.shake - dt * 25);
     this.redFlash = Math.max(0, this.redFlash - dt);
     this.blueFlash = Math.max(0, this.blueFlash - dt * 1.2);
+    this.quake = Math.max(0, this.quake - dt);
+    for (const b of this.speech) b.life -= dt;
+    this.speech = this.speech.filter((b) => b.life > 0);
   }
 }

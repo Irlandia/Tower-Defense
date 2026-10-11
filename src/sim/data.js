@@ -5,7 +5,7 @@ export const COLS = 26;
 export const ROWS = 14;
 export const TICK_RATE = 20;
 // Bump on every change to sim/data: co-op peers refuse to play with a different version.
-export const VERSION = 9;
+export const VERSION = 10;
 
 export const CONFIG = {
   startGold: 160,
@@ -124,3 +124,11 @@ export const CARDS = [
   { id: "veteran", name: "Ветерани", desc: "+10% шкоди всіх веж", apply: (s, p) => { for (const k in p.mods.dmg) p.mods.dmg[k] *= 1.1; } },
   { id: 'mason', name: 'Каменяр', desc: 'Барикада вдвічі міцніша', apply: (s, p) => { p.mods.wall *= 2; } },
 ];
+
+// Boss intros by wave: name banner, a line on arrival and one when they drop below half HP.
+export const BOSSES = {
+  5: { name: 'Ґрок Гнилозуб', title: 'Пожирач Мостів', lines: ['Ваші вежі — мої зубочистки!', 'Хрум-хрум... хто тут смачний?', 'Ґрок голодний!'], rage: ['Ґрок ЗЛИЙ!', 'Ай! Це було боляче!'] },
+  10: { name: 'Мама Слизу', title: 'Королева Калюж', lines: ['Діточки, мама прийшла!', 'Хто образив моїх слизиків?!', 'Буль-буль... зараз я вас обійму.'], rage: ['Ви за це заплатите!', 'МОЇ ДІТОЧКИ!'] },
+  15: { name: 'Барон Іржавий', title: 'Володар Брухту', lines: ['Сталь не боїться ваших стріл!', 'Здавайтеся, і я буду милосердним. Жартую.', 'Мій обладунок древніший за ваш замок!'], rage: ['Подряпина? НА МОЇЙ БРОНІ?!', 'Досить ігор!'] },
+  20: { name: 'Король Слизу', title: 'Останній Прилив', lines: ['На коліна перед королем!', 'Це королівство тепер моє.', 'Я — кінець вашої історії.'], rage: ['НЕМОЖЛИВО!', 'Я лише почав розминатися!'] },
+};
