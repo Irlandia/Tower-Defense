@@ -1,6 +1,6 @@
 // Client entry: menu/lobby, fixed-tick loop (solo / co-op host / co-op guest), input, DOM UI.
 // All game rules live in ./sim; meta-progression in ./meta; networking in ./net; nick + leaderboard in ./api.
-import { TILE, TICK_RATE, TOWERS, TOWER_ORDER, BRANCHES, CARDS, CONFIG, ABILITIES, MODES, VERSION, BOSSES, bossFor, AURA, ENEMIES } from './sim/data.js';
+import { TILE, TICK_RATE, TOWERS, TOWER_ORDER, BRANCHES, CARDS, CONFIG, ABILITIES, MODES, VERSION, BOSSES, bossFor, AURA, ENEMIES, RARITY } from './sim/data.js';
 import {
   createGame, step, canPlace, towerAt, obstacleAt, barrelAt, towerStats, upgradeCost, canEvolve, sellValue, clearCost,
   enemyAt, abilityMax, isRoad, canMove, hasWall, auraCost,
@@ -500,8 +500,10 @@ function renderTalent() {
   draft.forEach((id, i) => {
     const c = CARDS.find((x) => x.id === id);
     const el = document.createElement('button');
-    el.className = 'card';
-    el.innerHTML = `<span class="key">${i + 1}</span><b>${c.name}</b><span>${c.desc}</span>`;
+    el.className = 'card ' + c.rarity;
+    const taken = P().picked[c.id] || 0;
+    const count = c.max > 1 && c.max < 99 ? ` · ${taken}/${c.max}` : '';
+    el.innerHTML = `<span class="key">${i + 1}</span><span class="rar">${RARITY[c.rarity].name}${count}</span><b>${c.name}</b><span>${c.desc}</span>`;
     el.addEventListener('click', () => pickCard(i));
     m.querySelector('.cards').append(el);
   });

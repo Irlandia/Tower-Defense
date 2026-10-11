@@ -5,7 +5,7 @@ export const COLS = 26;
 export const ROWS = 14;
 export const TICK_RATE = 20;
 // Bump on every change to sim/data: co-op peers refuse to play with a different version.
-export const VERSION = 13;
+export const VERSION = 14;
 
 export const CONFIG = {
   startGold: 160,
@@ -95,7 +95,7 @@ export const BRANCHES = {
 // Game modes. Circle: enemies loop forever and stack up; too many alive = defeat.
 export const MODES = {
   classic: { name: "Класика", desc: "Вороги йдуть до замку. Пропустив — втратив життя." },
-  circle: { name: "Коло", desc: "Вороги крутяться по колу й накопичуються. Забагато живих — поразка.", maxAlive: 40, lapSpeed: 0.06, lapHeal: 0.1, lapMax: 8, endlessBossEvery: 2, endlessHpGrowth: 1.12 },
+  circle: { name: "Коло", desc: "Вороги крутяться по колу й накопичуються. Забагато живих — поразка.", maxAlive: 45, lapSpeed: 0.06, lapHeal: 0.1, lapMax: 8, endlessBossEvery: 2, endlessHpGrowth: 1.12 },
 };
 
 export const MAPGEN = { lanes3Chance: 0.45, ponds: [1, 2], barrels: 4 };
@@ -117,24 +117,40 @@ export const ENEMIES = {
 // Wave from which an enemy type can appear.
 export const UNLOCKS = { slime: 1, runner: 2, splitter: 3, knight: 4, healer: 6 };
 
-// Roguelite draft cards offered after each cleared wave.
+// Talents offered every wave, per player. rarity: common / rare (rare is stronger and drawn less often);
+// max = how many times one player can take it; modes = where it can appear (default: everywhere).
+export const RARITY = { common: { weight: 3, name: 'Звичайний' }, rare: { weight: 1, name: 'Рідкісний' } };
 export const CARDS = [
-  { id: 'sharp', name: 'Гострі стріли', desc: '+25% шкоди лучників', apply: (s, p) => { p.mods.dmg.arrow *= 1.25; } },
-  { id: 'crit', name: 'Око сокола', desc: '+10% шансу крита лучників', apply: (s, p) => { p.mods.crit += 0.1; } },
-  { id: 'boom', name: 'Порох', desc: '+30% шкоди гармат', apply: (s, p) => { p.mods.dmg.cannon *= 1.3; } },
-  { id: 'storm', name: 'Буря', desc: 'Тесла: +1 стрибок блискавки', apply: (s, p) => { p.mods.chain += 1; } },
-  { id: 'napalm', name: 'Напалм', desc: 'Горіння +50% шкоди', apply: (s, p) => { p.mods.burn *= 1.5; } },
-  { id: 'glacier', name: 'Льодовик', desc: 'Крига: +50% шкоди, довше мокрі', apply: (s, p) => { p.mods.dmg.frost *= 1.5; p.mods.wet += 2; } },
-  { id: 'steam', name: 'Парова машина', desc: 'Вибух пари +60% шкоди', apply: (s, p) => { p.mods.steam *= 1.6; } },
-  { id: 'haste', name: 'Адреналін', desc: '+12% швидкості атаки всіх веж', apply: (s, p) => { p.mods.rate *= 1.12; } },
-  { id: 'optics', name: 'Оптика', desc: '+10% радіусу всіх веж', apply: (s, p) => { p.mods.range *= 1.1; } },
-  { id: 'bounty', name: 'Нагорода', desc: '+20% золота за вбивства', apply: (s, p) => { p.mods.gold *= 1.2; } },
-  { id: 'bank', name: 'Банкір', desc: '+5% від золота на початку хвилі', apply: (s, p) => { p.mods.interest += 0.05; } },
-  { id: 'cash', name: 'Скарб', desc: '+120 золота одразу', apply: (s, p) => { p.gold += 120; } },
-  { id: 'walls', name: 'Мури', desc: '+5 життів', apply: (s) => { s.lives += 5; } },
-  { id: 'meteor', name: 'Зорепад', desc: 'Метеор заряджається на 30% швидше', apply: (s, p) => { p.mods.meteorCd *= 0.7; } },
-  { id: "veteran", name: "Ветерани", desc: "+10% шкоди всіх веж", apply: (s, p) => { for (const k in p.mods.dmg) p.mods.dmg[k] *= 1.1; } },
-  { id: 'mason', name: 'Каменяр', desc: 'Барикада вдвічі міцніша', apply: (s, p) => { p.mods.wall *= 2; } },
+  // --- towers (common) ---
+  { id: 'sharp', name: 'Гострі стріли', desc: 'Лучники: +20% шкоди', rarity: 'common', max: 3, apply: (s, p) => { p.mods.dmg.arrow *= 1.2; } },
+  { id: 'boom', name: 'Порох', desc: 'Гармати: +20% шкоди', rarity: 'common', max: 3, apply: (s, p) => { p.mods.dmg.cannon *= 1.2; } },
+  { id: 'glacier', name: 'Льодовик', desc: 'Крига: +25% шкоди, вороги мокрі на 2 с довше', rarity: 'common', max: 2, apply: (s, p) => { p.mods.dmg.frost *= 1.25; p.mods.wet += 2; } },
+  { id: 'coils', name: 'Мідні котушки', desc: 'Тесла: +20% шкоди', rarity: 'common', max: 3, apply: (s, p) => { p.mods.dmg.tesla *= 1.2; } },
+  { id: 'napalm', name: 'Напалм', desc: 'Вогонь: горіння +35%', rarity: 'common', max: 3, apply: (s, p) => { p.mods.burn *= 1.35; } },
+  { id: 'haste', name: 'Адреналін', desc: 'Усі вежі: +8% швидкості атаки', rarity: 'common', max: 3, apply: (s, p) => { p.mods.rate *= 1.08; } },
+  { id: 'optics', name: 'Оптика', desc: 'Усі вежі: +8% радіусу', rarity: 'common', max: 2, apply: (s, p) => { p.mods.range *= 1.08; } },
+  // --- economy (common) ---
+  { id: 'bounty', name: 'Нагорода', desc: '+15% золота за вбивства', rarity: 'common', max: 2, apply: (s, p) => { p.mods.gold *= 1.15; } },
+  { id: 'cash', name: 'Скарб', desc: 'Одразу +60 золота і ще +8 за кожну пройдену хвилю', rarity: 'common', max: 99, apply: (s, p) => { p.gold += 60 + 8 * s.wave; } },
+  // --- rare ---
+  { id: 'crit', name: 'Око сокола', desc: 'Лучники: +10% шансу крита, крит x2.5', rarity: 'rare', max: 2, apply: (s, p) => { p.mods.crit += 0.1; p.mods.critMul = 2.5; } },
+  { id: 'storm', name: 'Буря', desc: 'Тесла: +1 стрибок блискавки', rarity: 'rare', max: 2, apply: (s, p) => { p.mods.chain += 1; } },
+  { id: 'steam', name: 'Парова машина', desc: 'Вибух пари (вогонь по мокрих) +60%', rarity: 'rare', max: 2, apply: (s, p) => { p.mods.steam *= 1.6; } },
+  { id: 'veteran', name: 'Ветерани', desc: 'Усі вежі: +10% шкоди', rarity: 'rare', max: 2, apply: (s, p) => { for (const k in p.mods.dmg) p.mods.dmg[k] *= 1.1; } },
+  { id: 'shaman', name: 'Шаман', desc: 'Аури твоїх тотемів сильніші на 50%', rarity: 'rare', max: 1, apply: (s, p) => { p.mods.aura *= 1.5; } },
+  { id: 'nomad', name: 'Кочівники', desc: 'Перезарядка переміщення веж −60%', rarity: 'rare', max: 1, apply: (s, p) => { p.mods.moveCd *= 0.4; } },
+  { id: 'meteor', name: 'Зорепад', desc: 'Метеор заряджається на 30% швидше', rarity: 'rare', max: 2, apply: (s, p) => { p.mods.meteorCd *= 0.7; } },
+  { id: 'winter', name: 'Вічна зима', desc: 'Крижана нова: −30% перезарядки', rarity: 'rare', max: 2, apply: (s, p) => { p.mods.novaCd *= 0.7; } },
+  { id: 'mason', name: 'Каменяр', desc: 'Твоя барикада вдвічі міцніша', rarity: 'rare', max: 1, apply: (s, p) => { p.mods.wall *= 2; } },
+  // --- classic only: castle, lives, barrels ---
+  { id: 'walls', name: 'Мури', desc: '+4 життя замку', rarity: 'common', max: 3, modes: ['classic'], apply: (s) => { s.lives += 4; } },
+  { id: 'powder', name: 'Порохові бочки', desc: 'Бочки на карті: x2 шкоди', rarity: 'common', max: 1, modes: ['classic'], apply: (s, p) => { p.mods.barrel *= 2; } },
+  { id: 'bank', name: 'Банкір', desc: 'На початку хвилі +4% від твого золота (до 25)', rarity: 'rare', max: 1, modes: ['classic'], apply: (s, p) => { p.mods.interest += 0.04; } },
+  // --- circle only: the ring, laps and the alive limit ---
+  { id: 'dam', name: 'Гребля', desc: 'Ліміт живих ворогів +5', rarity: 'common', max: 3, modes: ['circle'], apply: (s) => { s.limit += 5; } },
+  { id: 'swamp', name: 'Болото', desc: 'Вороги швидшають за коло вдвічі повільніше', rarity: 'rare', max: 1, modes: ['circle'], apply: (s) => { s.lapSpeedMul *= 0.5; } },
+  { id: 'reaper', name: 'Жнець', desc: 'Твої вежі: +30% шкоди ворогам на 3-му колі й далі', rarity: 'rare', max: 2, modes: ['circle'], apply: (s, p) => { p.mods.lapDmg += 0.3; } },
+  { id: 'hunter', name: 'Мисливець', desc: '+3 золота за кожного ворога, що вже пройшов коло', rarity: 'common', max: 2, modes: ['circle'], apply: (s, p) => { p.mods.hunter += 3; } },
 ];
 
 // Boss intros by wave: name banner, a line on arrival and one when they drop below half HP.

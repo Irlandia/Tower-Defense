@@ -4,7 +4,7 @@
 <pre id="out">running…</pre>
 <script type="module">
 import { createGame, step, canPlace, canEvolve, isRoad, posAt, towerStats, vsMult } from '../src/sim/sim.js';
-import { TOWERS, TOWER_ORDER, BRANCHES, COLS, ROWS } from '../src/sim/data.js';
+import { TOWERS, TOWER_ORDER, BRANCHES, COLS, ROWS, CARDS } from '../src/sim/data.js';
 
 const lines = [];
 let failed = 0;
@@ -225,6 +225,35 @@ try {
 
   // tower vs enemy type
   check("enemy types: runner weak to arrows, resists cannons", vsMult("runner", "arrow") > 1 && vsMult("runner", "cannon") < 1 && vsMult("runner", null) === 1);
+
+  // talents: mode pools, per-player max, rarity weighting
+  const offered = { classic: new Set(), circle: new Set() };
+  let rare = 0, total = 0, maxOk = true;
+  for (const md of ["classic", "circle"]) {
+    for (let seed = 1; seed <= 40; seed++) {
+      const tg2 = createGame(seed, { mode: md });
+      const pl2 = tg2.players[0];
+      for (let w = 0; w < 19; w++) {
+        step(tg2, [{ type: "nextWave", p: 0 }]);
+        tg2.queue = [];
+        const d = pl2.drafts[pl2.drafts.length - 1];
+        if (!d) continue;
+        for (const id of d) {
+          offered[md].add(id);
+          const card = CARDS.find((c) => c.id === id);
+          total++; if (card.rarity === "rare") rare++;
+          if ((pl2.picked[id] || 0) >= card.max) maxOk = false;
+        }
+        step(tg2, [{ type: "pick", index: 0, p: 0 }]);
+      }
+    }
+  }
+  const only = (md) => CARDS.filter((c) => c.modes && !c.modes.includes(md)).map((c) => c.id);
+  check("talents: classic never offers circle-only cards", only("classic").every((id) => !offered.classic.has(id)), [...offered.classic].join(","));
+  check("talents: circle never offers classic-only cards", only("circle").every((id) => !offered.circle.has(id)));
+  check("talents: mode cards do appear in their mode", offered.classic.has("walls") && offered.circle.has("dam"));
+  check("talents: a card is never offered past its max", maxOk);
+  check("talents: rare cards are rarer", rare / total > 0.1 && rare / total < 0.4, `rare ${Math.round(100 * rare / total)}%`);
 
   // co-op: separate wallets, talents and ownership
   const co = createGame(9, { players: 2 });

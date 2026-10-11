@@ -186,3 +186,8 @@ body.in-menu #ui { display: none; }
   90% { transform: translateX(6px); }
   100% { transform: none; }
 }
+
+/* talent rarity */
+.card .rar { position: absolute; top: 6px; right: 10px; font-size: 12px; color: var(--silver); }
+.card.rare { background: #3b2350; box-shadow: inset -3px -3px 0 var(--ink), inset 3px 3px 0 #8a4fb3, 0 0 0 2px #b97ae0; }
+.card.rare .rar { color: #d9a8ff; }

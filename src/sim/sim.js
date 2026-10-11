@@ -3,7 +3,7 @@
 // Every command carries `p` = player index (0 = host/solo, 1 = guest); each player has own gold, talents, abilities.
 import {
   TILE, COLS, ROWS, TICK_RATE as T, CONFIG, TOWERS, ENEMIES, UNLOCKS, CARDS,
-  MAPGEN, MODES, BARREL, OBSTACLES, COIN, ABILITIES, AURA, BRANCHES,
+  MAPGEN, MODES, BARREL, OBSTACLES, COIN, ABILITIES, AURA, BRANCHES, RARITY,
 } from './data.js';
 import { rand, randInt } from './rng.js';
 
@@ -172,7 +172,9 @@ function newPlayer(opts) {
       dmg: { arrow: 1, cannon: 1, frost: 1, tesla: 1, fire: 1 },
       rate: 1, range: 1, chain: 0, burn: 1, wet: 0, steam: 1, gold: 1, interest: 0, crit: 0.1,
       meteorCd: opts.meteorCd || 1, wall: 1,
+      critMul: 2, aura: 1, moveCd: 1, novaCd: 1, barrel: 1, lapDmg: 0, hunter: 0,
     },
+    picked: {}, // talent id -> times taken (cards have a max)
     cds: { meteor: 0, nova: 0, wall: 0 },
     drafts: [], // pending talent choices (arrays of card ids); picking never pauses the game
     kills: 0,
@@ -187,6 +189,7 @@ export function createGame(seed, opts = {}) {
     opts: o,
     mode: o.mode,
     won: false,
+    lapSpeedMul: 1,
     tick: 0,
     lives: CONFIG.startLives + (o.bonusLives || 0),
     limit: o.mode === 'circle' ? MODES.circle.maxAlive + 5 * Math.round(((o.bonusLives || 0) / 3)) : 0,
@@ -264,7 +267,8 @@ export function clearCost(o) {
 }
 export const hasWall = (s, p) => s.walls.some((w) => w.owner === p && w.hp > 0);
 export function abilityMax(s, id, p = 0) {
-  return Math.round(ABILITIES[id].cd * (id === 'meteor' ? player(s, p).mods.meteorCd : 1) * T);
+  const m = player(s, p).mods;
+  return Math.round(ABILITIES[id].cd * (id === "meteor" ? m.meteorCd : id === "nova" ? m.novaCd : 1) * T);
 }
 export function enemyAt(s, x, y, r = 14) {
   let best = null, bd = r;
@@ -281,7 +285,8 @@ export function auraOf(s, t) {
   if (TOWERS[t.kind].support) return a;
   for (const o of s.towers) {
     if (!TOWERS[o.kind].support || Math.hypot(o.x - t.x, o.y - t.y) > TOWERS[o.kind].range) continue;
-    for (const k of ["dmg", "rate"]) if (o.aura[k]) a[k] = Math.max(a[k], AURA[k].bonus[o.aura[k] - 1]);
+    const boost = player(s, o.owner).mods.aura;
+    for (const k of ["dmg", "rate"]) if (o.aura[k]) a[k] = Math.max(a[k], AURA[k].bonus[o.aura[k] - 1] * boost);
   }
   return a;
 }
@@ -391,6 +396,7 @@ function applyCmd(s, c) {
       const card = draft && CARDS.find((k) => k.id === draft[c.index]);
       if (!card) return;
       card.apply(s, pl);
+      pl.picked[card.id] = (pl.picked[card.id] || 0) + 1;
       pl.drafts.shift();
       s.events.push({ type: 'picked', p: pi, card: card.id });
       return;
@@ -442,7 +448,7 @@ function applyCmd(s, c) {
       if (!t || !canMove(s, t, c.tx, c.ty)) return;
       const from = { x: t.x, y: t.y };
       Object.assign(t, { tx: c.tx, ty: c.ty, ...center(c.tx, c.ty) });
-      t.moveCd = CONFIG.moveCd * T;
+      t.moveCd = Math.round(CONFIG.moveCd * T * pl.mods.moveCd);
       t.cd = Math.max(t.cd, CONFIG.moveSetup * T);
       s.events.push({ type: "move", fx: from.x, fy: from.y, x: t.x, y: t.y, p: pi });
       return;
@@ -475,7 +481,7 @@ function applyCmd(s, c) {
       const b = s.barrels.find((k) => k.id === c.id);
       if (!b || !b.ready) return;
       b.ready = false;
-      const dmg = BARREL.dmg + s.wave * BARREL.dmgPerWave;
+      const dmg = (BARREL.dmg + s.wave * BARREL.dmgPerWave) * pl.mods.barrel;
       for (const e of s.enemies) {
         if (e.dead || Math.hypot(e.x - b.x, e.y - b.y) > BARREL.radius) continue;
         damage(s, e, dmg, pi, { pierce: true });
@@ -542,10 +548,16 @@ function applyCmd(s, c) {
   }
 }
 
-function pickCards(s, n) {
-  const pool = CARDS.map((c) => c.id);
+// Weighted draw without repeats from the cards valid for this mode and not maxed out by this player.
+function pickCards(s, n, pl) {
+  const pool = CARDS.filter((c) => (!c.modes || c.modes.includes(s.mode)) && (pl.picked[c.id] || 0) < c.max);
   const out = [];
-  while (out.length < n && pool.length) out.push(pool.splice(randInt(s, pool.length), 1)[0]);
+  while (out.length < n && pool.length) {
+    const total = pool.reduce((a, c) => a + RARITY[c.rarity].weight, 0);
+    let r = rand(s) * total, i = 0;
+    while (i < pool.length - 1 && (r -= RARITY[pool[i].rarity].weight) > 0) i++;
+    out.push(pool.splice(i, 1)[0].id);
+  }
   return out;
 }
 
@@ -556,20 +568,20 @@ function startWave(s) {
   // Surviving a wave earns every player their own talent choice (never pauses, never skipped by early calls).
   if (w >= 2) {
     for (let i = 0; i < s.players.length; i++) {
-      s.players[i].drafts.push(pickCards(s, s.opts.cards));
+      s.players[i].drafts.push(pickCards(s, s.opts.cards, s.players[i]));
       s.events.push({ type: 'draft', p: i });
     }
   }
   for (let i = 0; i < s.players.length; i++) {
     const pl = s.players[i];
     if (pl.mods.interest > 0) {
-      const gain = Math.min(30, Math.floor(pl.gold * pl.mods.interest));
+      const gain = Math.min(25, Math.floor(pl.gold * pl.mods.interest));
       if (gain) { pl.gold += gain; s.events.push({ type: 'bonus', gold: gain, p: i }); }
     }
   }
   const lanes = s.plan;
   const over20 = Math.max(0, w - CONFIG.winWave);
-  const hpMul = (1 + 0.22 * (w - 1) + 0.025 * (w - 1) * (w - 1)) * s.opts.hpMul * MODES.circle.endlessHpGrowth ** over20;
+  const hpMul = (1 + 0.22 * (w - 1) + 0.021 * (w - 1) * (w - 1)) * s.opts.hpMul * MODES.circle.endlessHpGrowth ** over20;
   const pool = Object.keys(UNLOCKS).filter((k) => UNLOCKS[k] <= w);
   // co-op: a bit more enemies so two players still have to work
   let budget = (8 + w * 6) * (s.players.length > 1 ? 1.5 : 1);
@@ -665,7 +677,7 @@ function updateEnemy(s, e) {
     if (lap > e.lap) {
       e.lap = lap;
       const cm = MODES.circle;
-      if (lap <= cm.lapMax) e.speedMul += cm.lapSpeed;
+      if (lap <= cm.lapMax) e.speedMul += cm.lapSpeed * s.lapSpeedMul;
       e.hp = Math.min(e.maxHp, e.hp + Math.round(e.maxHp * cm.lapHeal));
       s.events.push({ type: 'lap', x: e.x, y: e.y, lap });
     }
@@ -850,10 +862,11 @@ export function vsMult(type, src) {
 
 function damage(s, e, amount, owner, { pierce = false, crit = false, big = false, quiet = false, src = null } = {}) {
   if (e.dead) return;
+  const om = player(s, owner).mods;
   const mult = vsMult(e.type, src);
-  amount *= mult;
+  amount *= mult * (src && e.lap >= 3 ? 1 + om.lapDmg : 1);
   let d = pierce ? amount : amount - e.armor;
-  if (crit) d *= 2;
+  if (crit) d *= om.critMul;
   d = Math.max(1, Math.round(d));
   e.hp -= d;
   e.flash = 2;
@@ -870,7 +883,7 @@ function kill(s, e, owner) {
   e.dead = true;
   const def = ENEMIES[e.type];
   const pl = player(s, owner);
-  const gold = Math.round(def.gold * pl.mods.gold);
+  const gold = Math.round(def.gold * pl.mods.gold) + (e.lap >= 1 ? pl.mods.hunter : 0);
   pl.gold += gold;
   pl.kills++;
   s.kills++;
