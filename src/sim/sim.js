@@ -603,15 +603,19 @@ function startWave(s) {
     s.queue.sort((a, b) => a.at - b.at);
   }
   const bossHp = (1 + (w / 5 - 1) * 0.9) * s.opts.hpMul * MODES.circle.endlessHpGrowth ** over20;
+  // Bosses: one per player, arriving 3 s into the wave (right with the announcement), staggered by 2 s
+  // and spread over the lanes. Endless: every couple of waves, more of them the deeper you go.
+  let bosses = 0, kind = () => "boss";
   if (over20 > 0) {
-    // endless: bosses every couple of waves, and more of them the deeper you go
-    if (over20 % MODES.circle.endlessBossEvery === 0) {
-      const n = 1 + Math.floor(over20 / 6);
-      for (let i = 0; i < n; i++) s.queue.push({ type: i % 2 ? "king" : "boss", lane: lanes[i % lanes.length], at: at + T + i * 2 * T, hpMul: bossHp });
-    }
+    if (over20 % MODES.circle.endlessBossEvery === 0) { bosses = (1 + Math.floor(over20 / 6)) * s.players.length; kind = (i) => (i % 2 ? "king" : "boss"); }
   } else if (w % 5 === 0) {
-    s.queue.push({ type: w === CONFIG.winWave ? "king" : "boss", lane: lanes[0], at: at + T, hpMul: bossHp });
+    bosses = s.players.length;
+    kind = () => (w === CONFIG.winWave ? "king" : "boss");
   }
+  for (let i = 0; i < bosses; i++) {
+    s.queue.push({ type: kind(i), lane: lanes[i % lanes.length], at: s.tick + 3 * T + i * 2 * T, hpMul: bossHp });
+  }
+  s.queue.sort((a, b) => a.at - b.at);
   s.countdown = CONFIG.waveDelay * T;
   s.events.push({ type: "wave", wave: w, boss: over20 ? over20 % MODES.circle.endlessBossEvery === 0 : w % 5 === 0, final: w === CONFIG.winWave, lanes });
   s.plan = planLanes(s);

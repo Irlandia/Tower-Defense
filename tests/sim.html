@@ -253,6 +253,16 @@ try {
   check("talents: a card is never offered past its max", maxOk);
   check("talents: rare cards are rarer", rare / total > 0.1 && rare / total < 0.55, `rare ${Math.round(100 * rare / total)}%`);
 
+  // bosses: one per player, arriving right after the announcement
+  for (const md of ["classic", "circle"]) for (const np of [1, 2]) {
+    const bs = createGame(77, { mode: md, players: np });
+    bs.wave = 4;
+    step(bs, [{ type: "nextWave", p: 0 }]);
+    let first = -1, count = 0;
+    for (let i = 0; i < 200; i++) { step(bs); for (const e of bs.events) if (e.type === "bossSpawn") { count++; if (first < 0) first = i; } }
+    check(`bosses: ${md} with ${np} player(s) -> ${np} boss(es) within 5 s`, count === np && first >= 0 && first < 100, `count=${count} first=${first}`);
+  }
+
   // co-op: separate wallets, talents and ownership
   const co = createGame(9, { players: 2 });
   const [c1, c2] = free(co, 2);
