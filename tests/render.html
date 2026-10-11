@@ -8,6 +8,7 @@
 import { createGame, step, canPlace } from '../src/sim/sim.js';
 import { TOWER_ORDER, COLS, ROWS } from '../src/sim/data.js';
 import { Renderer } from '../src/render.js';
+import { Critters } from '../src/critters.js';
 
 const out = [];
 let failed = 0;
@@ -41,6 +42,25 @@ for (const mode of ['classic', 'circle']) {
     }
   }
 }
+// fish: leap, click a fish in the air, click empty water, and draw it all
+try {
+  const s = createGame(42, { mode: "classic" });
+  const c = new Critters();
+  c.reset(s.map);
+  const water = [...s.map.water][0];
+  if (water) {
+    const [wx, wy] = water.split(",").map(Number);
+    c.leap(wx * 24 + 12, wy * 24 + 12, { gold: true });
+    for (let i = 0; i < 10; i++) c.update(0.03, []);
+    const p = c.fishPos(c.jumps[0]);
+    const hitFish = c.pokeFish(p.x, p.y);
+    const hitWater = c.pokeFish(wx * 24 + 12, wy * 24 + 12);
+    const g = document.getElementById("c").getContext("2d");
+    for (let i = 0; i < 30; i++) { c.update(0.05, []); c.drawFish(g); }
+    if (!hitFish || !hitWater) throw new Error("fish clicks not handled");
+  }
+  out.push("PASS fish leap + clicks" + (water ? "" : " (no pond on this map)"));
+} catch (e) { failed++; out.push("FAIL fish " + e.stack); }
 out.push(failed ? `${failed} FAILED` : 'ALL PASSED');
 document.getElementById('out').textContent = out.join('\n');
 </script>

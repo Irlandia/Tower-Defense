@@ -39,6 +39,28 @@ function sprite(rows, flip) {
   });
   return cv;
 }
+// Fish model 12x8 (faces right): body with scale highlights, pale belly, fins, forked tail, eye.
+const FISH_MAP = [
+  "....ff......",
+  "..BBBBBB...T",
+  ".BBsBBsBB.TT",
+  "BeBBBBBBBBTT",
+  "BBBBsBBBBTTT",
+  ".bbbbbbbb.TT",
+  "..bbbbbb...T",
+  "....f.......",
+];
+const FISH = [
+  { B: "#94b0c2", s: "#f4f4f4", b: "#f4f4f4", f: "#566c86", T: "#566c86", e: "#1a1c2c" },
+  { B: "#ffcd75", s: "#f4f4f4", b: "#fff4d6", f: "#ef7d57", T: "#ef7d57", e: "#1a1c2c" },
+].map((pal) => {
+  const cv = document.createElement("canvas");
+  cv.width = 12; cv.height = 8;
+  const g = cv.getContext("2d");
+  FISH_MAP.forEach((row, y) => { for (let x = 0; x < 12; x++) if (pal[row[x]]) { g.fillStyle = pal[row[x]]; g.fillRect(x, y, 1, 1); } });
+  return cv;
+});
+
 // SPR[kind][frame][0 = facing right, 1 = facing left]
 const SPR = Object.fromEntries(Object.entries(MAPS).map(([k, frames]) => [k, frames.map((f) => [sprite(f, false), sprite(f, true)])]));
 
@@ -54,6 +76,7 @@ export class Critters {
     this.list = [];
     this.map = null;
     this.jumps = []; // fish leaping out of ponds
+    this.sparks = []; // golden fish glitter
     this.fishT = 2;
   }
 
@@ -83,6 +106,7 @@ export class Critters {
     this.map = map;
     this.list = [];
     this.jumps = [];
+    this.sparks = [];
     this.fishT = rnd(1, 3);
     const add = (kind, at) => at && this.list.push({ kind, x: at.x, y: at.y, state: 'idle', t: rnd(0.5, 3), dir: Math.random() < 0.5 ? 1 : -1, hop: 0, frame: 0, say: null, sayT: 0, flee: 0 });
     // a small herd of cows around one spot
@@ -143,50 +167,96 @@ export class Critters {
     }
   }
 
-  // Every few seconds a fish leaps out of a random pond tile, flips in the air and splashes back.
+  // Every few seconds a fish leaps out of a random pond tile, arcs through the air and splashes back.
   updateFish(dt) {
     for (const j of this.jumps) j.t += dt;
     this.jumps = this.jumps.filter((j) => j.t < j.dur + 0.6);
+    for (const p of this.sparks) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 60 * dt; p.life -= dt; }
+    this.sparks = this.sparks.filter((p) => p.life > 0);
     if (!this.map.water.size) return;
     this.fishT -= dt;
     if (this.fishT > 0) return;
     this.fishT = rnd(1.5, 4.5);
     const tiles = [...this.map.water];
-    const [tx, ty] = tiles[Math.floor(Math.random() * tiles.length)].split(",").map(Number);
+    const [tx, ty] = tiles[Math.floor(Math.random() * tiles.length)].split(',').map(Number);
+    this.leap(tx * TILE + rnd(6, TILE - 6), ty * TILE + rnd(8, TILE - 4));
+  }
+
+  // Start a jump from (x, y); lands back in the water (or in place if the arc would leave the pond).
+  leap(x, y, opts = {}) {
     const dir = Math.random() < 0.5 ? 1 : -1;
-    const x = tx * TILE + rnd(6, TILE - 6), y = ty * TILE + rnd(8, TILE - 4);
-    const to = x + dir * rnd(8, 16);
-    // land back in water (or stay in place if the leap would leave the pond)
-    const back = this.map.water.has(Math.floor(to / TILE) + "," + ty) ? to : x;
-    this.jumps.push({ x, y, x2: back, t: 0, dur: rnd(0.55, 0.8), h: rnd(9, 15), dir: back >= x ? 1 : -1, gold: Math.random() < 0.15 });
+    const to = x + dir * rnd(10, 20);
+    const ty = Math.floor(y / TILE);
+    const back = this.map.water.has(Math.floor(to / TILE) + ',' + ty) ? to : x;
+    this.jumps.push({ x, y, x2: back, t: 0, dur: rnd(0.6, 0.85), h: rnd(10, 16), dir: back >= x ? 1 : -1, gold: Math.random() < 0.12, spin: 0, ...opts });
+  }
+
+  fishPos(j) {
+    const k = Math.min(1, j.t / j.dur);
+    return { k, x: j.x + (j.x2 - j.x) * k, y: j.y - Math.sin(k * Math.PI) * j.h };
+  }
+
+  // Click on a leaping fish: it gets flicked high with a spin and complains; golden fish showers sparkles.
+  // Click on empty water: a curious fish pops out.
+  pokeFish(x, y) {
+    for (const j of this.jumps) {
+      const p = this.fishPos(j);
+      if (p.k >= 1 || j.smacked || Math.hypot(p.x - x, p.y - y) > 10) continue;
+      const tiles = [...this.map.water];
+      const [tx, ty] = tiles[Math.floor(Math.random() * tiles.length)].split(',').map(Number);
+      Object.assign(j, { x: p.x, y: p.y, x2: tx * TILE + 12, t: 0, dur: 1.4, h: 46, smacked: true, spin: (Math.random() < 0.5 ? -1 : 1) * 14 });
+      j.y2 = ty * TILE + 14;
+      const lines = j.gold ? ['Три бажання? Ні, сам працюй!', 'Я золота, а не банкомат!', 'Бажання: щоб ти не клацав.'] : ['БУЛЬ!', 'Я ж риба!', 'Ай, мокро!', 'Ей! Я пливла!', 'Бульк-бульк!'];
+      j.say = lines[Math.floor(Math.random() * lines.length)];
+      if (j.gold) for (let i = 0; i < 24; i++) this.sparks.push({ x: p.x, y: p.y, vx: rnd(-50, 50), vy: rnd(-70, -10), life: rnd(0.5, 1), c: Math.random() < 0.5 ? '#ffcd75' : '#f4f4f4' });
+      return true;
+    }
+    if (this.map.water.has(Math.floor(x / TILE) + ',' + Math.floor(y / TILE))) {
+      this.leap(x, y, { say: '?', h: 8 });
+      return true;
+    }
+    return false;
   }
 
   drawFish(g) {
     for (const j of this.jumps) {
-      const k = Math.min(1, j.t / j.dur);
+      const land = j.y2 ?? j.y;
       // splash rings where it left and where it lands
-      for (const [sx, st] of [[j.x, j.t], [j.x2, j.t - j.dur]]) {
+      for (const [sx, sy, st] of [[j.x, j.y, j.t], [j.x2, land, j.t - j.dur]]) {
         if (st < 0 || st > 0.6) continue;
         const r = 2 + st * 10;
         g.globalAlpha = 1 - st / 0.6;
-        g.fillStyle = "#f4f4f4";
-        g.fillRect(Math.round(sx - r), Math.round(j.y), 2, 1);
-        g.fillRect(Math.round(sx + r - 1), Math.round(j.y), 2, 1);
-        if (st < 0.15) { g.fillRect(Math.round(sx - 1), Math.round(j.y - 3 - st * 20), 1, 2); g.fillRect(Math.round(sx + 2), Math.round(j.y - 2 - st * 16), 1, 2); }
+        g.fillStyle = '#f4f4f4';
+        g.fillRect(Math.round(sx - r), Math.round(sy), 2, 1);
+        g.fillRect(Math.round(sx + r - 1), Math.round(sy), 2, 1);
+        if (st < 0.15) { g.fillRect(Math.round(sx - 1), Math.round(sy - 3 - st * 20), 1, 2); g.fillRect(Math.round(sx + 2), Math.round(sy - 2 - st * 16), 1, 2); }
         g.globalAlpha = 1;
       }
+      const k = Math.min(1, j.t / j.dur);
       if (k >= 1) continue;
-      const x = j.x + (j.x2 - j.x) * k, y = j.y - Math.sin(k * Math.PI) * j.h;
-      const tilt = k < 0.5 ? -1 : 1; // nose up, then nose down
-      const body = j.gold ? "#ffcd75" : "#94b0c2", belly = j.gold ? "#ef7d57" : "#f4f4f4";
-      for (let i = 0; i < 6; i++) {
-        const px = Math.round(x + (i - 3) * j.dir), py = Math.round(y + (i - 3) * tilt * 0.5);
-        g.fillStyle = i === 0 ? "#566c86" : body;
-        g.fillRect(px, py, 1, 2);
-        if (i > 1 && i < 5) { g.fillStyle = belly; g.fillRect(px, py + 1, 1, 1); }
+      const x = j.x + (j.x2 - j.x) * k;
+      const y = j.y + (land - j.y) * k - Math.sin(k * Math.PI) * j.h;
+      // nose follows the arc; flicked fish spin
+      const slope = Math.cos(k * Math.PI) * j.h * Math.PI;
+      const ang = j.spin ? j.t * j.spin : Math.atan2(-slope, Math.abs(j.x2 - j.x) * 4 + 1);
+      g.save();
+      g.translate(Math.round(x), Math.round(y));
+      g.rotate(ang * j.dir);
+      g.scale(j.dir, 1);
+      g.drawImage(FISH[j.gold ? 1 : 0], -6, -4);
+      g.restore();
+      if (j.say && j.t < 1.2) {
+        g.font = '8px "Pixelify Sans", monospace';
+        const w = Math.ceil(g.measureText(j.say).width);
+        g.fillStyle = '#1a1c2c';
+        g.fillText(j.say, Math.round(x - w / 2) + 1, Math.round(y - 9));
+        g.fillStyle = j.gold ? '#ffcd75' : '#f4f4f4';
+        g.fillText(j.say, Math.round(x - w / 2), Math.round(y - 10));
       }
-      g.fillStyle = "#1a1c2c";
-      g.fillRect(Math.round(x + 2 * j.dir), Math.round(y + 2 * tilt * 0.5), 1, 1);
+    }
+    for (const p of this.sparks) {
+      g.fillStyle = p.c;
+      g.fillRect(Math.round(p.x), Math.round(p.y), 1, 1);
     }
   }
 
@@ -222,6 +292,7 @@ export class Critters {
 
   // Click reaction; returns true if a critter was hit.
   poke(x, y) {
+    if (this.pokeFish(x, y)) return true;
     const c = this.list.find((k) => Math.hypot(k.x - x, k.y - 4 - y) < 10);
     if (!c) return false;
     if (c.kind === 'cow') { this.talk(c, KIND.cow.poke); c.state = 'idle'; c.t = 1; c.hopKick = 0.25; }
