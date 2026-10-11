@@ -53,3 +53,7 @@ docs/              # ідеї, рішення
 - `tester` — пише й запускає тести, шукає баги та десинхрони
 
 Типовий цикл: innovator → critic → developer → tester (скіл `/new-feature` проводить через нього).
+
+## Деплой
+- Push у `main` → GitHub Actions (`.github/workflows/deploy.yml`) вивантажує гру по FTP у `/towerdefense.infinityfree.io/htdocs/` (лише змінені файли; `.claude`, `docs`, `tests`, `CLAUDE.md` не вивантажуються).
+- Секрети репозиторію: `FTP_SERVER`, `FTP_USERNAME`, `FTP_PASSWORD`.
