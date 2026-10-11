@@ -551,7 +551,7 @@ function applyCmd(s, c) {
 
 // Weighted draw without repeats from the cards valid for this mode and not maxed out by this player.
 export function pickCards(s, n, pl, guaranteeRare = false) {
-  const pool = CARDS.filter((c) => (!c.modes || c.modes.includes(s.mode)) && (pl.picked[c.id] || 0) < c.max);
+  const pool = CARDS.filter((c) => (!c.modes || c.modes.includes(s.mode)) && !(c.needs && s.opts.locked.includes(c.needs)) && (pl.picked[c.id] || 0) < c.max);
   const out = [];
   if (guaranteeRare) {
     const rares = pool.filter((c) => c.rarity === "rare");

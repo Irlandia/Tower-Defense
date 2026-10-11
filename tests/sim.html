@@ -282,6 +282,19 @@ try {
   const perLane = [0, 1].map((l) => par.queue.filter((q) => q.lane === l).length);
   check("circle 2p: the wave is split evenly between entries", Math.abs(perLane[0] - perLane[1]) <= 3, `${perLane}`);
 
+  // talents respect locked towers and mode
+  let lockOk = true, circSteam = false;
+  for (let seed = 1; seed <= 60; seed++) {
+    const lk = createGame(seed, { locked: ["fire", "tesla"] });
+    const cs = createGame(seed, { mode: "circle" });
+    for (let i = 0; i < 10; i++) {
+      if (pickCards(lk, 3, lk.players[0], i % 2 === 0).some((id) => ["napalm", "steam", "coils", "storm"].includes(id))) lockOk = false;
+      if (pickCards(cs, 3, cs.players[0], true).includes("steam")) circSteam = true;
+    }
+  }
+  check("talents: no cards for locked towers", lockOk);
+  check("talents: steam is not offered in circle mode", !circSteam);
+
   // co-op: separate wallets, talents and ownership
   const co = createGame(9, { players: 2 });
   const [c1, c2] = free(co, 2);

@@ -5,7 +5,7 @@ export const COLS = 26;
 export const ROWS = 14;
 export const TICK_RATE = 20;
 // Bump on every change to sim/data: co-op peers refuse to play with a different version.
-export const VERSION = 19;
+export const VERSION = 20;
 
 export const CONFIG = {
   startGold: 160,
@@ -118,15 +118,16 @@ export const ENEMIES = {
 export const UNLOCKS = { slime: 1, runner: 2, splitter: 3, knight: 4, healer: 6 };
 
 // Talents: each player picks one after every boss kill (one card in each offer is guaranteed rare). rarity: common / rare (rare is stronger and drawn less often);
-// max = how many times one player can take it; modes = where it can appear (default: everywhere).
+// max = how many times one player can take it; modes = where it can appear (default: everywhere);
+// needs = tower that must be unlocked for the card to make sense.
 export const RARITY = { common: { weight: 3, name: 'Звичайний' }, rare: { weight: 1, name: 'Рідкісний' } };
 export const CARDS = [
   // --- towers (common) ---
   { id: 'sharp', name: 'Гострі стріли', desc: "Лучники: +40% шкоди", rarity: "common", max: 2, apply: (s, p) => { p.mods.dmg.arrow *= 1.4; } },
   { id: 'boom', name: 'Порох', desc: "Гармати: +40% шкоди", rarity: "common", max: 2, apply: (s, p) => { p.mods.dmg.cannon *= 1.4; } },
   { id: 'glacier', name: 'Льодовик', desc: "Крига: +50% шкоди, вороги мокрі на 3 с довше", rarity: "common", max: 2, apply: (s, p) => { p.mods.dmg.frost *= 1.5; p.mods.wet += 3; } },
-  { id: 'coils', name: 'Мідні котушки', desc: "Тесла: +40% шкоди", rarity: "common", max: 2, apply: (s, p) => { p.mods.dmg.tesla *= 1.4; } },
-  { id: 'napalm', name: 'Напалм', desc: "Вогонь: горіння +60%", rarity: "common", max: 2, apply: (s, p) => { p.mods.burn *= 1.6; } },
+  { id: 'coils', name: 'Мідні котушки', desc: "Тесла: +40% шкоди", rarity: "common", max: 2, needs: "tesla", apply: (s, p) => { p.mods.dmg.tesla *= 1.4; } },
+  { id: 'napalm', name: 'Напалм', desc: "Вогонь: горіння +60%", rarity: "common", max: 2, needs: "fire", apply: (s, p) => { p.mods.burn *= 1.6; } },
   { id: 'haste', name: 'Адреналін', desc: "Усі вежі: +15% швидкості атаки", rarity: "common", max: 2, apply: (s, p) => { p.mods.rate *= 1.15; } },
   { id: 'optics', name: 'Оптика', desc: "Усі вежі: +12% радіусу", rarity: "common", max: 2, apply: (s, p) => { p.mods.range *= 1.12; } },
   // --- economy (common) ---
@@ -134,8 +135,8 @@ export const CARDS = [
   { id: 'cash', name: 'Скарб', desc: "Одразу +100 золота і ще +15 за кожну пройдену хвилю", rarity: "common", max: 99, apply: (s, p) => { p.gold += 100 + 15 * s.wave; } },
   // --- rare ---
   { id: 'crit', name: 'Око сокола', desc: "Лучники: +15% шансу крита, крит x2.5", rarity: "rare", max: 2, apply: (s, p) => { p.mods.crit += 0.15; p.mods.critMul = 2.5; } },
-  { id: 'storm', name: 'Буря', desc: "Тесла: +2 стрибки блискавки", rarity: "rare", max: 1, apply: (s, p) => { p.mods.chain += 2; } },
-  { id: 'steam', name: 'Парова машина', desc: "Вибух пари (вогонь по мокрих) x2", rarity: "rare", max: 1, apply: (s, p) => { p.mods.steam *= 2; } },
+  { id: 'storm', name: 'Буря', desc: "Тесла: +2 стрибки блискавки", rarity: "rare", max: 1, needs: "tesla", apply: (s, p) => { p.mods.chain += 2; } },
+  { id: 'steam', name: 'Парова машина', desc: "Вибух пари (вогонь по мокрих) x2", rarity: "rare", max: 1, modes: ["classic"], needs: "fire", apply: (s, p) => { p.mods.steam *= 2; } },
   { id: 'veteran', name: 'Ветерани', desc: "Усі вежі: +20% шкоди", rarity: "rare", max: 2, apply: (s, p) => { for (const k in p.mods.dmg) p.mods.dmg[k] *= 1.2; } },
   { id: 'shaman', name: 'Шаман', desc: 'Аури твоїх тотемів сильніші на 50%', rarity: 'rare', max: 1, apply: (s, p) => { p.mods.aura *= 1.5; } },
   { id: 'nomad', name: 'Кочівники', desc: 'Перезарядка переміщення веж −60%', rarity: 'rare', max: 1, apply: (s, p) => { p.mods.moveCd *= 0.4; } },
