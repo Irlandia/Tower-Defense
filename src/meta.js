@@ -59,7 +59,10 @@ export function gameOpts(m, diffId, mode = "classic", players = 1) {
 // Returns crystals earned and whether it's a new record.
 export function finishRun(m, s) {
   const d = DIFFS.find((k) => k.id === s.opts.diff) || DIFFS[0];
-  const earned = Math.round((s.wave + (s.won ? 15 : 0) + Math.floor(s.kills / 40)) * d.reward);
+  // endless run after a win: only the extra waves pay (the win itself was already paid)
+  const earned = s.endless && !s.won
+    ? Math.round(Math.max(0, s.wave - 20) * 2 * d.reward)
+    : Math.round((s.wave + (s.won ? 15 : 0) + Math.floor(s.kills / 40)) * d.reward);
   const key = (s.mode === "circle" ? "circle-" : "") + d.id;
   const record = s.wave > (m.best[key] || 0);
   m.crystals += earned;

@@ -47,7 +47,7 @@ body.side #ui { width: 260px; }
 #netStatus { font-size: 13px; margin-top: 6px; color: var(--silver); }
 #netStatus.good { color: #a7f070; }
 #netStatus.bad { color: var(--orange); }
-#towers { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+#towers { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
 body.side #towers { grid-template-columns: 1fr; }
 .tower-btn { display: flex; align-items: center; gap: 10px; padding: 6px 10px; text-align: left; }
 .tower-btn canvas { width: 40px; height: 40px; flex: none; }

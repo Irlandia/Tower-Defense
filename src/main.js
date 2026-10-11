@@ -1,9 +1,9 @@
 // Client entry: menu/lobby, fixed-tick loop (solo / co-op host / co-op guest), input, DOM UI.
 // All game rules live in ./sim; meta-progression in ./meta; networking in ./net; nick + leaderboard in ./api.
-import { TILE, TICK_RATE, TOWERS, TOWER_ORDER, BRANCHES, CARDS, CONFIG, ABILITIES, MODES, VERSION, BOSSES } from './sim/data.js';
+import { TILE, TICK_RATE, TOWERS, TOWER_ORDER, BRANCHES, CARDS, CONFIG, ABILITIES, MODES, VERSION, BOSSES, bossFor, AURA } from './sim/data.js';
 import {
   createGame, step, canPlace, towerAt, obstacleAt, barrelAt, towerStats, upgradeCost, canEvolve, sellValue, clearCost,
-  enemyAt, abilityMax, isRoad, canMove,
+  enemyAt, abilityMax, isRoad, canMove, hasWall, auraCost,
 } from './sim/sim.js';
 import { Renderer, W, H, MX, MY, PLAYER_COLORS } from './render.js';
 import { drawTower, C } from './sprites.js';
@@ -239,6 +239,7 @@ function selectBuild(kind) {
 function useAbility(id) {
   sfx.unlock();
   if (P().cds[id] > 0 || !running) return;
+  if (id === "wall" && hasWall(state, me())) { banner("Барикада вже стоїть", "gold"); return; }
   ui.build = null;
   if (id === 'nova') { send({ type: 'nova' }); return; }
   ui.ability = ui.ability === id ? null : id;
@@ -253,7 +254,7 @@ window.addEventListener('keydown', (ev) => {
   if (ev.repeat || ev.target.tagName === 'INPUT' || !running) return;
   const k = ev.key.toLowerCase();
   if (talentOpen && ['1', '2', '3', '4'].includes(k)) { pickCard(+k - 1); return; }
-  const idx = ['1', '2', '3', '4', '5'].indexOf(k);
+  const idx = ['1', '2', '3', '4', '5', '6'].indexOf(k);
   if (idx >= 0) selectBuild(TOWER_ORDER[idx]);
   else if (k === 'q') useAbility('meteor');
   else if (k === 'w') useAbility('nova');
@@ -325,6 +326,7 @@ $('pop').addEventListener('click', (ev) => {
   if (a.dataset.act === 'upgrade') upgradeSel();
   if (a.dataset.act === "sell") sellSel();
   if (a.dataset.act === "move") startMove();
+  if (a.dataset.act === 'aura' && t) send({ type: 'aura', id: t.id, aura: a.dataset.aura });
   if (a.dataset.act === 'evolve' && t) send({ type: 'evolve', id: t.id, kind: a.dataset.kind });
   if (a.dataset.act === 'clear') { const o = selObstacle(); if (o) send({ type: 'clear', id: o.id }); ui.selected = null; }
 });
@@ -354,11 +356,22 @@ function updatePop() {
     const evo = canEvolve(t);
     key = `t${t.id}:${t.kind}:${t.level}:${Math.floor(gold / 5)}:${Math.round(st.dmg)}:${st.buff}:${Math.ceil((t.moveCd || 0) / TICK_RATE)}`;
     html = `<div class="pop-title"><b>${def.name}</b> <span>${def.from ? '★ еволюція' : 'рів. ' + t.level}</span></div>
-      <div class="pop-stats"><span>⚔ ${Math.round(st.dmg)}</span><span>◎ ${Math.round(st.range)}</span><span>⏱ ${(TICK_RATE / st.period).toFixed(1)}/с</span>${st.buff ? `<span class="buff">⚡+${Math.round(st.buff * 100)}%</span>` : ''}</div>`;
+      ${def.support
+        ? `<div class="pop-stats"><span>◎ ${def.range}</span><span class="buff">⚔ +${Math.round((t.aura.dmg ? AURA.dmg.bonus[t.aura.dmg - 1] : 0) * 100)}%</span><span>⏱ +${Math.round((t.aura.rate ? AURA.rate.bonus[t.aura.rate - 1] : 0) * 100)}%</span></div>`
+        : `<div class="pop-stats"><span>⚔ ${Math.round(st.dmg)}</span><span>◎ ${Math.round(st.range)}</span><span>⏱ ${(TICK_RATE / st.period).toFixed(1)}/с</span>${st.buff ? `<span class="buff">⚡+${Math.round(st.buff * 100)}%</span>` : ''}</div>`}`;
+    if (def.support) key += `:${t.aura.dmg}${t.aura.rate}`;
     if (!mine) {
       html += `<div class="pop-stats"><span style="color:${PLAYER_COLORS[t.owner]}">Вежа гравця ${partnerNick || 'союзника'}</span></div>`;
     } else {
       if (up) html += `<button data-act="upgrade" ${gold < up ? 'disabled' : ''}>▲ Покращити <i>● ${up}</i></button>`;
+      if (def.support) {
+        for (const k of ['dmg', 'rate']) {
+          const lv = t.aura[k], cost = auraCost(t, k), a = AURA[k];
+          html += cost
+            ? `<button data-act="aura" data-aura="${k}" ${gold < cost ? 'disabled' : ''}>${k === 'dmg' ? '⚔' : '⏱'} ${a.name} ${lv}→${lv + 1} (+${Math.round(a.bonus[lv] * 100)}%) <i>● ${cost}</i></button>`
+            : `<button disabled>${k === 'dmg' ? '⚔' : '⏱'} ${a.name} — МАКС</button>`;
+        }
+      }
       if (evo) {
         html += '<div class="evo-title">Еволюція — обери шлях:</div><div class="evo">';
         for (const k of BRANCHES[t.kind]) {
@@ -399,7 +412,7 @@ function updateUI() {
   for (const id of Object.keys(ABILITIES)) {
     const b = $('ab-' + id);
     b.classList.toggle('active', ui.ability === id);
-    b.classList.toggle('cooling', pl.cds[id] > 0);
+    b.classList.toggle("cooling", pl.cds[id] > 0 || (id === "wall" && hasWall(state, me())));
     b.style.setProperty('--cd', (pl.cds[id] / abilityMax(state, id, me())).toFixed(3));
   }
   const early = state.wave > 0 && !state.queue.length ? Math.ceil(state.countdown / TICK_RATE) * CONFIG.earlyBonus : 0;
@@ -494,15 +507,17 @@ function showEnd(won) {
   running = false;
   talentOpen = false;
   const { earned, record } = Meta.finishRun(meta, state);
-  const title = won ? 'ПЕРЕМОГА!' : state.mode === 'circle' ? 'Коло переповнене' : 'Замок впав';
+  const title = won ? "ПЕРЕМОГА!" : state.endless ? "Нескінченність скінчилась" : state.mode === "circle" ? "Коло переповнене" : "Замок впав";
+  const canContinue = won && state.mode === "circle" && net.role !== "guest";
   const m = $('modal');
   m.innerHTML = `<h2 class="${won ? 'win' : ''}">${title}</h2>
-    <p>Хвиля <b>${state.wave}</b> / ${CONFIG.winWave} · Вбито <b>${state.kills}</b>${state.players.length > 1 ? ` (ти: ${P().kills})` : ''}${record ? ' · <span class="rec">Новий рекорд!</span>' : ''}</p>
+    <p>Хвиля <b>${state.wave}</b>${state.endless ? " (нескінченний)" : " / " + CONFIG.winWave} · Вбито <b>${state.kills}</b>${state.players.length > 1 ? ` (ти: ${P().kills})` : ''}${record ? ' · <span class="rec">Новий рекорд!</span>' : ''}</p>
     <p class="crys">+${earned} 💎 <span>(усього ${meta.crystals})</span></p>
     <p id="scoreMsg">${nick ? 'Надсилаємо результат…' : 'Введи нік у меню, щоб потрапити в таблицю лідерів'}</p>
-    <div class="row">${net.role === 'guest' ? '<p>Чекаємо, поки хост почне нову гру…</p>' : '<button id="again" class="big">Ще раз</button>'}<button id="menuBtn" class="big">Меню</button></div>`;
+    <div class="row">${canContinue ? '<button id="endless" class="big primary">Продовжити ∞</button>' : ""}${net.role === "guest" ? (won && state.mode === "circle" ? "<p>Хост вирішує: продовжити чи ні…</p>" : "<p>Чекаємо, поки хост почне нову гру…</p>") : '<button id="again" class="big">Ще раз</button>'}<button id="menuBtn" class="big">Меню</button></div>`;
   m.classList.remove('hidden');
-  if ($('again')) $('again').addEventListener('click', newRun);
+  if ($("again")) $("again").addEventListener("click", newRun);
+  if ($("endless")) $("endless").addEventListener("click", () => send({ type: "continue" }));
   $('menuBtn').addEventListener('click', openMenu);
   if (nick) {
     Api.addScore({ mode: state.mode, diff: state.opts.diff, wave: state.wave, kills: state.kills, won, coop: state.players.length > 1, partner: partnerNick })
@@ -667,7 +682,7 @@ function handleEvents(events, quiet = false) {
         banner(e.final ? 'ФІНАЛЬНА ХВИЛЯ!' : e.boss ? `Хвиля ${e.wave} — БОС!` : `Хвиля ${e.wave}`, e.boss ? 'boss' : '');
         break;
       case "bossSpawn": {
-        const info = BOSSES[e.wave] || BOSSES[20];
+        const info = bossFor(e.wave);
         sfx.play("rumble");
         banner(info.name.toUpperCase(), "boss intro", info.title, 2600);
         break;
@@ -681,6 +696,12 @@ function handleEvents(events, quiet = false) {
         break;
       case 'gameover': sfx.play('gameover'); showEnd(false); break;
       case 'victory': sfx.play('card'); showEnd(true); break;
+      case "endless":
+        running = true;
+        hide("modal");
+        sfx.play("wave");
+        banner("НЕСКІНЧЕННІСТЬ", "boss intro", "Хвилі важчають, боси частішають", 2600);
+        break;
     }
   }
 }

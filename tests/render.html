@@ -20,7 +20,7 @@ for (const mode of ['classic', 'circle']) {
         const s = createGame(42, { mode, players });
         const free = [];
         for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) if (canPlace(s, x, y)) free.push([x, y]);
-        step(s, TOWER_ORDER.map((kind, i) => ({ type: 'place', kind: i % 3 === 0 ? 'arrow' : 'frost', tx: free[i * 7][0], ty: free[i * 7][1], p: i % players })));
+        step(s, TOWER_ORDER.map((kind, i) => ({ type: 'place', kind: i === 5 ? 'totem' : i % 3 === 0 ? 'arrow' : 'frost', tx: free[i * 7][0], ty: free[i * 7][1], p: i % players })));
         step(s, [{ type: 'nextWave', p: 0 }, { type: 'wall', tx: 0, ty: 0, p: me }]);
         for (let i = 0; i < 200; i++) step(s);
         const uis = [

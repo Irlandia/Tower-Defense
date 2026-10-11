@@ -187,12 +187,24 @@ export function drawTower(g, kind, x, y, level, aim = 0, t = 0, recoil = false) 
       if (on) for (let i = 0; i <= 8; i++) R(g, cx - 4 + i, by - 20 + i * 0.5 + ((i * 7 + t) % 3) - 1, 1, 1, C.white);
       break;
     }
-    case 'dynamo': {
-      box(g, x + 5, by + 2, 14, 9, 3, GOLD);
-      const a = t * 0.2;
-      for (let i = 0; i < 8; i++) R(g, cx + Math.cos(a + i * 0.785) * 6 - 1, by - 13 + Math.sin(a + i * 0.785) * 6 - 1, 2, 2, C.slate);
-      sphere(g, cx, by - 13, 4, [C.silver, C.slate, C.dark, C.ink]);
-      R(g, cx - 1, by - 14, 2, 2, C.yellow);
+    case 'overload': {
+      // fat coil with a red overcharged core
+      cyl(g, cx, by, 5, 10, IRON);
+      for (const h of [3, 6, 9]) { ellipse(g, cx, by - h, 7, 2, C.orange); R(g, cx - 7, by - h - 1, 14, 1, C.yellow); }
+      cyl(g, cx, by - 10, 2, 5, IRON);
+      const hot = (t >> 2) % 2;
+      sphere(g, cx, by - 19, 4, hot ? [C.white, C.yellow, C.orange, C.red] : [C.yellow, C.orange, C.red, C.plum]);
+      if (hot) { R(g, cx - 7, by - 21, 1, 1, C.yellow); R(g, cx + 6, by - 17, 1, 1, C.yellow); }
+      break;
+    }
+    case 'totem': {
+      // carved obelisk with a floating gem; runes orbit it per aura level
+      box(g, x + 7, by + 2, 10, 15, 3, [C.silver, C.slate, C.dark]);
+      R(g, x + 9, by - 9, 2, 2, C.cyan); R(g, x + 9, by - 4, 2, 2, C.lime); R(g, x + 12, by - 7, 2, 2, C.yellow);
+      const bob = Math.round(Math.sin(t * 0.15) * 1.5);
+      crystal(g, cx, by - 17 + bob, 4, 9, [C.white, C.lime, C.green]);
+      const a = t * 0.08;
+      for (let i = 0; i < level; i++) R(g, cx + Math.cos(a + i * 2.1) * 10, by - 8 + Math.sin(a + i * 2.1) * 4, 2, 2, i % 2 ? C.yellow : C.cyan);
       break;
     }
     case 'inferno':
@@ -210,6 +222,7 @@ export function drawTower(g, kind, x, y, level, aim = 0, t = 0, recoil = false) 
       break;
     }
   }
+  if (kind === "totem") return; // totem shows aura levels as orbiting runes instead of pips
   if (level > 3) drawIcon(g, 'star', x + 10, y + 18);
   else for (let i = 1; i < level; i++) R(g, x + 4 + i * 4, y + 19, 3, 2, C.yellow);
 }

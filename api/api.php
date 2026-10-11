@@ -77,7 +77,7 @@ switch ($action) {
         $diffs = ['normal' => 1, 'hard' => 1.4, 'nightmare' => 1.9];
         $mode = in_array($body['mode'] ?? '', ['classic', 'circle'], true) ? $body['mode'] : 'classic';
         $diff = isset($diffs[$body['diff'] ?? '']) ? $body['diff'] : 'normal';
-        $wave = max(0, min(20, (int)($body['wave'] ?? 0)));
+        $wave = max(0, min(500, (int)($body['wave'] ?? 0)));
         $kills = max(0, min(100000, (int)($body['kills'] ?? 0)));
         $won = !empty($body['won']) && $wave >= 20;
         $row = [

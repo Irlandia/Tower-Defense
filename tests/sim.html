@@ -3,7 +3,7 @@
 <title>Sim tests</title>
 <pre id="out">running…</pre>
 <script type="module">
-import { createGame, step, canPlace, canEvolve, isRoad, posAt } from '../src/sim/sim.js';
+import { createGame, step, canPlace, canEvolve, isRoad, posAt, towerStats, vsMult } from '../src/sim/sim.js';
 import { TOWERS, TOWER_ORDER, BRANCHES, COLS, ROWS } from '../src/sim/data.js';
 
 const lines = [];
@@ -178,6 +178,53 @@ try {
   for (let i = 0; i < 30 * 20; i++) step(mv);
   step(mv, [{ type: "move", id: mt.id, tx: m1[0], ty: m1[1], p: 0 }]);
   check("move: allowed again after 30 s", mt.tx === m1[0] && mt.ty === m1[1]);
+
+  // totem auras: buff nearby towers, upgrade levels cost more each time, no stacking
+  const tg = createGame(13, { bonusGold: 3000 });
+  const road = [...tg.map.tiles].map((k) => k.split(",").map(Number));
+  let ta = null, tb = null;
+  for (let ty = 0; ty < ROWS && !tb; ty++) for (let tx = 0; tx < COLS - 1 && !tb; tx++) {
+    if (canPlace(tg, tx, ty) && canPlace(tg, tx + 1, ty)) { ta = [tx, ty]; tb = [tx + 1, ty]; }
+  }
+  step(tg, [{ type: "place", kind: "arrow", tx: ta[0], ty: ta[1], p: 0 }, { type: "place", kind: "totem", tx: tb[0], ty: tb[1], p: 0 }]);
+  const [archer, totem] = tg.towers;
+  const base = towerStats(tg, archer);
+  const g1 = tg.players[0].gold;
+  step(tg, [{ type: "aura", id: totem.id, aura: "dmg", p: 0 }, { type: "aura", id: totem.id, aura: "dmg", p: 0 }, { type: "aura", id: totem.id, aura: "rate", p: 0 }]);
+  const buffed = towerStats(tg, archer);
+  check("totem: auras raise damage and attack speed of neighbours", buffed.dmg > base.dmg * 1.19 && buffed.period < base.period, `dmg ${base.dmg}->${buffed.dmg}`);
+  check("totem: aura levels get pricier (60+110+60)", g1 - tg.players[0].gold === 230);
+  step(tg, [{ type: "aura", id: totem.id, aura: "dmg", p: 0 }, { type: "aura", id: totem.id, aura: "dmg", p: 0 }]);
+  check("totem: max 3 aura levels", totem.aura.dmg === 3);
+  check("totem: never shoots, cannot evolve", !canEvolve(totem) && towerStats(tg, totem).dmg === 0);
+  void road;
+
+  // barricade: one standing wall per player
+  const bw = createGame(7);
+  const rt = [...bw.map.tiles].map((k) => k.split(",").map(Number)).filter(([x]) => x >= 0);
+  step(bw, [{ type: "wall", tx: rt[2][0], ty: rt[2][1], p: 0 }]);
+  bw.players[0].cds.wall = 0;
+  step(bw, [{ type: "wall", tx: rt[6][0], ty: rt[6][1], p: 0 }]);
+  check("barricade: only one standing per player", bw.walls.length === 1);
+
+  // endless circle: continue after the win, waves go past 20 with more bosses
+  const en = createGame(21, { mode: "circle" });
+  en.wave = 20; en.won = true; en.over = true;
+  step(en, [{ type: "continue", p: 0 }]);
+  check("endless: continue reopens the run", !en.over && en.endless && !en.won);
+  step(en, [{ type: "nextWave", p: 0 }]);
+  step(en, [{ type: "nextWave", p: 0 }]);
+  while (en.queue.length) { en.queue = en.queue.filter((q) => false); }
+  step(en, [{ type: "nextWave", p: 0 }]);
+  check("endless: waves keep coming past 20", en.wave === 21 || en.wave > 20);
+  const en2 = createGame(21, { mode: "circle" });
+  en2.wave = 21; en2.endless = true;
+  step(en2, [{ type: "nextWave", p: 0 }]);
+  const bosses = en2.queue.filter((q) => q.type === "boss" || q.type === "king").length;
+  check("endless: boss waves every 2 waves after 20", en2.wave === 22 && bosses >= 1, `bosses=${bosses}`);
+
+  // tower vs enemy type
+  check("enemy types: runner weak to arrows, resists cannons", vsMult("runner", "arrow") > 1 && vsMult("runner", "cannon") < 1 && vsMult("runner", null) === 1);
 
   // co-op: separate wallets, talents and ownership
   const co = createGame(9, { players: 2 });

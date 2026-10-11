@@ -1,5 +1,5 @@
 // Canvas renderer + visual juice. Reads sim state, never mutates it.
-import { TILE, COLS, ROWS, TICK_RATE, TOWERS, CONFIG, ABILITIES, BARREL, BOSSES } from './sim/data.js';
+import { TILE, COLS, ROWS, TICK_RATE, TOWERS, CONFIG, ABILITIES, BARREL, BOSSES, bossFor } from './sim/data.js';
 import { towerStats, canPlace, posAt, isRoad, canMove } from './sim/sim.js';
 import {
   C, SPRITES, FLASH, FROZEN, ENEMY_COLOR, drawTower, drawCastle, drawCave, drawNum, numWidth, drawIcon,
@@ -129,6 +129,7 @@ export class Renderer {
           break;
         case 'zap':
           this.zaps.push({ pts: e.pts, life: 0.18 });
+          if (e.over >= 2) this.burst(e.pts[1].x, e.pts[1].y, 10, C.orange, 60);
           for (const p of e.pts.slice(1)) this.burst(p.x, p.y, 4, C.cyan, 50);
           break;
         case 'meteor':
@@ -139,14 +140,14 @@ export class Renderer {
           this.shake = 8;
           break;
         case "bossSpawn": {
-          const info = BOSSES[e.wave] || BOSSES[20];
+          const info = bossFor(e.wave);
           this.bossInfo[e.id] = info;
           this.quake = 2.2;
           this.say(e.id, info.lines[Math.floor(Math.random() * info.lines.length)], 3.5);
           break;
         }
         case "bossRage": {
-          const info = this.bossInfo[e.id] || BOSSES[e.wave] || BOSSES[20];
+          const info = this.bossInfo[e.id] || bossFor(e.wave);
           this.say(e.id, info.rage[Math.floor(Math.random() * info.rage.length)], 2.5);
           this.shake = Math.max(this.shake, 4);
           break;
@@ -219,6 +220,10 @@ export class Renderer {
         case 'upgrade':
           this.burst(e.x, e.y + 8, 14, C.silver, 45, -12);
           if (e.type === 'upgrade') this.burst(e.x, e.y - 6, 12, C.yellow, 50, -40);
+          break;
+        case "aura":
+          this.rings.push({ x: e.x, y: e.y, r: 4, max: 60, c: e.aura === "dmg" ? C.orange : C.cyan, life: 1 });
+          this.burst(e.x, e.y - 10, 20, e.aura === "dmg" ? C.orange : C.cyan, 60, -30);
           break;
         case "move":
           this.burst(e.fx, e.fy + 8, 14, "#8a6248", 45, -15);
@@ -324,7 +329,7 @@ export class Renderer {
         drawCastle(g, s.map.castle[0] * TILE, s.map.castle[1] * TILE);
       } else if (it.t) {
         const t = it.t;
-        drawTower(g, t.kind, t.tx * TILE, t.ty * TILE, TOWERS[t.kind].from ? 4 : t.level, t.aim, s.tick, s.tick - t.fired < 2);
+        drawTower(g, t.kind, t.tx * TILE, t.ty * TILE, TOWERS[t.kind].support ? t.aura.dmg + t.aura.rate : TOWERS[t.kind].from ? 4 : t.level, t.aim, s.tick, s.tick - t.fired < 2);
         if (s.players.length > 1) this.ownerMark(t.tx * TILE, t.ty * TILE, t.owner);
         if (towerStats(s, t).buff) this.buffMark(t.tx * TILE, t.ty * TILE, s.tick);
         if ('t' + t.id === ui.selected || hov(t.tx, t.ty)) this.outline(t.tx * TILE, t.ty * TILE);
