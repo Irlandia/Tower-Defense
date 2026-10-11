@@ -309,6 +309,29 @@ try {
   step(pr, [{ type: "nextWave", p: 0 }]);
   check("thief: takes 4% of partner gold (max 20) at wave start", pr.players[1].gold === 384 && pr.players[0].gold === pg0 + 16, `${pr.players[1].gold}`);
 
+  // boss skills: brood spawns slimes, magnet pulls tower fire, decree stuns towers, king splits on rage
+  const skillOf = (wave) => {
+    const g = createGame(9, { bonusGold: 5000 });
+    const fr = free(g, 3);
+    step(g, fr.map(([tx, ty]) => ({ type: "place", kind: "arrow", tx, ty, p: 0 })));
+    g.wave = wave; g.countdown = 1e9;
+    g.queue = [{ type: wave === 20 ? "king" : "boss", lane: 0, at: g.tick + 1, hpMul: 50 }];
+    const seen = new Set();
+    let stunned = false, magnetFocus = false, slimes = 0;
+    for (let i = 0; i < 20 * 25; i++) {
+      step(g);
+      for (const e of g.events) if (e.type === "bossSkill") seen.add(e.kind);
+      if (g.towers.some((t) => t.stunT > 0)) stunned = true;
+      slimes = Math.max(slimes, g.enemies.filter((e) => e.type === "slime").length);
+    }
+    return { seen, stunned, slimes };
+  };
+  const b5 = skillOf(5), b10 = skillOf(10), b15 = skillOf(15), b20 = skillOf(20);
+  check("boss skills: Grok dashes", b5.seen.has("dash"));
+  check("boss skills: Slime Mother spawns slimes", b10.seen.has("brood") && b10.slimes >= 2, `slimes=${b10.slimes}`);
+  check("boss skills: Baron uses magnet", b15.seen.has("magnet"));
+  check("boss skills: King decree", b20.seen.has("decree"));
+
   // co-op: separate wallets, talents and ownership
   const co = createGame(9, { players: 2 });
   const [c1, c2] = free(co, 2);

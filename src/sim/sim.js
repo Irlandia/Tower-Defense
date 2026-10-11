@@ -3,7 +3,7 @@
 // Every command carries `p` = player index (0 = host/solo, 1 = guest); each player has own gold, talents, abilities.
 import {
   TILE, COLS, ROWS, TICK_RATE as T, CONFIG, TOWERS, ENEMIES, UNLOCKS, CARDS,
-  MAPGEN, MODES, BARREL, OBSTACLES, COIN, ABILITIES, AURA, BRANCHES, RARITY,
+  MAPGEN, MODES, BARREL, OBSTACLES, COIN, ABILITIES, AURA, BRANCHES, RARITY, BOSSES, bossKey,
 } from './data.js';
 import { rand, randInt } from './rng.js';
 
@@ -348,6 +348,7 @@ export function step(s, cmds = [], advance = true) {
     const q = s.queue.shift();
     const e = spawn(s, q.type, q.lane, 0, q.hpMul);
     e.bossWave = s.wave;
+    if (ENEMIES[q.type].lives) { e.bk = bossKey(s.wave); e.abT = BOSSES[e.bk].skill.every * T; }
     if (ENEMIES[q.type].lives) s.events.push({ type: "bossSpawn", id: e.id, kind: q.type, wave: s.wave });
   }
 
@@ -674,7 +675,9 @@ function updateEnemy(s, e) {
     }
     if (healed) s.events.push({ type: 'heal', x: e.x, y: e.y });
   }
-  const speed = def.speed * e.speedMul * (e.slowT > 0 ? e.slowF : 1);
+  if (e.bk) bossSkill(s, e);
+  if (e.dead) return;
+  const speed = def.speed * e.speedMul * (e.slowT > 0 ? e.slowF : 1) * (e.dashT > 0 ? BOSSES[e.bk].skill.mult : 1);
   const next = posAt(s.map, e.lane, e.dist + speed / T);
   // Barricades stop enemies walking into them; enemies chew through the wall.
   const wall = s.walls.find((w) => w.hp > 0 && Math.hypot(next.x - w.x, next.y - w.y) < 16 && Math.hypot(next.x - w.x, next.y - w.y) < Math.hypot(e.x - w.x, e.y - w.y));
@@ -708,6 +711,31 @@ function updateEnemy(s, e) {
   }
 }
 
+// Each boss has a signature move on a timer (see BOSSES[].skill in data.js).
+function bossSkill(s, e) {
+  const sk = BOSSES[e.bk].skill;
+  if (e.dashT > 0) e.dashT--;
+  if (e.magnetT > 0) e.magnetT--;
+  if (e.slowT > 0 && e.slowF === 0) return; // frozen bosses cannot act
+  if (--e.abT > 0) return;
+  e.abT = sk.every * T;
+  switch (sk.type) {
+    case "dash": // Grok charges forward
+      e.dashT = Math.round(sk.dur * T);
+      break;
+    case "brood": // Slime Mother births slimes right behind her
+      for (let i = 0; i < sk.count; i++) spawn(s, "slime", e.lane, Math.max(0, e.dist - 10 - i * 9), e.hpMul * 0.5);
+      break;
+    case "magnet": // Baron drags every tower's fire (and the players' cursors) to himself
+      e.magnetT = Math.round(sk.dur * T);
+      break;
+    case "decree": // the King stuns towers around him
+      for (const t of s.towers) if (Math.hypot(t.x - e.x, t.y - e.y) <= sk.range) t.stunT = Math.round(sk.stun * T);
+      break;
+  }
+  s.events.push({ type: "bossSkill", kind: sk.type, id: e.id, x: e.x, y: e.y, r: sk.range || 0 });
+}
+
 function updateZone(s, z) {
   z.life--;
   if (z.life % 5) return;
@@ -723,6 +751,7 @@ function inRange(s, x, y, range) {
 function updateTower(s, t) {
   if (t.moveCd > 0) t.moveCd--;
   if (TOWERS[t.kind].support) return;
+  if (t.stunT > 0) { t.stunT--; return; } // stunned by the King's decree
   if (t.cd > 0) { t.cd--; return; }
   const def = TOWERS[t.kind];
   const st = towerStats(s, t);
@@ -730,6 +759,9 @@ function updateTower(s, t) {
   if (!targets.length) return;
   // "first" = furthest along its lane; snipers pick the toughest
   targets.sort(def.target === 'strong' ? (a, b) => b.hp - a.hp || a.id - b.id : (a, b) => b.dist - a.dist || a.id - b.id);
+  // a magnetised boss in range pulls every tower's fire
+  const mag = targets.find((e) => e.magnetT > 0);
+  if (mag) { targets.splice(targets.indexOf(mag), 1); targets.unshift(mag); }
   const target = targets[0];
   t.cd = st.period;
   t.aim = Math.atan2(target.y - t.y, target.x - t.x);
@@ -888,6 +920,8 @@ function damage(s, e, amount, owner, { pierce = false, crit = false, big = false
   if (!quiet) s.events.push({ type: "hit", x: e.x, y: e.y, dmg: d, crit: crit || big, eff: mult > 1 ? 1 : mult < 1 ? -1 : 0 });
   if (ENEMIES[e.type].lives && !e.raged && e.hp > 0 && e.hp < e.maxHp / 2) {
     e.raged = true;
+    // the King splits when wounded
+    if (e.bk && BOSSES[e.bk].skill.split) for (let i = 0; i < BOSSES[e.bk].skill.split; i++) spawn(s, "splitter", e.lane, Math.max(0, e.dist - 8 - i * 10), e.hpMul * 0.6);
     s.events.push({ type: "bossRage", id: e.id, wave: e.bossWave || s.wave });
   }
   if (e.hp <= 0) kill(s, e, owner);

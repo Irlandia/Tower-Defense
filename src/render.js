@@ -149,6 +149,12 @@ export class Renderer {
           this.say(e.id, info.lines[Math.floor(Math.random() * info.lines.length)], 3.5);
           break;
         }
+        case "bossSkill":
+          if (e.kind === "dash") { this.burst(e.x, e.y + 4, 20, "#a8805e", 70, -10); this.text(e.x, e.y - 34, "!!", C.red, 2); this.shake = Math.max(this.shake, 3); }
+          if (e.kind === "brood") { this.burst(e.x, e.y, 24, C.lime, 60, -20); this.rings.push({ x: e.x, y: e.y, r: 2, max: 20, c: C.green, life: 0.8 }); }
+          if (e.kind === "magnet") { this.rings.push({ x: e.x, y: e.y - 8, r: 60, max: 4, c: C.silver, life: 1 }); this.burst(e.x, e.y - 8, 16, C.silver, 50); }
+          if (e.kind === "decree") { this.rings.push({ x: e.x, y: e.y, r: 4, max: e.r, c: C.plum, life: 1 }); this.rings.push({ x: e.x, y: e.y, r: 2, max: e.r * 0.6, c: C.yellow, life: 1 }); this.shake = Math.max(this.shake, 4); }
+          break;
         case "bossRage": {
           const info = this.bossInfo[e.id] || bossFor(e.wave);
           this.say(e.id, info.rage[Math.floor(Math.random() * info.rage.length)], 2.5);
@@ -339,7 +345,8 @@ export class Renderer {
         const t = it.t;
         drawTower(g, t.kind, t.tx * TILE, t.ty * TILE, TOWERS[t.kind].support ? t.aura.dmg + t.aura.rate : TOWERS[t.kind].from ? 4 : t.level, t.aim, s.tick, s.tick - t.fired < 2);
         if (s.players.length > 1) this.ownerMark(t.tx * TILE, t.ty * TILE, t.owner);
-        if (towerStats(s, t).buff) this.buffMark(t.tx * TILE, t.ty * TILE, s.tick);
+        this.auraMarks(s, t);
+        if (t.stunT > 0) this.stunMark(t, s.tick);
         if ('t' + t.id === ui.selected || hov(t.tx, t.ty)) this.outline(t.tx * TILE, t.ty * TILE);
       } else this.drawEnemy(g, it.e, alpha, s.tick, ui.hoverEnemy === it.e.id);
     }
@@ -358,6 +365,7 @@ export class Renderer {
       if (!canPlace(s, tx, ty)) { g.fillStyle = 'rgba(177,62,83,0.45)'; g.fillRect(tx * TILE, ty * TILE, TILE, TILE); }
     }
 
+    this.drawMagnets(s);
     this.drawProjectiles(s, alpha);
     for (const c of s.coins) drawCoin(g, c.x, c.y, s.tick + c.id, c.life < 2 * TICK_RATE);
     for (const ch of this.chests) drawChest(g, ch.x, ch.y - (1 - ch.life) * 14);
@@ -425,7 +433,7 @@ export class Renderer {
     g.fillStyle = C.red; g.fillRect(x, y + 10, Math.round(w * Math.max(0, e.hp) / e.maxHp), 4);
     g.font = "8px \"Pixelify Sans\", monospace";
     g.fillStyle = C.yellow;
-    g.fillText(`${info.name} — ${info.title}`, x + 2, y + 7);
+    g.fillText(`${info.name} — ${info.title} · ${info.skill.name}`, x + 2, y + 7);
   }
 
   drawWater(s) {
@@ -554,6 +562,68 @@ export class Renderer {
     ellipse(g, Math.round(z.x), Math.round(z.y), Math.round(z.r * 0.6), Math.round(z.r * 0.3), C.orange);
     g.globalAlpha = 1;
     if ((tick + Math.round(z.x)) % 3 === 0) this.parts.push({ x: z.x + Math.random() * z.r - z.r / 2, y: z.y, vx: 0, vy: -18, life: 0.4, c: C.yellow });
+  }
+
+  // Aura buffs on a tower: orange sword = damage aura, cyan clock = attack-speed aura.
+  // Totems with any aura show their reach as a soft dotted ring.
+  auraMarks(s, t) {
+    const g = this.g;
+    const x = t.tx * TILE, y = t.ty * TILE;
+    if (TOWERS[t.kind].support) {
+      if (!t.aura.dmg && !t.aura.rate) return;
+      const r = TOWERS[t.kind].range, n = 28, ph = s.tick * 0.02;
+      g.fillStyle = t.aura.dmg >= t.aura.rate ? 'rgba(239,125,87,0.55)' : 'rgba(115,239,247,0.55)';
+      for (let i = 0; i < n; i++) {
+        const a = ph + (i / n) * Math.PI * 2;
+        g.fillRect(Math.round(t.x + Math.cos(a) * r), Math.round(t.y + Math.sin(a) * r * 0.8), 2, 1);
+      }
+      return;
+    }
+    const a = towerStats(s, t).aura;
+    if (!a || (!a.dmg && !a.rate)) return;
+    const glow = (s.tick >> 3) % 2;
+    if (a.dmg) {
+      // tiny sword
+      g.fillStyle = C.ink; g.fillRect(x + 1, y + 15, 5, 7);
+      g.fillStyle = glow ? C.yellow : C.orange; g.fillRect(x + 3, y + 16, 1, 4);
+      g.fillStyle = C.orange; g.fillRect(x + 2, y + 19, 3, 1); g.fillRect(x + 3, y + 20, 1, 1);
+    }
+    if (a.rate) {
+      // tiny clock
+      g.fillStyle = C.ink; g.fillRect(x + 18, y + 15, 6, 6);
+      g.fillStyle = glow ? C.white : C.cyan; g.fillRect(x + 19, y + 16, 4, 4);
+      g.fillStyle = C.ink; g.fillRect(x + 21, y + 17, 1, 2); g.fillRect(x + 21, y + 18, 1, 1);
+    }
+  }
+
+  // Stunned by the King's decree: grey veil and floating "z".
+  stunMark(t, tick) {
+    const g = this.g;
+    const x = t.tx * TILE, y = t.ty * TILE;
+    g.fillStyle = 'rgba(86,108,134,0.45)';
+    g.fillRect(x + 3, y - 8, 18, 30);
+    g.fillStyle = C.white;
+    const k = (tick >> 2) % 6;
+    g.fillRect(x + 15, y - 6 - k, 3, 1); g.fillRect(x + 16, y - 5 - k, 1, 1); g.fillRect(x + 15, y - 4 - k, 3, 1);
+  }
+
+  // Baron's magnet: crackling lines to every tower in reach.
+  drawMagnets(s) {
+    const g = this.g;
+    for (const e of s.enemies) {
+      if (!(e.magnetT > 0)) continue;
+      const r = 110;
+      g.strokeStyle = 'rgba(148,176,194,0.6)';
+      g.lineWidth = 1;
+      g.beginPath();
+      g.arc(Math.round(e.x), Math.round(e.y - 8), 14 + ((s.tick >> 1) % 6), 0, Math.PI * 2);
+      g.stroke();
+      g.fillStyle = (s.tick >> 1) % 2 ? C.silver : C.cyan;
+      for (const t of s.towers) {
+        if (TOWERS[t.kind].support || Math.hypot(t.x - e.x, t.y - e.y) > r) continue;
+        this.jaggedLine({ x: t.x, y: t.y - 12 }, { x: e.x, y: e.y - 8 });
+      }
+    }
   }
 
   buffMark(x, y, tick) {

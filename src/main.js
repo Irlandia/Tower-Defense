@@ -166,15 +166,41 @@ function fit() {
 window.addEventListener('resize', fit);
 
 // ---------- input ----------
+const magnetBoss = () => (running ? state.enemies.find((e) => e.magnetT > 0) : null);
+let lastMouseEv = null;
 function toMap(ev) {
   const r = canvas.getBoundingClientRect();
-  const x = ((ev.clientX - r.left) / r.width) * W - MX;
-  const y = ((ev.clientY - r.top) / r.height) * H - MY;
+  let x = ((ev.clientX - r.left) / r.width) * W - MX;
+  let y = ((ev.clientY - r.top) / r.height) * H - MY;
+  // Baron's magnet drags the cursor (and so every click) towards him
+  const mag = magnetBoss();
+  if (mag) { x += (mag.x - x) * 0.35; y += (mag.y - 8 - y) * 0.35; }
   return { x, y, tx: Math.floor(x / TILE), ty: Math.floor(y / TILE) };
+}
+
+// While the magnet is on the system cursor is hidden and a dragged pixel cursor is drawn instead.
+function drawPulledCursor() {
+  const on = !!magnetBoss();
+  canvas.classList.toggle('magnet', on);
+  if (!on || !lastMouseEv) return;
+  const m = toMap(lastMouseEv);
+  ui.mouse = m;
+  ui.hover = m.y >= 0 && m.x >= 0 ? { tx: m.tx, ty: m.ty } : null;
+  const g = canvas.getContext('2d');
+  const x = Math.round(m.x) + MX, y = Math.round(m.y) + MY;
+  const arrow = ['1', '11', '121', '1221', '12221', '122221', '1222221', '1221111', '11 121', '1  121', '    11'];
+  arrow.forEach((row, j) => {
+    for (let i = 0; i < row.length; i++) {
+      if (row[i] === ' ') continue;
+      g.fillStyle = row[i] === '1' ? C.ink : C.silver;
+      g.fillRect(x + i, y + j, 1, 1);
+    }
+  });
 }
 
 let lastCursor = 0;
 canvas.addEventListener('mousemove', (ev) => {
+  lastMouseEv = ev;
   const m = toMap(ev);
   ui.mouse = m;
   ui.hover = m.y >= 0 && m.x >= 0 ? { tx: m.tx, ty: m.ty } : null;
@@ -848,6 +874,7 @@ function loop(now) {
   const alpha = simulate(now);
   renderer.draw(state, alpha, ui, real / 1000);
   drawPartnerCursor();
+  drawPulledCursor();
   if (running) updateUI();
 }
 
@@ -891,3 +918,8 @@ if (new URLSearchParams(location.search).has('demo')) {
   } else send({ type: 'nextWave' });
 } else openMenu();
 requestAnimationFrame(frame);
+
+// Buttons must not keep keyboard focus: Space is the "next wave" hotkey and would also "click" a focused
+// (possibly hidden) button such as "Ще раз" / "Почати разом", restarting the game and wiping the enemies.
+document.addEventListener('click', (ev) => { const b = ev.target.closest('button'); if (b) b.blur(); });
+document.addEventListener('keyup', (ev) => { if (ev.key === ' ' && ev.target.tagName === 'BUTTON') ev.preventDefault(); }, true);

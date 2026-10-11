@@ -6,7 +6,7 @@ export const COLS = 26;
 export const ROWS = 14;
 export const TICK_RATE = 20;
 // Bump on every change to sim/data: co-op peers refuse to play with a different version.
-export const VERSION = 22;
+export const VERSION = 23;
 
 export const CONFIG = {
   startGold: 160,
@@ -162,12 +162,15 @@ export const CARDS = [
 
 // Boss intros by wave: name banner, a line on arrival and one when they drop below half HP.
 export const BOSSES = {
-  5: { name: 'Ґрок Гнилозуб', title: 'Пожирач Мостів', lines: ['Ваші вежі — мої зубочистки!', 'Хрум-хрум... хто тут смачний?', 'Ґрок голодний!'], rage: ['Ґрок ЗЛИЙ!', 'Ай! Це було боляче!'] },
-  10: { name: 'Мама Слизу', title: 'Королева Калюж', lines: ['Діточки, мама прийшла!', 'Хто образив моїх слизиків?!', 'Буль-буль... зараз я вас обійму.'], rage: ['Ви за це заплатите!', 'МОЇ ДІТОЧКИ!'] },
-  15: { name: 'Барон Іржавий', title: 'Володар Брухту', lines: ['Сталь не боїться ваших стріл!', 'Здавайтеся, і я буду милосердним. Жартую.', 'Мій обладунок древніший за ваш замок!'], rage: ['Подряпина? НА МОЇЙ БРОНІ?!', 'Досить ігор!'] },
-  20: { name: 'Король Слизу', title: 'Останній Прилив', lines: ['На коліна перед королем!', 'Це королівство тепер моє.', 'Я — кінець вашої історії.'], rage: ['НЕМОЖЛИВО!', 'Я лише почав розминатися!'] },
+  5: { name: 'Ґрок Гнилозуб', title: 'Пожирач Мостів', skill: { type: "dash", name: "Ривок", every: 6, dur: 1.2, mult: 3 }, lines: ['Ваші вежі — мої зубочистки!', 'Хрум-хрум... хто тут смачний?', 'Ґрок голодний!'], rage: ['Ґрок ЗЛИЙ!', 'Ай! Це було боляче!'] },
+  10: { name: 'Мама Слизу', title: 'Королева Калюж', skill: { type: "brood", name: "Виводок", every: 4, count: 2 }, lines: ['Діточки, мама прийшла!', 'Хто образив моїх слизиків?!', 'Буль-буль... зараз я вас обійму.'], rage: ['Ви за це заплатите!', 'МОЇ ДІТОЧКИ!'] },
+  15: { name: 'Барон Іржавий', title: 'Володар Брухту', skill: { type: "magnet", name: "Магніт", every: 9, dur: 3, range: 110 }, lines: ['Сталь не боїться ваших стріл!', 'Здавайтеся, і я буду милосердним. Жартую.', 'Мій обладунок древніший за ваш замок!'], rage: ['Подряпина? НА МОЇЙ БРОНІ?!', 'Досить ігор!'] },
+  20: { name: 'Король Слизу', title: 'Останній Прилив', skill: { type: "decree", name: "Указ і Розкол", every: 7, range: 72, stun: 2, split: 3 }, lines: ['На коліна перед королем!', 'Це королівство тепер моє.', 'Я — кінець вашої історії.'], rage: ['НЕМОЖЛИВО!', 'Я лише почав розминатися!'] },
 };
 // Endless waves reuse the boss roster in rotation.
+export function bossKey(w) {
+  return BOSSES[w] ? w : [5, 10, 15, 20][Math.floor(w / 2) % 4];
+}
 export function bossFor(w) {
-  return BOSSES[w] || BOSSES[[5, 10, 15, 20][Math.floor(w / 2) % 4]];
+  return BOSSES[bossKey(w)];
 }
