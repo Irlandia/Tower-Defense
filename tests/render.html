@@ -1,0 +1,44 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Render smoke test</title>
+<canvas id="c" width="640" height="360"></canvas>
+<pre id="out">running…</pre>
+<script type="module">
+// Draws frames in every mode / player count / UI state to catch renderer exceptions (they freeze the game loop).
+import { createGame, step, canPlace } from '../src/sim/sim.js';
+import { TOWER_ORDER, COLS, ROWS } from '../src/sim/data.js';
+import { Renderer } from '../src/render.js';
+
+const out = [];
+let failed = 0;
+const r = new Renderer(document.getElementById('c'));
+for (const mode of ['classic', 'circle']) {
+  for (const players of [1, 2]) {
+    for (let me = 0; me < players; me++) {
+      const name = `${mode} players=${players} me=${me}`;
+      try {
+        const s = createGame(42, { mode, players });
+        const free = [];
+        for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) if (canPlace(s, x, y)) free.push([x, y]);
+        step(s, TOWER_ORDER.map((kind, i) => ({ type: 'place', kind: i % 3 === 0 ? 'arrow' : 'frost', tx: free[i * 7][0], ty: free[i * 7][1], p: i % players })));
+        step(s, [{ type: 'nextWave', p: 0 }, { type: 'wall', tx: 0, ty: 0, p: me }]);
+        for (let i = 0; i < 200; i++) step(s);
+        const uis = [
+          { me, build: 'cannon', hover: { tx: free[3][0], ty: free[3][1] }, mouse: { x: 100, y: 100 } },
+          { me, selected: 't' + s.towers[0].id, hover: { tx: 1, ty: 1 } },
+          { me, ability: 'meteor', mouse: { x: 120, y: 120 }, hover: { tx: 5, ty: 5 } },
+          { me, ability: 'wall', hover: { tx: 5, ty: 5 } },
+          { me },
+        ];
+        for (const ui of uis) r.draw(s, 0.5, ui, 0.016);
+        out.push('PASS ' + name);
+      } catch (e) {
+        failed++;
+        out.push('FAIL ' + name + '\n  ' + e.stack);
+      }
+    }
+  }
+}
+out.push(failed ? `${failed} FAILED` : 'ALL PASSED');
+document.getElementById('out').textContent = out.join('\n');
+</script>

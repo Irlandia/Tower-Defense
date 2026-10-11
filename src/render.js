@@ -247,7 +247,7 @@ export class Renderer {
     if (ui.build && ui.hover) {
       const { tx, ty } = ui.hover;
       const ok = canPlace(s, tx, ty) && (s.players[ui.me || 0] || s.players[0]).gold >= TOWERS[ui.build].cost;
-      this.rangeCircle(tx * TILE + 12, ty * TILE + 12, TOWERS[ui.build].range * s.mods.range, ok);
+      this.rangeCircle(tx * TILE + 12, ty * TILE + 12, TOWERS[ui.build].range * (s.players[ui.me || 0] || s.players[0]).mods.range, ok);
     }
     if (ui.ability === 'meteor' && ui.mouse) this.rangeCircle(ui.mouse.x, ui.mouse.y, ABILITIES.meteor.radius, true, C.orange);
     if (ui.ability === 'wall' && ui.hover) {

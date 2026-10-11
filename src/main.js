@@ -685,6 +685,16 @@ function tick(cmds, advance = true) {
 }
 
 function frame(now) {
+  requestAnimationFrame(frame);
+  try {
+    loop(now);
+  } catch (err) {
+    // never let one bad frame freeze the game; show it in the console for debugging
+    console.error(err);
+  }
+}
+
+function loop(now) {
   const real = Math.min(250, now - last);
   last = now;
   let alpha = 1;
@@ -715,7 +725,6 @@ function frame(now) {
   renderer.draw(state, alpha, ui, real / 1000);
   drawPartnerCursor();
   if (running) updateUI();
-  requestAnimationFrame(frame);
 }
 
 buildToolbar();
