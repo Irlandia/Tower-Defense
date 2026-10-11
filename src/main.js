@@ -848,7 +848,8 @@ function simulate(now) {
   const real = Math.min(250, now - lastSim);
   lastSim = now;
   const quiet = document.hidden; // nobody is watching: skip effects/sounds (they would pile up)
-  if (running && net.role === 'guest') {
+  // the guest also keeps applying host messages on the end screen (e.g. the host's 'continue')
+  if ((running || state.over) && net.role === 'guest') {
     // replay the host's ticks; after a long gap catch up fast and silently
     const backlog = net.inbox.length;
     let n = 0;
@@ -860,7 +861,8 @@ function simulate(now) {
     }
     return Math.min(1, (now - lastTickAt) / DT);
   }
-  if (!running) return 1;
+  // on the end screen the game is stopped, but commands like 'continue' must still go through
+  if (!running) { if (pending.length && state.over) { const cmds = pending; pending = []; tick(cmds, false, quiet); } return 1; }
   if (state.over) acc = 0;
   else if (!paused && !draftPause && now >= freezeUntil) acc += real * speed;
   while (acc >= DT) {
