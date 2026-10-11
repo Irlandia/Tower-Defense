@@ -22,6 +22,7 @@ const meta = Meta.load();
 
 let state = createGame(1);
 let running = false;
+let endShown = false; // end screen already shown for this run (guest may get it twice: event + host message)
 let pending = [];
 let diff = 'normal';
 let mode = 'classic';
@@ -43,6 +44,7 @@ const P = () => state.players[me()] || state.players[0];
 // ---------- game lifecycle ----------
 function startGame(seed, opts) {
   state = createGame(seed, opts);
+  endShown = false;
   game = { seed, opts };
   cmdLog = [];
   pending = [];
@@ -127,6 +129,8 @@ net.onMessage = (m) => {
     case 'tick': case 'cmds': net.inbox.push(m); break;
     case 'cursor': ui.partner = { x: m.x, y: m.y, at: performance.now() }; break;
     case "lobby": if (net.role === "guest") { openMenu(true); netStatus("Хост у меню — чекаємо нову гру", "good"); } break;
+    // explicit end-of-game from the host: the guest must see it even if its replay lagged or missed the event
+    case "end": if (net.role === "guest" && !endShown) showEnd(m.won); break;
     case "hello":
       partnerNick = m.nick || 'Друг';
       if (m.v !== VERSION) { mismatch(m.v); break; }
@@ -522,6 +526,9 @@ function pickCard(i) {
 function hide(id) { $(id).classList.add('hidden'); }
 
 function showEnd(won) {
+  if (endShown) return;
+  endShown = true;
+  if (net.role === "host") net.send({ t: "end", won });
   running = false;
   talentOpen = false;
   const { earned, record } = Meta.finishRun(meta, state);
@@ -679,8 +686,9 @@ $('copyCode').addEventListener('click', () => { navigator.clipboard?.writeText($
 
 // ---------- events -> sound/UI ----------
 function handleEvents(events, quiet = false) {
-  if (quiet) return; // fast catch-up: skip effects
-  renderer.onEvents(events, state);
+  // fast catch-up: skip effects and sounds, but never the events that change the game flow
+  if (quiet) events = events.filter((e) => ['gameover', 'victory', 'endless', 'draft'].includes(e.type));
+  if (!quiet) renderer.onEvents(events, state);
   const mine = (e) => e.p === undefined || e.p === me();
   for (const e of events) {
     switch (e.type) {
@@ -715,6 +723,7 @@ function handleEvents(events, quiet = false) {
       case 'gameover': sfx.play('gameover'); showEnd(false); break;
       case 'victory': sfx.play('card'); showEnd(true); break;
       case "endless":
+        endShown = false;
         running = true;
         hide("modal");
         sfx.play("wave");
