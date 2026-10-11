@@ -29,6 +29,7 @@ src/audio.js       # 8-біт звуки
 src/main.js        # меню/лобі, цикл (solo/host/guest), інпут, меню вежі на карті
 src/net.js         # PeerJS-кооп (кімната за 5-символьним кодом)
 src/meta.js        # кристали, магазин, складності, рекорди (localStorage)
+src/critters.js    # декоративні тварини (корови, олені, жаби): тільки рендер, не впливають на гру
 src/api.js         # клієнт api/api.php: нік за IP + таблиця лідерів
 api/api.php        # PHP: ніки (за хешем IP) і результати ігор у api/data/*.json (закрито .htaccess)
 tests/sim.html     # тести детермінізму + баланс-бот

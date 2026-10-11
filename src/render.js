@@ -5,6 +5,7 @@ import {
   C, SPRITES, FLASH, FROZEN, ENEMY_COLOR, drawTower, drawCastle, drawCave, drawNum, numWidth, drawIcon,
   drawObstacle, drawBarrel, drawCoin, drawChest, drawWall, ellipse,
 } from './sprites.js';
+import { Critters } from './critters.js';
 
 export const PLAYER_COLORS = [C.yellow, C.cyan];
 export const W = 640;
@@ -35,6 +36,7 @@ export class Renderer {
     this.decals = []; // ground cracks left by heavy footsteps
     this.lastStomp = {}; // enemy id -> tick of its last stomp
     this.onStomp = null; // callback for the stomp sound
+    this.critters = new Critters();
   }
 
   makeBackground(map) {
@@ -104,7 +106,8 @@ export class Renderer {
     for (const e of events) {
       switch (e.type) {
         case 'hit':
-          this.text(e.x, e.y - 18, e.dmg, e.crit ? C.yellow : C.white, e.crit ? 2 : 1);
+          // colour = effectiveness vs this enemy type: green weak spot, grey resisted
+          this.text(e.x, e.y - 18, e.dmg, e.crit ? C.yellow : e.eff > 0 ? C.lime : e.eff < 0 ? C.slate : C.white, e.crit || e.eff > 0 ? 2 : 1);
           this.burst(e.x, e.y - 6, 3, C.white, 40);
           break;
         case 'death': {
@@ -258,7 +261,8 @@ export class Renderer {
   // ---------- draw ----------
   draw(s, alpha, ui, dt) {
     const g = this.g;
-    if (this.mapRef !== s.map) { this.mapRef = s.map; this.bg = this.makeBackground(s.map); }
+    if (this.mapRef !== s.map) { this.mapRef = s.map; this.bg = this.makeBackground(s.map); this.critters.reset(s.map); }
+    this.critters.update(Math.min(dt, 0.1), s.enemies);
     this.updateFx(dt);
     g.save();
     g.fillStyle = C.ink;
@@ -314,6 +318,7 @@ export class Renderer {
     for (const w of s.walls) items.push({ y: w.y, w });
     for (const e of s.enemies) items.push({ y: e.py + (e.y - e.py) * alpha, e });
     if (s.map.castle) items.push({ y: s.map.castle[1] * TILE + 12, castle: true });
+    for (const c of this.critters.list) items.push({ y: c.y, critter: c });
     items.sort((a, b) => a.y - b.y);
     const hov = (tx, ty) => ui.hover && ui.hover.tx === tx && ui.hover.ty === ty;
     for (const it of items) {
@@ -325,6 +330,8 @@ export class Renderer {
         if (it.b.ready && hov(it.b.tx, it.b.ty)) { this.rangeCircle(it.b.x, it.b.y, BARREL.radius, true, C.orange); this.outline(it.b.tx * TILE, it.b.ty * TILE); }
       } else if (it.w) {
         drawWall(g, it.w, s.tick);
+      } else if (it.critter) {
+        this.critters.draw(g, it.critter);
       } else if (it.castle) {
         drawCastle(g, s.map.castle[0] * TILE, s.map.castle[1] * TILE);
       } else if (it.t) {

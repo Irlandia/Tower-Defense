@@ -1,6 +1,6 @@
 // Client entry: menu/lobby, fixed-tick loop (solo / co-op host / co-op guest), input, DOM UI.
 // All game rules live in ./sim; meta-progression in ./meta; networking in ./net; nick + leaderboard in ./api.
-import { TILE, TICK_RATE, TOWERS, TOWER_ORDER, BRANCHES, CARDS, CONFIG, ABILITIES, MODES, VERSION, BOSSES, bossFor, AURA } from './sim/data.js';
+import { TILE, TICK_RATE, TOWERS, TOWER_ORDER, BRANCHES, CARDS, CONFIG, ABILITIES, MODES, VERSION, BOSSES, bossFor, AURA, ENEMIES } from './sim/data.js';
 import {
   createGame, step, canPlace, towerAt, obstacleAt, barrelAt, towerStats, upgradeCost, canEvolve, sellValue, clearCost,
   enemyAt, abilityMax, isRoad, canMove, hasWall, auraCost,
@@ -173,6 +173,8 @@ canvas.addEventListener('mousemove', (ev) => {
   const m = toMap(ev);
   ui.mouse = m;
   ui.hover = m.y >= 0 && m.x >= 0 ? { tx: m.tx, ty: m.ty } : null;
+  const en = enemyAt(state, m.x, m.y, 16);
+  ui.hoverEnemy = en ? en.id : null; // shows the enemy's weaknesses in the side panel
   // coins are collected by hovering over them
   for (const c of state.coins) {
     if (!collected.has(c.id) && Math.hypot(c.x - m.x, c.y - m.y) < 10) { collected.add(c.id); send({ type: 'collect', id: c.id }); }
@@ -207,6 +209,8 @@ canvas.addEventListener('mousedown', (ev) => {
   if (b) { if (b.ready) send({ type: 'barrel', id: b.id }); return; }
   const o = obstacleAt(state, m.tx, m.ty);
   if (o) { select('o' + o.id); ui.build = null; return; }
+  // poke the wildlife (decoration only)
+  if (!ui.build && renderer.critters.poke(m.x, m.y)) return;
   if (ui.build) {
     const cost = TOWERS[ui.build].cost;
     if (canPlace(state, m.tx, m.ty) && P().gold >= cost) {
@@ -436,6 +440,18 @@ function updateUI() {
     const def = TOWERS[ui.build];
     key = 'b' + ui.build;
     html = `<b>${def.name}</b><br>${def.desc}<br><span class="hint">Shift — ставити кілька · ПКМ — скасувати</span>`;
+  } else if (ui.hoverEnemy && state.enemies.some((e) => e.id === ui.hoverEnemy)) {
+    const e = state.enemies.find((k) => k.id === ui.hoverEnemy);
+    const def = ENEMIES[e.type];
+    const vs = Object.entries(def.vs || {});
+    const fam = (k) => TOWERS[k].name;
+    const weak = vs.filter(([, v]) => v > 1).map(([k, v]) => `${fam(k)} x${v}`).join(', ');
+    const res = vs.filter(([, v]) => v < 1).map(([k, v]) => `${fam(k)} x${v}`).join(', ');
+    key = `e${e.id}:${Math.ceil(e.hp / 10)}`;
+    html = `<b>${def.name}</b> · ❤ ${Math.max(0, Math.round(e.hp))}/${e.maxHp}${e.armor ? ` · 🛡 ${e.armor}` : ''}<br>`
+      + (weak ? `<span style="color:#a7f070">Слабкий до: ${weak}</span><br>` : '')
+      + (res ? `<span style="color:#94b0c2">Опір: ${res}</span>` : '')
+      + (!weak && !res ? '<span class="hint">Без особливих слабкостей</span>' : '');
   } else if (ui.moving) {
     key = 'mv';
     html = `<b>Переміщення вежі</b><br>Клікни по підсвіченій клітинці (до ${CONFIG.moveRange} клітинок). Після переїзду вежа 1 с розгортається, перезарядка ${CONFIG.moveCd} с.<br><span class="hint">ПКМ / Esc — скасувати</span>`;
