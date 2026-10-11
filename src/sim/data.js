@@ -5,7 +5,7 @@ export const COLS = 26;
 export const ROWS = 14;
 export const TICK_RATE = 20;
 // Bump on every change to sim/data: co-op peers refuse to play with a different version.
-export const VERSION = 7;
+export const VERSION = 9;
 
 export const CONFIG = {
   startGold: 160,
@@ -27,8 +27,6 @@ export const ABILITIES = {
   nova: { name: 'Крижана нова', key: 'W', cd: 45, freeze: 2, wet: 5, desc: 'Заморожує ВСІХ ворогів на 2 с і робить їх мокрими.' },
   wall: { name: 'Барикада', key: 'E', cd: 35, hp: 80, hpPerWave: 15, desc: 'Клік по дорозі: стіна, яку вороги мусять зламати.' },
 };
-// Clicking enemies hits them; quick consecutive hits build a combo.
-export const SMITE = { dmg: 2, perWave: 0.3, comboStep: 0.2, window: 1.5, maxCombo: 5 }; // weak on purpose: finishes off a leaking weakling, not a weapon
 
 export const TOWERS = {
   arrow: {
@@ -123,6 +121,6 @@ export const CARDS = [
   { id: 'cash', name: 'Скарб', desc: '+120 золота одразу', apply: (s, p) => { p.gold += 120; } },
   { id: 'walls', name: 'Мури', desc: '+5 життів', apply: (s) => { s.lives += 5; } },
   { id: 'meteor', name: 'Зорепад', desc: 'Метеор заряджається на 30% швидше', apply: (s, p) => { p.mods.meteorCd *= 0.7; } },
-  { id: 'fist', name: 'Кулак богів', desc: 'Удар кліком x2 шкоди', apply: (s, p) => { p.mods.smite *= 2; } },
+  { id: "veteran", name: "Ветерани", desc: "+10% шкоди всіх веж", apply: (s, p) => { for (const k in p.mods.dmg) p.mods.dmg[k] *= 1.1; } },
   { id: 'mason', name: 'Каменяр', desc: 'Барикада вдвічі міцніша', apply: (s, p) => { p.mods.wall *= 2; } },
 ];

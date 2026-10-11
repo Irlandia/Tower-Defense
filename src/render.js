@@ -89,7 +89,7 @@ export class Renderer {
         if (!road(tx + 1, ty) && tx < COLS - 1) g.fillRect(x + TILE - 2, y, 2, TILE);
       }
     }
-    for (const y of map.spawns) drawCave(g, 0, y * TILE);
+    for (const [x, y] of map.spawns) drawCave(g, x === 0 ? 0 : COLS * TILE - 16, y * TILE);
     return cv;
   }
 
@@ -135,12 +135,6 @@ export class Renderer {
         case 'nova':
           this.blueFlash = 0.5;
           this.shake = 4;
-          break;
-        case 'smite':
-          this.rings.push({ x: e.x, y: e.y - 6, r: 2, max: 10 + e.combo * 3, c: e.combo >= 3 ? C.yellow : C.white, life: 0.7 });
-          this.burst(e.x, e.y - 6, 4 + e.combo * 3, e.combo >= 3 ? C.yellow : C.white, 60);
-          if (e.combo > 1) this.text(e.x + 10, e.y - 30, 'x' + e.combo, C.orange, 2);
-          this.shake = Math.max(this.shake, e.combo * 0.6);
           break;
         case 'wallup':
           this.burst(e.x, e.y + 6, 16, '#8a6248', 50, -10);
@@ -357,7 +351,8 @@ export class Renderer {
           g.fillRect(Math.round(p.x - Math.cos(a) * k - Math.sin(a) * i), Math.round(p.y - Math.sin(a) * k + Math.cos(a) * i), 2, 2);
         }
       }
-      if ((s.tick >> 3) % 2) drawNum(g, '!', 16, L.points[0][1] * TILE + 2, C.yellow, 3, C.ink);
+      const [sx, sy] = s.map.spawns[lane] || s.map.spawns[0];
+      if ((s.tick >> 3) % 2) drawNum(g, "!", sx === 0 ? 16 : COLS * TILE - 26, sy * TILE + 2, C.yellow, 3, C.ink);
     }
   }
 
@@ -496,12 +491,6 @@ export class Renderer {
     } else if (s.queue.length) {
       drawIcon(g, 'skull', 330, 8);
       drawNum(g, s.queue.length, 338, 5, C.red, 2);
-    }
-    if (pl.combo > 1) {
-      const w = 60, x = 560;
-      drawNum(g, "x" + pl.combo, x - 28, 5, pl.combo >= 3 ? C.yellow : C.orange, 2);
-      g.fillStyle = C.dark; g.fillRect(x, 6, w, 8);
-      g.fillStyle = C.yellow; g.fillRect(x + 1, 7, Math.round((w - 2) * (pl.comboT / (1.5 * TICK_RATE))), 6);
     }
   }
 

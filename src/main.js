@@ -27,7 +27,6 @@ let mode = 'classic';
 let nick = '';
 let partnerNick = '';
 const ui = { build: null, selected: null, hover: null, mouse: null, ability: null, hoverEnemy: null, partner: null, me: 0 };
-let lastSmite = 0;
 let speed = 1;
 let paused = false;
 let draftPause = false; // solo only: the talent window pauses the game
@@ -53,7 +52,8 @@ function startGame(seed, opts) {
   $('speed').textContent = 'x1';
   $('pause').textContent = '❚❚';
   running = true;
-  hide('modal'); hide('menu');
+  hide("modal"); hide("menu");
+  document.body.classList.remove("in-menu");
   infoKey = ''; popKey = '';
   buildToolbar();
   document.body.classList.toggle('guest', net.role === 'guest');
@@ -125,7 +125,8 @@ net.onMessage = (m) => {
     case 'resync': if (m.v === VERSION) resync(m); else mismatch(m.v); break;
     case 'tick': case 'cmds': net.inbox.push(m); break;
     case 'cursor': ui.partner = { x: m.x, y: m.y, at: performance.now() }; break;
-    case 'hello':
+    case "lobby": if (net.role === "guest") { openMenu(true); netStatus("Хост у меню — чекаємо нову гру", "good"); } break;
+    case "hello":
       partnerNick = m.nick || 'Друг';
       if (m.v !== VERSION) { mismatch(m.v); break; }
       if (net.role === 'host') {
@@ -171,9 +172,6 @@ canvas.addEventListener('mousemove', (ev) => {
   const m = toMap(ev);
   ui.mouse = m;
   ui.hover = m.y >= 0 && m.x >= 0 ? { tx: m.tx, ty: m.ty } : null;
-  const en = enemyAt(state, m.x, m.y);
-  ui.hoverEnemy = en ? en.id : null;
-  canvas.style.cursor = en && !ui.build && !ui.ability ? 'pointer' : 'crosshair';
   // coins are collected by hovering over them
   for (const c of state.coins) {
     if (!collected.has(c.id) && Math.hypot(c.x - m.x, c.y - m.y) < 10) { collected.add(c.id); send({ type: 'collect', id: c.id }); }
@@ -201,12 +199,6 @@ canvas.addEventListener('mousedown', (ev) => {
   if (b) { if (b.ready) send({ type: 'barrel', id: b.id }); return; }
   const o = obstacleAt(state, m.tx, m.ty);
   if (o) { select('o' + o.id); ui.build = null; return; }
-  // click an enemy to poke it: weak, but can finish off a leaking weakling
-  const en = enemyAt(state, m.x, m.y);
-  if (en && !ui.build) {
-    if (performance.now() - lastSmite > 90) { lastSmite = performance.now(); send({ type: 'smite', id: en.id }); }
-    return;
-  }
   if (ui.build) {
     const cost = TOWERS[ui.build].cost;
     if (canPlace(state, m.tx, m.ty) && P().gold >= cost) {
@@ -423,7 +415,9 @@ function updateUI() {
     html = state.mode === 'circle'
       ? `<b>Коло</b><br>Вороги не доходять до замку — вони крутяться по колу і з кожним колом швидшають. Живих більше <b>${state.limit}</b> — поразка.`
       : '<b>Порада</b><br>Крига робить ворогів <span class="wet">мокрими</span>: Тесла бʼє їх x2, а Вогонь викликає вибух пари.';
-    html += '<br><span class="hint">Клік по ворогу — слабкий удар (добити втікача) · 🛢 бочки — вибух · 🌳 дерева — скарби · монети — наводь мишку.</span>';
+    html += state.mode === "circle"
+      ? "<br><span class=\"hint\">🌳 дерева — скарби · монети — наводь мишку. Удвох: кожен тримає свій вхід (печери зліва і справа).</span>"
+      : "<br><span class=\"hint\">🛢 бочки — вибух · 🌳 дерева — скарби · монети — наводь мишку · стрілки показують, звідки піде хвиля.</span>";
   }
   if (key !== infoKey) { infoKey = key; $('info').innerHTML = html; }
   updatePop();
@@ -507,14 +501,25 @@ function banner(text, cls = '') {
 
 // ---------- menu / lobby / shop / leaderboard ----------
 let boardMode = 'classic';
-function openMenu() {
+function openMenu(fromNet = false) {
+  // host leaving to the lobby takes the guest along (instead of leaving them on a frozen game)
+  if (running && net.role === "host" && net.connected && !fromNet) net.send({ t: "lobby" });
   running = false;
+  document.body.classList.add("in-menu");
   talentOpen = false;
   hide('modal');
   $('pop').className = 'hidden';
   renderMenu();
   loadBoard();
-  $('menu').classList.remove('hidden');
+  $("menu").classList.remove("hidden");
+}
+
+// The big start button depends on the room: solo, start together (host), or wait (guest).
+function updatePlayButton() {
+  const b = $("playSolo");
+  if (net.role === "host" && net.connected) { b.textContent = "▶ Почати разом"; b.disabled = false; }
+  else if (net.role === "guest" && net.connected) { b.textContent = "Чекаємо, поки хост почне…"; b.disabled = true; }
+  else { b.textContent = "▶ Грати соло"; b.disabled = false; }
 }
 
 function renderMenu() {
@@ -589,7 +594,14 @@ $('nickSave').addEventListener('click', saveNick);
 $('nick').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') saveNick(); });
 Api.getNick().then((n) => { nick = n; $('nick').value = n; });
 
-$('playSolo').addEventListener('click', () => { sfx.unlock(); net.leave(); $('netStatus').textContent = ''; newRun(); });
+$("playSolo").addEventListener("click", () => {
+  sfx.unlock();
+  if (net.role === "host" && net.connected) { newRun(); return; } // keep the room, start with the chosen mode
+  net.leave();
+  $("netStatus").textContent = "";
+  newRun();
+});
+setInterval(updatePlayButton, 300);
 $('hostBtn').addEventListener('click', async () => {
   sfx.unlock();
   net.leave();
@@ -633,7 +645,6 @@ function handleEvents(events, quiet = false) {
         banner(e.final ? 'ФІНАЛЬНА ХВИЛЯ!' : e.boss ? `Хвиля ${e.wave} — БОС!` : `Хвиля ${e.wave}`, e.boss ? 'boss' : '');
         break;
       case 'nova': sfx.play('frost'); sfx.play('explode'); break;
-      case 'smite': sfx.play(e.combo >= 3 ? 'build' : 'click'); break;
       case 'wallup': case 'wallbreak': sfx.play('cannon'); break;
       case 'bonus': if (mine(e)) banner(`+${e.gold} золота`, 'gold'); break;
       case 'draft':
@@ -731,8 +742,9 @@ buildToolbar();
 fit();
 if (new URLSearchParams(location.search).has('demo')) {
   // debug: start immediately with a few towers to check rendering
-  mode = new URLSearchParams(location.search).get('demo') === 'circle' ? 'circle' : 'classic';
-  newRun();
+  const dm = new URLSearchParams(location.search).get('demo');
+  mode = dm && dm.startsWith('circle') ? 'circle' : 'classic';
+  startGame(12345, Meta.gameOpts(meta, diff, mode, dm === 'circle2' ? 2 : 1));
   state.players[0].gold = 2000;
   state.opts.locked = [];
   // put each tower type on a free tile next to the road

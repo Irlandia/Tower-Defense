@@ -172,3 +172,6 @@ body.guest #speed, body.guest #pause { opacity: .4; pointer-events: none; }
 #board small { color: var(--cyan); }
 .tower-btn canvas { width: 28px; height: 40px; }
 .evo-btn canvas { width: 28px; height: 40px; }
+
+/* lobby: the in-game side panel is hidden */
+body.in-menu #ui { display: none; }

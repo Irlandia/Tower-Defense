@@ -3,7 +3,7 @@
 // Every command carries `p` = player index (0 = host/solo, 1 = guest); each player has own gold, talents, abilities.
 import {
   TILE, COLS, ROWS, TICK_RATE as T, CONFIG, TOWERS, ENEMIES, UNLOCKS, CARDS,
-  MAPGEN, MODES, BARREL, OBSTACLES, COIN, ABILITIES, SMITE,
+  MAPGEN, MODES, BARREL, OBSTACLES, COIN, ABILITIES,
 } from './data.js';
 import { rand, randInt } from './rng.js';
 
@@ -79,7 +79,7 @@ function genClassic(s) {
   const tiles = new Set();
   for (let i = 0; i < n; i++) {
     let y0, guard = 0;
-    do { y0 = 1 + randInt(s, ROWS - 2); } while (spawns.some((v) => Math.abs(v - y0) < 3) && guard++ < 50);
+    do { y0 = 1 + randInt(s, ROWS - 2); } while (spawns.some(([, v]) => Math.abs(v - y0) < 3) && guard++ < 50);
     let pts, tries = 0;
     do {
       pts = [[-1, y0]];
@@ -94,7 +94,7 @@ function genClassic(s) {
       if (y !== yc) pts.push([x, yc]);
       pts.push([COLS - 1, yc]);
     } while (i > 0 && hugging(pts, tiles) > 3 && ++tries < 25);
-    spawns.push(y0);
+    spawns.push([0, y0]);
     lanes.push(pts);
     addTiles(pts, tiles);
   }
@@ -102,7 +102,8 @@ function genClassic(s) {
 }
 
 // Circle: an entry road from the left joins a closed ring with random inward dents on top/bottom/right.
-function genCircle(s) {
+// With two players a second entry comes from the right edge — one spawn next to each player.
+function genCircle(s, two = false) {
   const x0 = 3 + randInt(s, 2), x1 = COLS - 4 - randInt(s, 2);
   const y0 = 1 + randInt(s, 2), y1 = ROWS - 2 - randInt(s, 2);
   const ym = Math.floor((y0 + y1) / 2) + randInt(s, 3) - 1;
@@ -116,16 +117,28 @@ function genCircle(s) {
   const dTop = dent(x0, x1), depthT = 2 + randInt(s, 2);
   if (dTop) loop.push([dTop[0], y0], [dTop[0], y0 + depthT], [dTop[1], y0 + depthT], [dTop[1], y0]);
   loop.push([x1, y0]);
-  const dRight = dent(y0, y1), depthR = 2 + randInt(s, 3);
+  // the right side keeps a straight stretch for the second entry
+  const ymR = Math.floor((y0 + y1) / 2) + randInt(s, 3) - 1;
+  const dRight = two ? null : dent(y0, y1), depthR = 2 + randInt(s, 3);
   if (dRight) loop.push([x1, dRight[0]], [x1 - depthR, dRight[0]], [x1 - depthR, dRight[1]], [x1, dRight[1]]);
+  const joinR = loop.length;
+  if (two) loop.push([x1, ymR]);
   loop.push([x1, y1]);
   const dBot = dent(x0, x1), depthB = 2 + randInt(s, 2);
   if (dBot) loop.push([dBot[1], y1], [dBot[1], y1 - depthB], [dBot[0], y1 - depthB], [dBot[0], y1]);
   loop.push([x0, y1], [x0, ym]);
-  const pts = [[-1, ym], ...loop];
+  const lanes = [buildLane([[-1, ym], ...loop], 1)];
+  const spawns = [[0, ym]];
+  if (two) {
+    // same ring, same direction, entered from the right: rotate the loop to start at the join point
+    const ring = loop.slice(0, -1);
+    const rotated = [...ring.slice(joinR), ...ring.slice(0, joinR), [x1, ymR]];
+    lanes.push(buildLane([[COLS, ymR], ...rotated], 1));
+    spawns.push([COLS - 1, ymR]);
+  }
   const tiles = new Set();
-  addTiles(pts, tiles);
-  return { lanes: [buildLane(pts, 1)], tiles, water: genPonds(s, tiles), castle: null, spawns: [ym], ring: [x0, y0, x1, y1] };
+  for (const L of lanes) addTiles(L.points, tiles);
+  return { lanes, tiles, water: genPonds(s, tiles), castle: null, spawns, ring: [x0, y0, x1, y1] };
 }
 
 export function posAt(map, lane, d) {
@@ -144,6 +157,7 @@ export function posAt(map, lane, d) {
 // Which lanes the next wave will use (shown to the player in advance).
 function planLanes(s) {
   const n = s.map.lanes.length;
+  if (s.mode === "circle") return [...Array(n).keys()]; // every entry, every wave
   const all = [...Array(n).keys()];
   const count = s.wave >= 4 && rand(s) < 0.5 ? Math.min(n, 2) : 1;
   const out = [];
@@ -157,11 +171,9 @@ function newPlayer(opts) {
     mods: {
       dmg: { arrow: 1, cannon: 1, frost: 1, tesla: 1, fire: 1 },
       rate: 1, range: 1, chain: 0, burn: 1, wet: 0, steam: 1, gold: 1, interest: 0, crit: 0.1,
-      meteorCd: opts.meteorCd || 1, smite: 1, wall: 1,
+      meteorCd: opts.meteorCd || 1, wall: 1,
     },
     cds: { meteor: 0, nova: 0, wall: 0 },
-    combo: 0,
-    comboT: 0,
     drafts: [], // pending talent choices (arrays of card ids); picking never pauses the game
     kills: 0,
   };
@@ -197,14 +209,14 @@ export function createGame(seed, opts = {}) {
     over: false,
     kills: 0,
   };
-  s.map = o.mode === 'circle' ? genCircle(s) : genClassic(s);
+  s.map = o.mode === "circle" ? genCircle(s, o.players > 1) : genClassic(s);
   s.plan = planLanes(s);
 
-  const nearSpawn = (tx, ty) => tx <= 1 && s.map.spawns.some((y) => Math.abs(ty - y) <= 1);
+  const nearSpawn = (tx, ty) => s.map.spawns.some(([x, y]) => Math.abs(tx - x) <= 1 && Math.abs(ty - y) <= 1);
   const nearCastle = (tx, ty) => s.map.castle && Math.abs(tx - s.map.castle[0]) <= 1 && Math.abs(ty - s.map.castle[1]) <= 1;
   // Explosive barrels right next to the road.
   let guard = 0;
-  while (s.barrels.length < MAPGEN.barrels && guard++ < 2000) {
+  while (s.mode !== "circle" && s.barrels.length < MAPGEN.barrels && guard++ < 2000) {
     const tx = 2 + randInt(s, COLS - 5), ty = randInt(s, ROWS);
     if (!isFree(s, tx, ty) || nearSpawn(tx, ty)) continue;
     const byRoad = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => s.map.tiles.has(key(tx + dx, ty + dy)));
@@ -308,7 +320,6 @@ export function step(s, cmds = [], advance = true) {
   s.tick++;
   for (const pl of s.players) {
     for (const k in pl.cds) if (pl.cds[k] > 0) pl.cds[k]--;
-    if (pl.comboT > 0 && --pl.comboT === 0) pl.combo = 0;
   }
 
   if (!s.queue.length && s.wave < CONFIG.winWave) {
@@ -432,16 +443,6 @@ function applyCmd(s, c) {
       pl.gold += coin.value;
       s.coins.splice(i, 1);
       s.events.push({ type: 'coin', x: coin.x, y: coin.y, gold: coin.value, p: pi });
-      return;
-    }
-    case 'smite': {
-      const e = s.enemies.find((k) => k.id === c.id && !k.dead);
-      if (!e) return;
-      pl.combo = pl.comboT > 0 ? Math.min(SMITE.maxCombo, pl.combo + 1) : 1;
-      pl.comboT = Math.round(SMITE.window * T);
-      const dmg = (SMITE.dmg + s.wave * SMITE.perWave) * (1 + SMITE.comboStep * (pl.combo - 1)) * pl.mods.smite;
-      s.events.push({ type: 'smite', x: e.x, y: e.y, combo: pl.combo, p: pi });
-      damage(s, e, dmg, pi, { pierce: true, big: pl.combo >= 3 });
       return;
     }
     case 'nextWave': {

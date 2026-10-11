@@ -106,9 +106,9 @@ try {
   for (let i = 0; i < 60; i++) step(ab);
   const tgt = ab.enemies[0];
   const hp0 = tgt.hp;
-  step(ab, [{ type: 'smite', id: tgt.id }], false);
-  step(ab, [{ type: 'smite', id: tgt.id }], false);
-  check('smite damages and builds combo', (tgt.hp < hp0 || tgt.dead) && ab.players[0].combo === 2, `combo=${ab.players[0].combo}`);
+
+
+
   step(ab, [{ type: 'nova' }]);
   check('nova freezes everyone', ab.enemies.every((e) => e.slowF === 0 && e.wetT > 0) && ab.players[0].cds.nova > 0);
   step(ab, [{ type: 'nova' }]);
@@ -137,6 +137,23 @@ try {
   ci.limit = ci.enemies.length;
   step(ci);
   check("circle: too many alive = defeat", ci.over && !ci.won);
+
+  // circle with two players: second entry from the right, both closed loops, waves use both, no barrels
+  let twoOk = true, twoMsg = "";
+  for (let seed = 1; seed <= 100; seed++) {
+    const c2 = createGame(seed, { mode: "circle", players: 2 });
+    if (c2.map.lanes.length !== 2 || c2.barrels.length) { twoOk = false; twoMsg = `seed ${seed}`; continue; }
+    for (let l = 0; l < 2; l++) {
+      const L = c2.map.lanes[l];
+      const a = posAt(c2.map, l, L.loopStart + 3), b = posAt(c2.map, l, L.loopStart + L.loopLen + 3);
+      if (Math.abs(a.x - b.x) > 0.01 || Math.abs(a.y - b.y) > 0.01) { twoOk = false; twoMsg = `seed ${seed} lane ${l}`; }
+    }
+    if (c2.map.lanes[1].points[0][0] !== 26) { twoOk = false; twoMsg = `seed ${seed} entry`; }
+  }
+  check("100 circle 2p maps: two closed entries (left + right), no barrels", twoOk, twoMsg);
+  const w2 = createGame(3, { mode: "circle", players: 2 });
+  step(w2, [{ type: "nextWave", p: 0 }]);
+  check("circle 2p: wave comes from both spawns", new Set(w2.queue.map((q) => q.lane)).size === 2);
 
   // co-op: separate wallets, talents and ownership
   const co = createGame(9, { players: 2 });
