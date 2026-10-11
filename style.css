@@ -152,3 +152,23 @@ body.guest #speed, body.guest #pause { opacity: .4; pointer-events: none; }
 .ability .cd { position: absolute; left: 0; right: 0; bottom: 0; height: calc(var(--cd) * 100%); background: rgba(26,28,44,.7); pointer-events: none; }
 .ability.cooling { color: var(--silver); }
 #next { font-size: 18px; padding: 10px; }
+
+/* ---------- nick, modes, talents, leaderboard ---------- */
+#nick { width: 170px; text-transform: none; letter-spacing: 1px; text-align: left; font-size: 16px; }
+.row.left { justify-content: flex-start; }
+#modes { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+#modes .diff span { font-size: 11px; line-height: 1.2; }
+#talent { background: var(--plum); color: var(--yellow); font-weight: 700; animation: pulse 1s infinite alternate; }
+@keyframes pulse { from { filter: brightness(1); } to { filter: brightness(1.35); } }
+#coopInfo { font-size: 14px; margin-top: 6px; display: flex; justify-content: space-between; gap: 6px; }
+.tabs { display: flex; gap: 4px; }
+.tabs button { font-size: 12px; padding: 3px 8px; }
+#board { max-height: 210px; overflow: auto; }
+#board table { width: 100%; border-collapse: collapse; font-size: 14px; }
+#board th { text-align: left; color: var(--silver); font-weight: 400; font-size: 12px; }
+#board td, #board th { padding: 3px 4px; }
+#board tr:nth-child(even) td { background: rgba(26,28,44,.4); }
+#board tr.me td { color: var(--yellow); }
+#board small { color: var(--cyan); }
+.tower-btn canvas { width: 28px; height: 40px; }
+.evo-btn canvas { width: 28px; height: 40px; }

@@ -26,7 +26,7 @@ export const ABILITIES = {
   wall: { name: 'Барикада', key: 'E', cd: 35, hp: 80, hpPerWave: 15, desc: 'Клік по дорозі: стіна, яку вороги мусять зламати.' },
 };
 // Clicking enemies hits them; quick consecutive hits build a combo.
-export const SMITE = { dmg: 4, perWave: 1, window: 1.5, maxCombo: 5 };
+export const SMITE = { dmg: 2, perWave: 0.3, comboStep: 0.2, window: 1.5, maxCombo: 5 }; // weak on purpose: finishes off a leaking weakling, not a weapon
 
 export const TOWERS = {
   arrow: {
@@ -80,6 +80,12 @@ export const BRANCHES = {
 };
 
 // Procedural map + interactive objects.
+// Game modes. Circle: enemies loop forever and stack up; too many alive = defeat.
+export const MODES = {
+  classic: { name: "Класика", desc: "Вороги йдуть до замку. Пропустив — втратив життя." },
+  circle: { name: "Коло", desc: "Вороги крутяться по колу й накопичуються. Забагато живих — поразка.", maxAlive: 40, lapSpeed: 0.06, lapHeal: 0.1, lapMax: 8 },
+};
+
 export const MAPGEN = { lanes3Chance: 0.45, ponds: [1, 2], barrels: 4 };
 export const BARREL = { radius: 48, dmg: 30, dmgPerWave: 6 };
 export const OBSTACLES = { count: 30, tree: 15, rock: 25, chestChance: 0.3, chestGold: 45 };
@@ -101,20 +107,20 @@ export const UNLOCKS = { slime: 1, runner: 2, splitter: 3, knight: 4, healer: 6 
 
 // Roguelite draft cards offered after each cleared wave.
 export const CARDS = [
-  { id: 'sharp', name: 'Гострі стріли', desc: '+25% шкоди лучників', apply: (s) => { s.mods.dmg.arrow *= 1.25; } },
-  { id: 'crit', name: 'Око сокола', desc: '+10% шансу крита лучників', apply: (s) => { s.mods.crit += 0.1; } },
-  { id: 'boom', name: 'Порох', desc: '+30% шкоди гармат', apply: (s) => { s.mods.dmg.cannon *= 1.3; } },
-  { id: 'storm', name: 'Буря', desc: 'Тесла: +1 стрибок блискавки', apply: (s) => { s.mods.chain += 1; } },
-  { id: 'napalm', name: 'Напалм', desc: 'Горіння +50% шкоди', apply: (s) => { s.mods.burn *= 1.5; } },
-  { id: 'glacier', name: 'Льодовик', desc: 'Крига: +50% шкоди, довше мокрі', apply: (s) => { s.mods.dmg.frost *= 1.5; s.mods.wet += 2; } },
-  { id: 'steam', name: 'Парова машина', desc: 'Вибух пари +60% шкоди', apply: (s) => { s.mods.steam *= 1.6; } },
-  { id: 'haste', name: 'Адреналін', desc: '+12% швидкості атаки всіх веж', apply: (s) => { s.mods.rate *= 1.12; } },
-  { id: 'optics', name: 'Оптика', desc: '+10% радіусу всіх веж', apply: (s) => { s.mods.range *= 1.1; } },
-  { id: 'bounty', name: 'Нагорода', desc: '+20% золота за вбивства', apply: (s) => { s.mods.gold *= 1.2; } },
-  { id: 'bank', name: 'Банкір', desc: '+5% від золота на початку хвилі', apply: (s) => { s.mods.interest += 0.05; } },
-  { id: 'cash', name: 'Скарб', desc: '+120 золота одразу', apply: (s) => { s.gold += 120; } },
+  { id: 'sharp', name: 'Гострі стріли', desc: '+25% шкоди лучників', apply: (s, p) => { p.mods.dmg.arrow *= 1.25; } },
+  { id: 'crit', name: 'Око сокола', desc: '+10% шансу крита лучників', apply: (s, p) => { p.mods.crit += 0.1; } },
+  { id: 'boom', name: 'Порох', desc: '+30% шкоди гармат', apply: (s, p) => { p.mods.dmg.cannon *= 1.3; } },
+  { id: 'storm', name: 'Буря', desc: 'Тесла: +1 стрибок блискавки', apply: (s, p) => { p.mods.chain += 1; } },
+  { id: 'napalm', name: 'Напалм', desc: 'Горіння +50% шкоди', apply: (s, p) => { p.mods.burn *= 1.5; } },
+  { id: 'glacier', name: 'Льодовик', desc: 'Крига: +50% шкоди, довше мокрі', apply: (s, p) => { p.mods.dmg.frost *= 1.5; p.mods.wet += 2; } },
+  { id: 'steam', name: 'Парова машина', desc: 'Вибух пари +60% шкоди', apply: (s, p) => { p.mods.steam *= 1.6; } },
+  { id: 'haste', name: 'Адреналін', desc: '+12% швидкості атаки всіх веж', apply: (s, p) => { p.mods.rate *= 1.12; } },
+  { id: 'optics', name: 'Оптика', desc: '+10% радіусу всіх веж', apply: (s, p) => { p.mods.range *= 1.1; } },
+  { id: 'bounty', name: 'Нагорода', desc: '+20% золота за вбивства', apply: (s, p) => { p.mods.gold *= 1.2; } },
+  { id: 'bank', name: 'Банкір', desc: '+5% від золота на початку хвилі', apply: (s, p) => { p.mods.interest += 0.05; } },
+  { id: 'cash', name: 'Скарб', desc: '+120 золота одразу', apply: (s, p) => { p.gold += 120; } },
   { id: 'walls', name: 'Мури', desc: '+5 життів', apply: (s) => { s.lives += 5; } },
-  { id: 'meteor', name: 'Зорепад', desc: 'Метеор заряджається на 30% швидше', apply: (s) => { s.mods.meteorCd *= 0.7; } },
-  { id: 'fist', name: 'Кулак богів', desc: 'Удар кліком x2 шкоди', apply: (s) => { s.mods.smite *= 2; } },
-  { id: 'mason', name: 'Каменяр', desc: 'Барикада вдвічі міцніша', apply: (s) => { s.mods.wall *= 2; } },
+  { id: 'meteor', name: 'Зорепад', desc: 'Метеор заряджається на 30% швидше', apply: (s, p) => { p.mods.meteorCd *= 0.7; } },
+  { id: 'fist', name: 'Кулак богів', desc: 'Удар кліком x2 шкоди', apply: (s, p) => { p.mods.smite *= 2; } },
+  { id: 'mason', name: 'Каменяр', desc: 'Барикада вдвічі міцніша', apply: (s, p) => { p.mods.wall *= 2; } },
 ];

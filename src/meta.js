@@ -27,7 +27,9 @@ function save(m) {
 }
 
 export const level = (m, id) => m.upgrades[id] || 0;
-export const unlockedDiff = (m, d) => !d.need || !!m.wins[d.need];
+// a win on the previous difficulty in either mode unlocks the next one
+export const unlockedDiff = (m, d) => !d.need || !!m.wins[d.need] || !!m.wins["circle-" + d.need];
+export const bestKey = (mode, diff) => (mode === "circle" ? "circle-" : "") + diff;
 
 export function buy(m, id) {
   const item = SHOP.find((i) => i.id === id);
@@ -39,7 +41,7 @@ export function buy(m, id) {
   return true;
 }
 
-export function gameOpts(m, diffId) {
+export function gameOpts(m, diffId, mode = "classic", players = 1) {
   const d = DIFFS.find((k) => k.id === diffId) || DIFFS[0];
   return {
     hpMul: d.hpMul,
@@ -49,6 +51,8 @@ export function gameOpts(m, diffId) {
     cards: 3 + level(m, 'cards'),
     locked: ['tesla', 'fire'].filter((k) => !level(m, k)),
     diff: d.id,
+    mode,
+    players,
   };
 }
 
@@ -56,11 +60,12 @@ export function gameOpts(m, diffId) {
 export function finishRun(m, s) {
   const d = DIFFS.find((k) => k.id === s.opts.diff) || DIFFS[0];
   const earned = Math.round((s.wave + (s.won ? 15 : 0) + Math.floor(s.kills / 40)) * d.reward);
-  const record = s.wave > (m.best[d.id] || 0);
+  const key = (s.mode === "circle" ? "circle-" : "") + d.id;
+  const record = s.wave > (m.best[key] || 0);
   m.crystals += earned;
   m.runs++;
-  if (record) m.best[d.id] = s.wave;
-  if (s.won) m.wins[d.id] = (m.wins[d.id] || 0) + 1;
+  if (record) m.best[key] = s.wave;
+  if (s.won) m.wins[key] = (m.wins[key] || 0) + 1;
   save(m);
   return { earned, record };
 }

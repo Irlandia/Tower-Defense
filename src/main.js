@@ -1,15 +1,16 @@
 // Client entry: menu/lobby, fixed-tick loop (solo / co-op host / co-op guest), input, DOM UI.
-// All game rules live in ./sim; meta-progression in ./meta; networking in ./net.
-import { TILE, TICK_RATE, TOWERS, TOWER_ORDER, BRANCHES, CARDS, CONFIG, ABILITIES } from './sim/data.js';
+// All game rules live in ./sim; meta-progression in ./meta; networking in ./net; nick + leaderboard in ./api.
+import { TILE, TICK_RATE, TOWERS, TOWER_ORDER, BRANCHES, CARDS, CONFIG, ABILITIES, MODES } from './sim/data.js';
 import {
   createGame, step, canPlace, towerAt, obstacleAt, barrelAt, towerStats, upgradeCost, canEvolve, sellValue, clearCost,
   enemyAt, abilityMax, isRoad,
 } from './sim/sim.js';
-import { Renderer, W, H, MX, MY } from './render.js';
+import { Renderer, W, H, MX, MY, PLAYER_COLORS } from './render.js';
 import { drawTower, C } from './sprites.js';
 import { Sfx } from './audio.js';
 import { Net } from './net.js';
 import * as Meta from './meta.js';
+import * as Api from './api.js';
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('game');
@@ -22,21 +23,33 @@ let state = createGame(1);
 let running = false;
 let pending = [];
 let diff = 'normal';
-const ui = { build: null, selected: null, hover: null, mouse: null, ability: null, hoverEnemy: null, partner: null };
+let mode = 'classic';
+let nick = '';
+let partnerNick = '';
+const ui = { build: null, selected: null, hover: null, mouse: null, ability: null, hoverEnemy: null, partner: null, me: 0 };
 let lastSmite = 0;
 let speed = 1;
 let paused = false;
+let draftPause = false; // solo only: the talent window pauses the game
 let freezeUntil = 0;
 const collected = new Set();
+// host: every command batch since the start, to resync a guest that reconnects mid-game
+let cmdLog = [];
+let game = null; // { seed, opts }
+
+const me = () => (net.role === 'guest' ? 1 : 0);
+const P = () => state.players[me()] || state.players[0];
 
 // ---------- game lifecycle ----------
 function startGame(seed, opts) {
   state = createGame(seed, opts);
+  game = { seed, opts };
+  cmdLog = [];
   pending = [];
   net.inbox = [];
   collected.clear();
-  ui.build = null; ui.selected = null; ui.ability = null;
-  paused = false; speed = 1;
+  ui.build = null; ui.selected = null; ui.ability = null; ui.me = me();
+  paused = false; draftPause = false; speed = 1;
   $('speed').textContent = 'x1';
   $('pause').textContent = '❚❚';
   running = true;
@@ -48,29 +61,50 @@ function startGame(seed, opts) {
 
 function newRun() {
   const seed = (Math.random() * 2 ** 32) >>> 0;
-  const opts = Meta.gameOpts(meta, diff);
+  const opts = Meta.gameOpts(meta, diff, mode, net.connected ? 2 : 1);
   if (net.role === 'host') net.send({ t: 'start', seed, opts });
   startGame(seed, opts);
 }
 
+// Guest replays the host's whole command log to catch up after (re)connecting.
+function resync(m) {
+  startGame(m.seed, m.opts);
+  for (const [tick, adv, cmds] of m.log) {
+    while (state.tick < tick) step(state);
+    step(state, cmds, adv);
+  }
+  while (state.tick < m.tick) step(state);
+  lastMsgAt = performance.now();
+}
+
 function send(cmd) {
   if (net.role === 'guest') net.send({ t: 'cmd', cmd });
-  else pending.push(cmd);
+  else pending.push({ ...cmd, p: 0 });
 }
 
 // ---------- network ----------
+let lastMsgAt = 0;
 net.onStatus = (text, kind) => {
   $('netStatus').textContent = text;
   $('netStatus').className = kind;
   $('lobbyStatus').textContent = text;
-  if (kind === 'good' && net.role === 'host') newRun(); // partner joined: restart together
+  if (kind === 'good') net.send({ t: 'hello', nick });
+  if (kind === 'good' && net.role === 'host') {
+    // partner joined: start together, or bring a reconnecting partner up to date without restarting
+    if (running && state.players.length > 1 && !state.over) {
+      net.send({ t: 'resync', ...game, log: cmdLog, tick: state.tick });
+    } else newRun();
+  }
 };
 net.onMessage = (m) => {
+  lastMsgAt = performance.now();
   switch (m.t) {
-    case 'cmd': if (net.role === 'host') pending.push(m.cmd); break;
+    case 'cmd': if (net.role === 'host') pending.push({ ...m.cmd, p: 1 }); break;
     case 'start': startGame(m.seed, m.opts); break;
+    case 'resync': resync(m); break;
     case 'tick': case 'cmds': net.inbox.push(m); break;
     case 'cursor': ui.partner = { x: m.x, y: m.y, at: performance.now() }; break;
+    case 'hello': partnerNick = m.nick || 'Друг'; break;
   }
 };
 
@@ -102,7 +136,7 @@ canvas.addEventListener('mousemove', (ev) => {
   ui.hover = m.y >= 0 && m.x >= 0 ? { tx: m.tx, ty: m.ty } : null;
   const en = enemyAt(state, m.x, m.y);
   ui.hoverEnemy = en ? en.id : null;
-  canvas.style.cursor = en && !ui.build && !ui.ability ? "pointer" : "crosshair";
+  canvas.style.cursor = en && !ui.build && !ui.ability ? 'pointer' : 'crosshair';
   // coins are collected by hovering over them
   for (const c of state.coins) {
     if (!collected.has(c.id) && Math.hypot(c.x - m.x, c.y - m.y) < 10) { collected.add(c.id); send({ type: 'collect', id: c.id }); }
@@ -119,9 +153,9 @@ canvas.addEventListener('mousedown', (ev) => {
   if (ev.button !== 0 || !running) return;
   const m = toMap(ev);
   if (m.y < 0) return;
-  if (ui.ability === "meteor") { send({ type: "meteor", x: m.x, y: m.y }); ui.ability = null; return; }
-  if (ui.ability === "wall") {
-    if (isRoad(state, m.tx, m.ty)) { send({ type: "wall", tx: m.tx, ty: m.ty }); ui.ability = null; }
+  if (ui.ability === 'meteor') { send({ type: 'meteor', x: m.x, y: m.y }); ui.ability = null; return; }
+  if (ui.ability === 'wall') {
+    if (isRoad(state, m.tx, m.ty)) { send({ type: 'wall', tx: m.tx, ty: m.ty }); ui.ability = null; }
     return;
   }
   const t = towerAt(state, m.tx, m.ty);
@@ -129,17 +163,18 @@ canvas.addEventListener('mousedown', (ev) => {
   const b = barrelAt(state, m.tx, m.ty);
   if (b) { if (b.ready) send({ type: 'barrel', id: b.id }); return; }
   const o = obstacleAt(state, m.tx, m.ty);
-  if (o) { select("o" + o.id); ui.build = null; return; }
-  // click an enemy to hit it (combo for quick consecutive hits)
+  if (o) { select('o' + o.id); ui.build = null; return; }
+  // click an enemy to poke it: weak, but can finish off a leaking weakling
   const en = enemyAt(state, m.x, m.y);
   if (en && !ui.build) {
-    if (performance.now() - lastSmite > 90) { lastSmite = performance.now(); send({ type: "smite", id: en.id }); }
+    if (performance.now() - lastSmite > 90) { lastSmite = performance.now(); send({ type: 'smite', id: en.id }); }
     return;
   }
   if (ui.build) {
-    if (canPlace(state, m.tx, m.ty) && state.gold >= TOWERS[ui.build].cost) {
+    const cost = TOWERS[ui.build].cost;
+    if (canPlace(state, m.tx, m.ty) && P().gold >= cost) {
       send({ type: 'place', kind: ui.build, tx: m.tx, ty: m.ty });
-      if (!ev.shiftKey && state.gold - TOWERS[ui.build].cost < TOWERS[ui.build].cost) ui.build = null;
+      if (!ev.shiftKey && P().gold - cost < cost) ui.build = null;
     }
     return;
   }
@@ -161,35 +196,42 @@ function selectBuild(kind) {
 }
 function useAbility(id) {
   sfx.unlock();
-  if (state.cds[id] > 0 || !running) return;
+  if (P().cds[id] > 0 || !running) return;
   ui.build = null;
-  if (id === "nova") { send({ type: "nova" }); return; }
+  if (id === 'nova') { send({ type: 'nova' }); return; }
   ui.ability = ui.ability === id ? null : id;
 }
 function nextWave() { sfx.unlock(); send({ type: 'nextWave' }); }
 function upgradeSel() { const t = selTower(); if (t) send({ type: 'upgrade', id: t.id }); }
-function sellSel() { const t = selTower(); if (t) { send({ type: 'sell', id: t.id }); ui.selected = null; } }
+function sellSel() { const t = selTower(); if (t && t.owner === me()) { send({ type: 'sell', id: t.id }); ui.selected = null; } }
 function toggleSpeed() { if (net.role === 'guest') return; speed = speed === 1 ? 2 : speed === 2 ? 3 : 1; $('speed').textContent = 'x' + speed; }
 function togglePause() { if (net.role === 'guest') return; paused = !paused; $('pause').textContent = paused ? '▶' : '❚❚'; }
 
 window.addEventListener('keydown', (ev) => {
   if (ev.repeat || ev.target.tagName === 'INPUT' || !running) return;
   const k = ev.key.toLowerCase();
-  if (state.draft && ['1', '2', '3', '4'].includes(k)) { pickCard(+k - 1); return; }
+  if (talentOpen && ['1', '2', '3', '4'].includes(k)) { pickCard(+k - 1); return; }
   const idx = ['1', '2', '3', '4', '5'].indexOf(k);
   if (idx >= 0) selectBuild(TOWER_ORDER[idx]);
-  else if (k === "q") useAbility("meteor");
-  else if (k === "w") useAbility("nova");
-  else if (k === "e") useAbility("wall");
+  else if (k === 'q') useAbility('meteor');
+  else if (k === 'w') useAbility('nova');
+  else if (k === 'e') useAbility('wall');
+  else if (k === 't') openTalent();
   else if (k === ' ') { ev.preventDefault(); nextWave(); }
   else if (k === 'u') upgradeSel();
   else if (k === 's') sellSel();
   else if (k === 'f') toggleSpeed();
   else if (k === 'p') togglePause();
-  else if (k === 'escape') cancel();
+  else if (k === 'escape') { cancel(); closeTalent(); }
 });
 
 // ---------- toolbar ----------
+function towerIcon(kind, level = 1) {
+  const cv = document.createElement('canvas');
+  cv.width = 28; cv.height = 40;
+  drawTower(cv.getContext('2d'), kind, 2, 14, level);
+  return cv;
+}
 function buildToolbar() {
   const bar = $('towers');
   bar.innerHTML = '';
@@ -200,10 +242,7 @@ function buildToolbar() {
     b.className = 'tower-btn' + (locked ? ' locked' : '');
     b.dataset.kind = kind;
     b.title = locked ? 'Відкривається в магазині за кристали' : `${def.name} [${i + 1}] — ${def.desc}`;
-    const ic = document.createElement('canvas');
-    ic.width = 16; ic.height = 16;
-    drawTower(ic.getContext('2d'), kind, 0, 0, 1);
-    b.append(ic);
+    b.append(towerIcon(kind));
     const label = document.createElement('span');
     label.className = 'label';
     label.innerHTML = `<b>${def.name}</b><span class="cost">${locked ? '🔒' : '● ' + def.cost}</span>`;
@@ -218,15 +257,16 @@ function buildToolbar() {
 }
 for (const id of Object.keys(ABILITIES)) {
   const a = ABILITIES[id];
-  const b = document.createElement("button");
-  b.className = "ability";
-  b.id = "ab-" + id;
+  const b = document.createElement('button');
+  b.className = 'ability';
+  b.id = 'ab-' + id;
   b.title = a.desc;
   b.innerHTML = `<span class="ab-name">${a.name}</span><span class="key">${a.key}</span><span class="cd"></span>`;
-  b.addEventListener("click", () => useAbility(id));
-  $("abilities").append(b);
+  b.addEventListener('click', () => useAbility(id));
+  $('abilities').append(b);
 }
 $('next').addEventListener('click', nextWave);
+$('talent').addEventListener('click', openTalent);
 $('speed').addEventListener('click', toggleSpeed);
 $('pause').addEventListener('click', togglePause);
 $('mute').addEventListener('click', () => { sfx.muted = !sfx.muted; $('mute').textContent = sfx.muted ? '🔇' : '🔊'; });
@@ -260,38 +300,44 @@ function updatePop() {
   const t = selTower();
   const o = selObstacle();
   if (!t && !o) { if (popKey) { pop.className = 'hidden'; popKey = ''; } return; }
+  const gold = P().gold;
   let key, html;
   if (t) {
     const def = TOWERS[t.kind];
     const st = towerStats(state, t);
+    const mine = t.owner === me();
     const up = upgradeCost(t);
     const evo = canEvolve(t);
-    key = `t${t.id}:${t.kind}:${t.level}:${Math.floor(state.gold / 5)}:${Math.round(st.dmg)}:${st.buff}`;
+    key = `t${t.id}:${t.kind}:${t.level}:${Math.floor(gold / 5)}:${Math.round(st.dmg)}:${st.buff}`;
     html = `<div class="pop-title"><b>${def.name}</b> <span>${def.from ? '★ еволюція' : 'рів. ' + t.level}</span></div>
       <div class="pop-stats"><span>⚔ ${Math.round(st.dmg)}</span><span>◎ ${Math.round(st.range)}</span><span>⏱ ${(TICK_RATE / st.period).toFixed(1)}/с</span>${st.buff ? `<span class="buff">⚡+${Math.round(st.buff * 100)}%</span>` : ''}</div>`;
-    if (up) html += `<button data-act="upgrade" ${state.gold < up ? 'disabled' : ''}>▲ Покращити <i>● ${up}</i></button>`;
-    if (evo) {
-      html += '<div class="evo-title">Еволюція — обери шлях:</div><div class="evo">';
-      for (const k of BRANCHES[t.kind]) {
-        const d = TOWERS[k];
-        html += `<button class="evo-btn" data-act="evolve" data-kind="${k}" ${state.gold < d.cost ? 'disabled' : ''}>
-          <canvas data-icon="${k}" width="16" height="16"></canvas><b>${d.name}</b><span>${d.desc}</span><i>● ${d.cost}</i></button>`;
+    if (!mine) {
+      html += `<div class="pop-stats"><span style="color:${PLAYER_COLORS[t.owner]}">Вежа гравця ${partnerNick || 'союзника'}</span></div>`;
+    } else {
+      if (up) html += `<button data-act="upgrade" ${gold < up ? 'disabled' : ''}>▲ Покращити <i>● ${up}</i></button>`;
+      if (evo) {
+        html += '<div class="evo-title">Еволюція — обери шлях:</div><div class="evo">';
+        for (const k of BRANCHES[t.kind]) {
+          const d = TOWERS[k];
+          html += `<button class="evo-btn" data-act="evolve" data-kind="${k}" ${gold < d.cost ? 'disabled' : ''}>
+            <span class="icon" data-icon="${k}"></span><b>${d.name}</b><span>${d.desc}</span><i>● ${d.cost}</i></button>`;
+        }
+        html += '</div>';
       }
-      html += '</div>';
+      html += `<button data-act="sell" class="sell">Продати <i>+${sellValue(t)}</i></button>`;
     }
-    html += `<button data-act="sell" class="sell">Продати <i>+${sellValue(t)}</i></button>`;
   } else {
     const cost = clearCost(o);
-    key = `o${o.id}:${state.gold >= cost}`;
+    key = `o${o.id}:${gold >= cost}`;
     html = `<div class="pop-title"><b>${o.kind === 'tree' ? 'Дерево' : 'Камінь'}</b></div>
       <div class="pop-stats"><span>Звільняє місце під вежу. Іноді там скарб!</span></div>
-      <button data-act="clear" ${state.gold < cost ? 'disabled' : ''}>⛏ Розчистити <i>● ${cost}</i></button>`;
+      <button data-act="clear" ${gold < cost ? 'disabled' : ''}>⛏ Розчистити <i>● ${cost}</i></button>`;
   }
   if (key !== popKey) {
     popKey = key;
     pop.innerHTML = html;
     pop.className = '';
-    for (const cv of pop.querySelectorAll('canvas[data-icon]')) drawTower(cv.getContext('2d'), cv.dataset.icon, 0, 0, 4);
+    for (const el of pop.querySelectorAll('[data-icon]')) el.replaceWith(towerIcon(el.dataset.icon, 4));
   }
   placePop(t ? t.tx : o.tx, t ? t.ty : o.ty);
 }
@@ -299,22 +345,32 @@ function updatePop() {
 // ---------- side info ----------
 let infoKey = '';
 function updateUI() {
+  const pl = P();
   for (const b of document.querySelectorAll('.tower-btn')) {
     b.classList.toggle('active', ui.build === b.dataset.kind);
-    b.classList.toggle('poor', state.gold < TOWERS[b.dataset.kind].cost);
+    b.classList.toggle('poor', pl.gold < TOWERS[b.dataset.kind].cost);
   }
   for (const id of Object.keys(ABILITIES)) {
-    const b = $("ab-" + id);
-    b.classList.toggle("active", ui.ability === id);
-    b.classList.toggle("cooling", state.cds[id] > 0);
-    b.style.setProperty("--cd", (state.cds[id] / abilityMax(state, id)).toFixed(3));
+    const b = $('ab-' + id);
+    b.classList.toggle('active', ui.ability === id);
+    b.classList.toggle('cooling', pl.cds[id] > 0);
+    b.style.setProperty('--cd', (pl.cds[id] / abilityMax(state, id, me())).toFixed(3));
   }
   const early = state.wave > 0 && !state.queue.length ? Math.ceil(state.countdown / TICK_RATE) * CONFIG.earlyBonus : 0;
   const last = state.wave >= CONFIG.winWave;
   $('next').textContent = last ? 'Фінал!' : state.queue.length ? 'Хвиля йде…' : early ? `Хвиля ▶ +${early}●` : 'Почати ▶';
   $('next').disabled = state.queue.length > 0 || last;
-  $('waveInfo').textContent = `Хвиля ${state.wave} / ${CONFIG.winWave}`;
+  const n = pl.drafts.length;
+  $('talent').classList.toggle('hidden', !n);
+  $('talent').textContent = `✦ Талант${n > 1 ? ' x' + n : ''} [T]`;
+  $('waveInfo').textContent = `${MODES[state.mode].name} · Хвиля ${state.wave} / ${CONFIG.winWave}`;
   $('waveBar').style.width = (100 * state.wave) / CONFIG.winWave + '%';
+  const coop = state.players.length > 1;
+  $('coopInfo').classList.toggle('hidden', !coop);
+  if (coop) {
+    const other = state.players[1 - me()];
+    $('coopInfo').innerHTML = `<span style="color:${PLAYER_COLORS[me()]}">■ ${nick || 'Ти'}: ${pl.gold}●</span> <span style="color:${PLAYER_COLORS[1 - me()]}">■ ${partnerNick || 'Друг'}: ${other.gold}●</span>`;
+  }
 
   let key, html;
   if (ui.build) {
@@ -323,25 +379,46 @@ function updateUI() {
     html = `<b>${def.name}</b><br>${def.desc}<br><span class="hint">Shift — ставити кілька · ПКМ — скасувати</span>`;
   } else if (ui.ability) {
     const a = ABILITIES[ui.ability];
-    key = "a" + ui.ability;
+    key = 'a' + ui.ability;
     html = `<b>${a.name}</b><br>${a.desc}<br><span class="hint">ПКМ — скасувати</span>`;
   } else {
-    key = 'h';
-    html = `<b>Порада</b><br>Крига робить ворогів <span class="wet">мокрими</span>: Тесла бʼє їх x2, а Вогонь викликає вибух пари.<br>
-      <span class="hint">⚔ Клікай по ворогах — удар з комбо до x5! · 🛢 бочки — вибух · 🌳 дерева — скарби · монети — наводь мишку · стрілки показують, звідки піде хвиля.</span>`;
+    key = 'h' + state.mode;
+    html = state.mode === 'circle'
+      ? `<b>Коло</b><br>Вороги не доходять до замку — вони крутяться по колу і з кожним колом швидшають. Живих більше <b>${state.limit}</b> — поразка.`
+      : '<b>Порада</b><br>Крига робить ворогів <span class="wet">мокрими</span>: Тесла бʼє їх x2, а Вогонь викликає вибух пари.';
+    html += '<br><span class="hint">Клік по ворогу — слабкий удар (добити втікача) · 🛢 бочки — вибух · 🌳 дерева — скарби · монети — наводь мишку.</span>';
   }
   if (key !== infoKey) { infoKey = key; $('info').innerHTML = html; }
   updatePop();
+  if (talentOpen) renderTalent();
 }
 
-// ---------- modals ----------
-function hide(id) { $(id).classList.add('hidden'); }
-
-function showDraft() {
+// ---------- talents (per player, never pause co-op) ----------
+let talentOpen = false;
+let talentKey = '';
+function openTalent() {
+  if (!P().drafts.length) return;
+  talentOpen = true;
+  talentKey = '';
+  if (!net.online) { draftPause = true; }
+  renderTalent();
+}
+function closeTalent() {
+  if (!talentOpen) return;
+  talentOpen = false;
+  draftPause = false;
+  hide('modal');
+}
+function renderTalent() {
+  const draft = P().drafts[0];
+  if (!draft) { closeTalent(); return; }
+  const k = draft.join() + P().drafts.length;
+  if (k === talentKey) return;
+  talentKey = k;
   const m = $('modal');
-  m.innerHTML = `<h2>Хвилю ${state.wave} відбито!</h2><p>Обери посилення${net.online ? ' (обирає той, хто клікне першим)' : ''}</p><div class="cards"></div>`;
-  state.draft.forEach((id, i) => {
-    const c = CARDS.find((k) => k.id === id);
+  m.innerHTML = `<h2>Обери талант</h2><p>${net.online ? 'Твій особистий вибір — гра не зупиняється' : 'Гра на паузі'} · Esc — пізніше</p><div class="cards"></div>`;
+  draft.forEach((id, i) => {
+    const c = CARDS.find((x) => x.id === id);
     const el = document.createElement('button');
     el.className = 'card';
     el.innerHTML = `<span class="key">${i + 1}</span><b>${c.name}</b><span>${c.desc}</span>`;
@@ -351,23 +428,36 @@ function showDraft() {
   m.classList.remove('hidden');
 }
 function pickCard(i) {
-  if (!state.draft) return;
+  if (!P().drafts.length) return;
   send({ type: 'pick', index: i });
   sfx.play('card');
+  talentKey = '';
+  // the pick lands next tick; close now if this was the last pending choice
+  if (P().drafts.length <= 1) closeTalent();
 }
+
+// ---------- end of game ----------
+function hide(id) { $(id).classList.add('hidden'); }
 
 function showEnd(won) {
   running = false;
+  talentOpen = false;
   const { earned, record } = Meta.finishRun(meta, state);
+  const title = won ? 'ПЕРЕМОГА!' : state.mode === 'circle' ? 'Коло переповнене' : 'Замок впав';
   const m = $('modal');
-  m.innerHTML = `<h2 class="${won ? 'win' : ''}">${won ? 'ПЕРЕМОГА!' : 'Замок впав'}</h2>
-    <p>Хвиля <b>${state.wave}</b> / ${CONFIG.winWave} · Вбито <b>${state.kills}</b>${record ? ' · <span class="rec">Новий рекорд!</span>' : ''}</p>
+  m.innerHTML = `<h2 class="${won ? 'win' : ''}">${title}</h2>
+    <p>Хвиля <b>${state.wave}</b> / ${CONFIG.winWave} · Вбито <b>${state.kills}</b>${state.players.length > 1 ? ` (ти: ${P().kills})` : ''}${record ? ' · <span class="rec">Новий рекорд!</span>' : ''}</p>
     <p class="crys">+${earned} 💎 <span>(усього ${meta.crystals})</span></p>
-    ${won && state.opts.diff !== 'nightmare' ? '<p class="rec">Відкрито нову складність!</p>' : ''}
-    <div class="row">${net.role === 'guest' ? '<p>Чекаємо, поки хост почне нову гру…</p>' : '<button id="again" class="big">Ще раз</button>'}<button id="menuBtn" class="big">Меню / Магазин</button></div>`;
+    <p id="scoreMsg">${nick ? 'Надсилаємо результат…' : 'Введи нік у меню, щоб потрапити в таблицю лідерів'}</p>
+    <div class="row">${net.role === 'guest' ? '<p>Чекаємо, поки хост почне нову гру…</p>' : '<button id="again" class="big">Ще раз</button>'}<button id="menuBtn" class="big">Меню</button></div>`;
   m.classList.remove('hidden');
   if ($('again')) $('again').addEventListener('click', newRun);
   $('menuBtn').addEventListener('click', openMenu);
+  if (nick) {
+    Api.addScore({ mode: state.mode, diff: state.opts.diff, wave: state.wave, kills: state.kills, won, coop: state.players.length > 1, partner: partnerNick })
+      .then((r) => { $('scoreMsg').textContent = `Результат у таблиці лідерів: ${r.score} очок`; })
+      .catch((e) => { $('scoreMsg').textContent = 'Таблиця лідерів недоступна: ' + e.message; });
+  }
 }
 
 function banner(text, cls = '') {
@@ -378,25 +468,38 @@ function banner(text, cls = '') {
   banner.t = setTimeout(() => { b.className = ''; }, 1600);
 }
 
-// ---------- menu / lobby / shop ----------
+// ---------- menu / lobby / shop / leaderboard ----------
+let boardMode = 'classic';
 function openMenu() {
   running = false;
+  talentOpen = false;
   hide('modal');
-  $("pop").className = "hidden";
+  $('pop').className = 'hidden';
   renderMenu();
+  loadBoard();
   $('menu').classList.remove('hidden');
 }
 
 function renderMenu() {
   $('crystals').textContent = meta.crystals;
+  const ml = $('modes');
+  ml.innerHTML = '';
+  for (const [id, md] of Object.entries(MODES)) {
+    const b = document.createElement('button');
+    b.className = 'diff' + (mode === id ? ' active' : '');
+    b.innerHTML = `<b>${md.name}</b><span>${md.desc}</span>`;
+    b.addEventListener('click', () => { mode = id; renderMenu(); });
+    ml.append(b);
+  }
   const dl = $('diffs');
   dl.innerHTML = '';
   for (const d of Meta.DIFFS) {
     const ok = Meta.unlockedDiff(meta, d);
+    const k = Meta.bestKey(mode, d.id);
     const b = document.createElement('button');
     b.className = 'diff' + (diff === d.id ? ' active' : '');
     b.disabled = !ok;
-    b.innerHTML = `<b>${ok ? '' : '🔒 '}${d.name}</b><span>${ok ? `рекорд: ${meta.best[d.id] || 0}/${CONFIG.winWave}${meta.wins[d.id] ? ' · 🏆' + meta.wins[d.id] : ''}` : 'Переможи на попередній'}</span>`;
+    b.innerHTML = `<b>${ok ? '' : '🔒 '}${d.name}</b><span>${ok ? `рекорд: ${meta.best[k] || 0}/${CONFIG.winWave}${meta.wins[k] ? ' · 🏆' + meta.wins[k] : ''}` : 'Переможи на попередній'}</span>`;
     b.addEventListener('click', () => { diff = d.id; renderMenu(); });
     dl.append(b);
   }
@@ -412,7 +515,42 @@ function renderMenu() {
     b.addEventListener('click', () => { if (Meta.buy(meta, it.id)) { sfx.unlock(); sfx.play('card'); renderMenu(); } });
     shop.append(b);
   }
+  for (const b of document.querySelectorAll('[data-board]')) b.classList.toggle('active', b.dataset.board === boardMode);
 }
+
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const DIFF_NAMES = Object.fromEntries(Meta.DIFFS.map((d) => [d.id, d.name]));
+async function loadBoard() {
+  const el = $('board');
+  el.innerHTML = '<p class="hint">Завантаження…</p>';
+  try {
+    const rows = await Api.scores(boardMode);
+    if (!rows.length) { el.innerHTML = '<p class="hint">Ще ніхто не зіграв у цьому режимі. Стань першим!</p>'; return; }
+    el.innerHTML = '<table><tr><th>#</th><th>Гравець</th><th>Хвиля</th><th>Склад.</th><th>Очки</th></tr>' + rows.map((r, i) => `
+      <tr class="${r.nick === nick ? 'me' : ''}"><td>${i + 1}</td>
+      <td>${r.won ? '🏆 ' : ''}${esc(r.nick)}${r.coop ? ` <small>+ ${esc(r.partner || 'друг')}</small>` : ''}</td>
+      <td>${r.wave}</td><td>${DIFF_NAMES[r.diff] || ''}</td><td>${r.score}</td></tr>`).join('') + '</table>';
+  } catch (e) {
+    el.innerHTML = `<p class="hint">Таблиця лідерів недоступна (${esc(e.message)})</p>`;
+  }
+}
+for (const b of document.querySelectorAll('[data-board]')) {
+  b.addEventListener('click', () => { boardMode = b.dataset.board; renderMenu(); loadBoard(); });
+}
+
+async function saveNick() {
+  const v = $('nick').value.trim();
+  if (v.length < 2) { $('nickMsg').textContent = 'Мінімум 2 символи'; return; }
+  try {
+    nick = await Api.setNick(v);
+    $('nick').value = nick;
+    $('nickMsg').textContent = '✓ збережено';
+    net.send({ t: 'hello', nick });
+  } catch (e) { $('nickMsg').textContent = e.message; }
+}
+$('nickSave').addEventListener('click', saveNick);
+$('nick').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') saveNick(); });
+Api.getNick().then((n) => { nick = n; $('nick').value = n; });
 
 $('playSolo').addEventListener('click', () => { sfx.unlock(); net.leave(); $('netStatus').textContent = ''; newRun(); });
 $('hostBtn').addEventListener('click', async () => {
@@ -436,8 +574,10 @@ $('joinBtn').addEventListener('click', async () => {
 $('copyCode').addEventListener('click', () => { navigator.clipboard?.writeText($('roomCode').textContent); $('copyCode').textContent = '✓'; });
 
 // ---------- events -> sound/UI ----------
-function handleEvents(events) {
+function handleEvents(events, quiet = false) {
+  if (quiet) return; // fast catch-up: skip effects
   renderer.onEvents(events, state);
+  const mine = (e) => e.p === undefined || e.p === me();
   for (const e of events) {
     switch (e.type) {
       case 'shoot': sfx.play(e.kind); break;
@@ -448,33 +588,48 @@ function handleEvents(events) {
       case 'meteor': sfx.play('meteor'); freezeUntil = performance.now() + 80; break;
       case 'build': case 'upgrade': case 'clear': sfx.play('build'); break;
       case 'evolve': sfx.play('card'); popKey = ''; break;
-      case 'sell': case 'coin': case 'chest': sfx.play('sell'); break;
+      case 'sell': case 'coin': case 'chest': if (mine(e)) sfx.play('sell'); break;
       case 'leak': case 'stolen': sfx.play('leak'); break;
+      case 'lap': sfx.play('click'); break;
       case 'wave':
         sfx.play('wave');
         banner(e.final ? 'ФІНАЛЬНА ХВИЛЯ!' : e.boss ? `Хвиля ${e.wave} — БОС!` : `Хвиля ${e.wave}`, e.boss ? 'boss' : '');
         break;
-      case "nova": sfx.play("frost"); sfx.play("explode"); break;
-      case "smite": sfx.play(e.combo >= 3 ? "build" : "click"); break;
-      case "wallup": case "wallbreak": sfx.play("cannon"); break;
-      case 'bonus': banner(`+${e.gold} золота`, 'gold'); break;
-      case 'waveclear': showDraft(); break;
+      case 'nova': sfx.play('frost'); sfx.play('explode'); break;
+      case 'smite': sfx.play(e.combo >= 3 ? 'build' : 'click'); break;
+      case 'wallup': case 'wallbreak': sfx.play('cannon'); break;
+      case 'bonus': if (mine(e)) banner(`+${e.gold} золота`, 'gold'); break;
+      case 'draft':
+        if (e.p === me()) { sfx.play('card'); if (!net.online && !talentOpen) openTalent(); }
+        break;
       case 'gameover': sfx.play('gameover'); showEnd(false); break;
       case 'victory': sfx.play('card'); showEnd(true); break;
     }
   }
-  if (!state.draft && !$('modal').classList.contains('hidden') && !state.over) hide('modal');
 }
 
+// Partner's cursor: a pixel arrow in their colour with their nick.
 function drawPartnerCursor() {
   const p = ui.partner;
-  if (!p || performance.now() - p.at > 3000) return;
+  if (!p || !net.connected || performance.now() - p.at > 3000) return;
   const g = canvas.getContext('2d');
   const x = Math.round(p.x) + MX, y = Math.round(p.y) + MY;
-  g.fillStyle = C.ink;
-  g.fillRect(x - 1, y - 1, 5, 7);
-  g.fillStyle = C.cyan;
-  for (let i = 0; i < 5; i++) g.fillRect(x, y + i, Math.max(1, 4 - i), 1);
+  const arrow = ['1', '11', '121', '1221', '12221', '122221', '1222221', '1221111', '11 121', '1  121', '    11'];
+  const col = PLAYER_COLORS[1 - me()];
+  arrow.forEach((row, j) => {
+    for (let i = 0; i < row.length; i++) {
+      if (row[i] === ' ') continue;
+      g.fillStyle = row[i] === '1' ? C.ink : col;
+      g.fillRect(x + i, y + j, 1, 1);
+    }
+  });
+  const name = partnerNick || 'Друг';
+  g.font = '8px "Pixelify Sans", monospace';
+  const w = Math.ceil(g.measureText(name).width) + 4;
+  g.fillStyle = 'rgba(26,28,44,0.85)';
+  g.fillRect(x + 8, y + 9, w, 10);
+  g.fillStyle = col;
+  g.fillText(name, x + 10, y + 17);
 }
 
 // ---------- main loop ----------
@@ -482,10 +637,14 @@ const DT = 1000 / TICK_RATE;
 let acc = 0;
 let last = performance.now();
 let lastTickAt = 0;
+let lastPing = 0;
 
 function tick(cmds, advance = true) {
   step(state, cmds, advance);
-  if (net.role === 'host') net.send({ t: advance ? 'tick' : 'cmds', cmds });
+  if (net.role === 'host') {
+    net.send({ t: advance ? 'tick' : 'cmds', cmds });
+    if (cmds.length) cmdLog.push([state.tick - (advance ? 1 : 0), advance, cmds]);
+  }
   handleEvents(state.events);
 }
 
@@ -494,26 +653,30 @@ function frame(now) {
   last = now;
   let alpha = 1;
   if (running && net.role === 'guest') {
-    // replay the host's ticks; catch up quickly if we fell behind
-    while (net.inbox.length) {
+    // replay the host's ticks; after a long gap catch up fast and silently
+    const backlog = net.inbox.length;
+    let n = 0;
+    while (net.inbox.length && n++ < 60) {
       const m = net.inbox.shift();
       step(state, m.cmds, m.t === 'tick');
-      handleEvents(state.events);
+      handleEvents(state.events, backlog > 10);
       if (m.t === 'tick') lastTickAt = now;
     }
     alpha = Math.min(1, (now - lastTickAt) / DT);
+    $('netStatus').textContent = now - lastMsgAt > 4000 ? 'Хост не відповідає…' : 'На звʼязку';
   } else if (running) {
-    if (state.draft || state.over) acc = 0;
-    else if (!paused && now >= freezeUntil) acc += real * speed;
+    if (state.over) acc = 0;
+    else if (!paused && !draftPause && now >= freezeUntil) acc += real * speed;
     while (acc >= DT) {
       const cmds = pending;
       pending = [];
       tick(cmds);
       acc -= DT;
     }
-    // commands issued while paused / in a draft apply without advancing time
+    // commands issued while paused apply without advancing time
     if (pending.length) { const cmds = pending; pending = []; tick(cmds, false); }
-    alpha = paused ? 1 : acc / DT;
+    alpha = paused || draftPause ? 1 : acc / DT;
+    if (net.role === 'host' && now - lastPing > 1000) { lastPing = now; net.send({ t: 'ping' }); }
   }
   renderer.draw(state, alpha, ui, real / 1000);
   drawPartnerCursor();
@@ -525,15 +688,16 @@ buildToolbar();
 fit();
 if (new URLSearchParams(location.search).has('demo')) {
   // debug: start immediately with a few towers to check rendering
+  mode = new URLSearchParams(location.search).get('demo') === 'circle' ? 'circle' : 'classic';
   newRun();
-  state.gold = 2000;
+  state.players[0].gold = 2000;
   state.opts.locked = [];
   // put each tower type on a free tile next to the road
   const spots = [];
   for (let ty = 0; ty < 14 && spots.length < 5; ty++) for (let tx = 2; tx < 24 && spots.length < 5; tx += 3) {
     if (canPlace(state, tx, ty) && (isRoad(state, tx, ty + 1) || isRoad(state, tx + 1, ty))) spots.push([tx, ty]);
   }
-  spots.forEach(([tx, ty], i) => send({ type: "place", kind: TOWER_ORDER[i], tx, ty }));
+  spots.forEach(([tx, ty], i) => send({ type: 'place', kind: TOWER_ORDER[i], tx, ty }));
   send({ type: 'nextWave' });
 } else openMenu();
 requestAnimationFrame(frame);

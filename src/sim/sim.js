@@ -1,8 +1,9 @@
 // Deterministic game simulation. No DOM, no Math.random, no Date.now.
 // The client sends commands, step() advances one fixed tick and emits events for juice/sound.
+// Every command carries `p` = player index (0 = host/solo, 1 = guest); each player has own gold, talents, abilities.
 import {
   TILE, COLS, ROWS, TICK_RATE as T, CONFIG, TOWERS, ENEMIES, UNLOCKS, CARDS,
-  MAPGEN, BARREL, OBSTACLES, COIN, ABILITIES, SMITE,
+  MAPGEN, MODES, BARREL, OBSTACLES, COIN, ABILITIES, SMITE,
 } from './data.js';
 import { rand, randInt } from './rng.js';
 
@@ -11,18 +12,20 @@ const key = (x, y) => x + ',' + y;
 
 // ---------- procedural map ----------
 
-function buildLane(points) {
+// loopFrom: index of the point where the endless loop starts (circle mode); the loop closes back on it.
+function buildLane(points, loopFrom = -1) {
   const pts = points.map(([x, y]) => center(x, y));
   const segs = [];
-  let total = 0;
+  let total = 0, loopStart = 0;
   for (let i = 0; i < pts.length - 1; i++) {
+    if (i === loopFrom) loopStart = total;
     const a = pts[i], b = pts[i + 1];
     const len = Math.hypot(b.x - a.x, b.y - a.y);
     if (!len) continue;
     segs.push({ a, b, len, start: total });
     total += len;
   }
-  return { points, segs, total };
+  return loopFrom >= 0 ? { points, segs, total, loop: true, loopStart, loopLen: total - loopStart } : { points, segs, total };
 }
 
 function addTiles(points, tiles) {
@@ -38,33 +41,7 @@ function addTiles(points, tiles) {
   }
 }
 
-// 2-3 lanes snake from the left edge to one castle on the right; they may cross and merge.
-function genMap(s) {
-  const n = rand(s) < MAPGEN.lanes3Chance ? 3 : 2;
-  const yc = 3 + randInt(s, ROWS - 6);
-  const spawns = [];
-  const lanes = [];
-  for (let i = 0; i < n; i++) {
-    let y0, guard = 0;
-    do { y0 = 1 + randInt(s, ROWS - 2); } while (spawns.some((v) => Math.abs(v - y0) < 3) && guard++ < 50);
-    spawns.push(y0);
-    const pts = [[-1, y0]];
-    let x = -1, y = y0;
-    for (;;) {
-      x = Math.min(COLS - 3, x + 2 + randInt(s, 3));
-      pts.push([x, y]);
-      if (x >= COLS - 5) break;
-      const ny = 1 + randInt(s, ROWS - 2);
-      if (Math.abs(ny - y) >= 2) { y = ny; pts.push([x, y]); }
-    }
-    if (y !== yc) pts.push([x, yc]);
-    pts.push([COLS - 1, yc]);
-    lanes.push(pts);
-  }
-  const tiles = new Set();
-  for (const p of lanes) addTiles(p, tiles);
-
-  // ponds: decoration that blocks building
+function genPonds(s, tiles) {
   const water = new Set();
   const ponds = MAPGEN.ponds[0] + randInt(s, MAPGEN.ponds[1] - MAPGEN.ponds[0] + 1);
   for (let k = 0; k < ponds; k++) {
@@ -77,11 +54,83 @@ function genMap(s) {
       }
     }
   }
-  return { lanes: lanes.map(buildLane), tiles, water, castle: [COLS - 1, yc], spawns };
+  return water;
+}
+
+// Count road tiles of `pts` that run right next to (but not on) existing road: parallel lanes look like one wide road.
+function hugging(pts, tiles) {
+  const mine = new Set();
+  addTiles(pts, mine);
+  let n = 0;
+  for (const k of mine) {
+    if (tiles.has(k)) continue;
+    const [x, y] = k.split(',').map(Number);
+    if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => tiles.has(key(x + dx, y + dy)) && !mine.has(key(x + dx, y + dy)))) n++;
+  }
+  return n;
+}
+
+// Classic: 2-3 lanes snake from the left edge to one castle on the right; they may cross but avoid running side by side.
+function genClassic(s) {
+  const n = rand(s) < MAPGEN.lanes3Chance ? 3 : 2;
+  const yc = 3 + randInt(s, ROWS - 6);
+  const spawns = [];
+  const lanes = [];
+  const tiles = new Set();
+  for (let i = 0; i < n; i++) {
+    let y0, guard = 0;
+    do { y0 = 1 + randInt(s, ROWS - 2); } while (spawns.some((v) => Math.abs(v - y0) < 3) && guard++ < 50);
+    let pts, tries = 0;
+    do {
+      pts = [[-1, y0]];
+      let x = -1, y = y0;
+      for (;;) {
+        x = Math.min(COLS - 3, x + 2 + randInt(s, 3));
+        pts.push([x, y]);
+        if (x >= COLS - 5) break;
+        const ny = 1 + randInt(s, ROWS - 2);
+        if (Math.abs(ny - y) >= 2) { y = ny; pts.push([x, y]); }
+      }
+      if (y !== yc) pts.push([x, yc]);
+      pts.push([COLS - 1, yc]);
+    } while (i > 0 && hugging(pts, tiles) > 3 && ++tries < 25);
+    spawns.push(y0);
+    lanes.push(pts);
+    addTiles(pts, tiles);
+  }
+  return { lanes: lanes.map((p) => buildLane(p)), tiles, water: genPonds(s, tiles), castle: [COLS - 1, yc], spawns };
+}
+
+// Circle: an entry road from the left joins a closed ring with random inward dents on top/bottom/right.
+function genCircle(s) {
+  const x0 = 3 + randInt(s, 2), x1 = COLS - 4 - randInt(s, 2);
+  const y0 = 1 + randInt(s, 2), y1 = ROWS - 2 - randInt(s, 2);
+  const ym = Math.floor((y0 + y1) / 2) + randInt(s, 3) - 1;
+  const dent = (a, b) => {
+    // returns [from, to] inside (a, b) with room for corners, or null
+    if (b - a < 9 || rand(s) < 0.35) return null;
+    const p = a + 2 + randInt(s, Math.floor((b - a) / 2) - 2);
+    return [p, Math.min(b - 2, p + 3 + randInt(s, 4))];
+  };
+  const loop = [[x0, ym], [x0, y0]];
+  const dTop = dent(x0, x1), depthT = 2 + randInt(s, 2);
+  if (dTop) loop.push([dTop[0], y0], [dTop[0], y0 + depthT], [dTop[1], y0 + depthT], [dTop[1], y0]);
+  loop.push([x1, y0]);
+  const dRight = dent(y0, y1), depthR = 2 + randInt(s, 3);
+  if (dRight) loop.push([x1, dRight[0]], [x1 - depthR, dRight[0]], [x1 - depthR, dRight[1]], [x1, dRight[1]]);
+  loop.push([x1, y1]);
+  const dBot = dent(x0, x1), depthB = 2 + randInt(s, 2);
+  if (dBot) loop.push([dBot[1], y1], [dBot[1], y1 - depthB], [dBot[0], y1 - depthB], [dBot[0], y1]);
+  loop.push([x0, y1], [x0, ym]);
+  const pts = [[-1, ym], ...loop];
+  const tiles = new Set();
+  addTiles(pts, tiles);
+  return { lanes: [buildLane(pts, 1)], tiles, water: genPonds(s, tiles), castle: null, spawns: [ym], ring: [x0, y0, x1, y1] };
 }
 
 export function posAt(map, lane, d) {
   const L = map.lanes[lane];
+  if (L.loop && d > L.loopStart) d = L.loopStart + ((d - L.loopStart) % L.loopLen);
   for (const g of L.segs) {
     if (d <= g.start + g.len) {
       const t = (d - g.start) / g.len;
@@ -102,19 +151,38 @@ function planLanes(s) {
   return out.sort();
 }
 
+function newPlayer(opts) {
+  return {
+    gold: CONFIG.startGold + (opts.bonusGold || 0),
+    mods: {
+      dmg: { arrow: 1, cannon: 1, frost: 1, tesla: 1, fire: 1 },
+      rate: 1, range: 1, chain: 0, burn: 1, wet: 0, steam: 1, gold: 1, interest: 0, crit: 0.1,
+      meteorCd: opts.meteorCd || 1, smite: 1, wall: 1,
+    },
+    cds: { meteor: 0, nova: 0, wall: 0 },
+    combo: 0,
+    comboT: 0,
+    drafts: [], // pending talent choices (arrays of card ids); picking never pauses the game
+    kills: 0,
+  };
+}
+
 // opts come from meta-progression + difficulty (see src/meta.js); in co-op the host sends them to the guest.
 export function createGame(seed, opts = {}) {
+  const o = { hpMul: 1, cards: 3, locked: [], mode: 'classic', players: 1, ...opts };
   const s = {
     rngState: seed >>> 0,
-    opts: { hpMul: 1, cards: 3, locked: [], ...opts },
+    opts: o,
+    mode: o.mode,
     won: false,
     tick: 0,
-    gold: CONFIG.startGold + (opts.bonusGold || 0),
-    lives: CONFIG.startLives + (opts.bonusLives || 0),
+    lives: CONFIG.startLives + (o.bonusLives || 0),
+    limit: o.mode === 'circle' ? MODES.circle.maxAlive + 5 * Math.round(((o.bonusLives || 0) / 3)) : 0,
     wave: 0,
     countdown: CONFIG.firstWaveDelay * T,
     map: null,
     plan: [],
+    players: Array.from({ length: o.players }, () => newPlayer(o)),
     enemies: [],
     towers: [],
     projs: [],
@@ -126,24 +194,14 @@ export function createGame(seed, opts = {}) {
     queue: [],
     nextId: 100,
     events: [],
-    mods: {
-      dmg: { arrow: 1, cannon: 1, frost: 1, tesla: 1, fire: 1 },
-      rate: 1, range: 1, chain: 0, burn: 1, wet: 0, steam: 1, gold: 1, interest: 0, crit: 0.1,
-      meteorCd: opts.meteorCd || 1, smite: 1, wall: 1,
-    },
-    cds: { meteor: 0, nova: 0, wall: 0 },
-    combo: 0,
-    comboT: 0,
-    draft: null,
-    draftedWave: 0,
     over: false,
     kills: 0,
   };
-  s.map = genMap(s);
+  s.map = o.mode === 'circle' ? genCircle(s) : genClassic(s);
   s.plan = planLanes(s);
 
-  const near = (tx, ty, [cx, cy], r) => Math.abs(tx - cx) <= r && Math.abs(ty - cy) <= r;
   const nearSpawn = (tx, ty) => tx <= 1 && s.map.spawns.some((y) => Math.abs(ty - y) <= 1);
+  const nearCastle = (tx, ty) => s.map.castle && Math.abs(tx - s.map.castle[0]) <= 1 && Math.abs(ty - s.map.castle[1]) <= 1;
   // Explosive barrels right next to the road.
   let guard = 0;
   while (s.barrels.length < MAPGEN.barrels && guard++ < 2000) {
@@ -157,7 +215,7 @@ export function createGame(seed, opts = {}) {
   guard = 0;
   while (s.obstacles.length < OBSTACLES.count && guard++ < 2000) {
     const tx = randInt(s, COLS), ty = randInt(s, ROWS);
-    if (!isFree(s, tx, ty) || nearSpawn(tx, ty) || near(tx, ty, s.map.castle, 1)) continue;
+    if (!isFree(s, tx, ty) || nearSpawn(tx, ty) || nearCastle(tx, ty)) continue;
     s.obstacles.push({ id: s.nextId++, tx, ty, kind: rand(s) < 0.65 ? 'tree' : 'rock', chest: rand(s) < OBSTACLES.chestChance, v: randInt(s, 3) });
   }
   return s;
@@ -175,6 +233,7 @@ function isFree(s, tx, ty) {
 }
 export const canPlace = isFree;
 export const isRoad = (s, tx, ty) => s.map.tiles.has(key(tx, ty));
+export const player = (s, p) => s.players[p] || s.players[0];
 
 export function towerAt(s, tx, ty) {
   return s.towers.find((t) => t.tx === tx && t.ty === ty) || null;
@@ -191,8 +250,8 @@ export function family(kind) {
 export function clearCost(o) {
   return OBSTACLES[o.kind];
 }
-export function abilityMax(s, id) {
-  return Math.round(ABILITIES[id].cd * (id === 'meteor' ? s.mods.meteorCd : 1) * T);
+export function abilityMax(s, id, p = 0) {
+  return Math.round(ABILITIES[id].cd * (id === 'meteor' ? player(s, p).mods.meteorCd : 1) * T);
 }
 export function enemyAt(s, x, y, r = 14) {
   let best = null, bd = r;
@@ -203,7 +262,7 @@ export function enemyAt(s, x, y, r = 14) {
   return best;
 }
 
-// Rate bonus from adjacent Dynamo towers.
+// Rate bonus from adjacent Dynamo towers (any owner: co-op players can help each other).
 function buffOf(s, t) {
   let b = 0;
   for (const o of s.towers) {
@@ -215,12 +274,13 @@ function buffOf(s, t) {
 
 export function towerStats(s, t) {
   const def = TOWERS[t.kind];
+  const m = player(s, t.owner).mods;
   const lv = def.from ? 0 : t.level - 1;
   const buff = buffOf(s, t);
   return {
-    range: (def.range + lv * CONFIG.rangePerLevel) * s.mods.range,
-    dmg: def.dmg * (1 + 0.6 * lv) * s.mods.dmg[family(t.kind)],
-    period: Math.max(1, Math.round(T / (def.rate * s.mods.rate * (1 + buff)))),
+    range: (def.range + lv * CONFIG.rangePerLevel) * m.range,
+    dmg: def.dmg * (1 + 0.6 * lv) * m.dmg[family(t.kind)],
+    period: Math.max(1, Math.round(T / (def.rate * m.rate * (1 + buff)))),
     buff,
   };
 }
@@ -243,11 +303,13 @@ export function sellValue(t) {
 export function step(s, cmds = [], advance = true) {
   s.events = [];
   for (const c of cmds) applyCmd(s, c);
-  if (!advance || s.over || s.draft) return;
+  if (!advance || s.over) return;
 
   s.tick++;
-  for (const k in s.cds) if (s.cds[k] > 0) s.cds[k]--;
-  if (s.comboT > 0 && --s.comboT === 0) s.combo = 0;
+  for (const pl of s.players) {
+    for (const k in pl.cds) if (pl.cds[k] > 0) pl.cds[k]--;
+    if (pl.comboT > 0 && --pl.comboT === 0) pl.combo = 0;
+  }
 
   if (!s.queue.length && s.wave < CONFIG.winWave) {
     s.countdown--;
@@ -269,84 +331,84 @@ export function step(s, cmds = [], advance = true) {
   s.coins = s.coins.filter((c) => c.life > 0);
   s.walls = s.walls.filter((w) => w.hp > 0);
 
-  if (s.lives <= 0) {
-    s.lives = 0;
+  const overrun = s.mode === 'circle' && s.enemies.length >= s.limit;
+  if (s.lives <= 0 || overrun) {
+    s.lives = Math.max(0, s.lives);
     s.over = true;
     s.events.push({ type: 'gameover' });
   } else if (s.wave >= CONFIG.winWave && !s.queue.length && !s.enemies.length) {
     s.won = true;
     s.over = true;
     s.events.push({ type: 'victory' });
-  } else if (s.wave > s.draftedWave && !s.queue.length && !s.enemies.length) {
-    s.draftedWave = s.wave;
-    s.draft = pickCards(s, s.opts.cards);
-    s.events.push({ type: 'waveclear', wave: s.wave });
   }
 }
 
 function applyCmd(s, c) {
   if (s.over) return;
-  if (c.type === 'pick') {
-    if (!s.draft) return;
-    const card = CARDS.find((k) => k.id === s.draft[c.index]);
-    if (card) card.apply(s);
-    s.draft = null;
-    return;
-  }
-  if (s.draft) return;
+  const pi = s.players[c.p] ? c.p : 0;
+  const pl = s.players[pi];
 
   switch (c.type) {
+    case 'pick': {
+      const draft = pl.drafts[0];
+      const card = draft && CARDS.find((k) => k.id === draft[c.index]);
+      if (!card) return;
+      card.apply(s, pl);
+      pl.drafts.shift();
+      s.events.push({ type: 'picked', p: pi, card: card.id });
+      return;
+    }
     case 'place': {
       const def = TOWERS[c.kind];
-      if (!def || def.from || s.opts.locked.includes(c.kind) || !canPlace(s, c.tx, c.ty) || s.gold < def.cost) return;
-      s.gold -= def.cost;
-      const t = { id: s.nextId++, kind: c.kind, tx: c.tx, ty: c.ty, ...center(c.tx, c.ty), level: 1, cd: 0, spent: def.cost, aim: 0, fired: 0 };
+      if (!def || def.from || s.opts.locked.includes(c.kind) || !canPlace(s, c.tx, c.ty) || pl.gold < def.cost) return;
+      pl.gold -= def.cost;
+      const t = { id: s.nextId++, owner: pi, kind: c.kind, tx: c.tx, ty: c.ty, ...center(c.tx, c.ty), level: 1, cd: 0, spent: def.cost, aim: 0, fired: 0 };
       s.towers.push(t);
-      s.events.push({ type: 'build', x: t.x, y: t.y });
+      s.events.push({ type: 'build', x: t.x, y: t.y, p: pi });
       return;
     }
     case 'upgrade': {
-      const t = s.towers.find((k) => k.id === c.id);
+      const t = s.towers.find((k) => k.id === c.id && k.owner === pi);
       const cost = t ? upgradeCost(t) : 0;
-      if (!cost || s.gold < cost) return;
-      s.gold -= cost;
+      if (!cost || pl.gold < cost) return;
+      pl.gold -= cost;
       t.spent += cost;
       t.level++;
-      s.events.push({ type: 'upgrade', x: t.x, y: t.y });
+      s.events.push({ type: 'upgrade', x: t.x, y: t.y, p: pi });
       return;
     }
     case 'evolve': {
-      const t = s.towers.find((k) => k.id === c.id);
+      const t = s.towers.find((k) => k.id === c.id && k.owner === pi);
       const def = TOWERS[c.kind];
-      if (!t || !def || def.from !== t.kind || !canEvolve(t) || s.gold < def.cost) return;
-      s.gold -= def.cost;
+      if (!t || !def || def.from !== t.kind || !canEvolve(t) || pl.gold < def.cost) return;
+      pl.gold -= def.cost;
       t.spent += def.cost;
       t.kind = c.kind;
       t.cd = 0;
-      s.events.push({ type: 'evolve', x: t.x, y: t.y, kind: c.kind });
+      s.events.push({ type: 'evolve', x: t.x, y: t.y, kind: c.kind, p: pi });
       return;
     }
     case 'sell': {
-      const i = s.towers.findIndex((k) => k.id === c.id);
+      const i = s.towers.findIndex((k) => k.id === c.id && k.owner === pi);
       if (i < 0) return;
       const t = s.towers[i];
-      s.gold += sellValue(t);
+      pl.gold += sellValue(t);
       s.towers.splice(i, 1);
-      s.events.push({ type: 'sell', x: t.x, y: t.y, gold: sellValue(t) });
+      s.events.push({ type: 'sell', x: t.x, y: t.y, gold: sellValue(t), p: pi });
       return;
     }
     case 'clear': {
       const i = s.obstacles.findIndex((o) => o.id === c.id);
       if (i < 0) return;
       const o = s.obstacles[i];
-      if (s.gold < clearCost(o)) return;
-      s.gold -= clearCost(o);
+      if (pl.gold < clearCost(o)) return;
+      pl.gold -= clearCost(o);
       s.obstacles.splice(i, 1);
       const p = center(o.tx, o.ty);
-      s.events.push({ type: 'clear', ...p, kind: o.kind });
+      s.events.push({ type: 'clear', ...p, kind: o.kind, p: pi });
       if (o.chest) {
-        s.gold += OBSTACLES.chestGold;
-        s.events.push({ type: 'chest', ...p, gold: OBSTACLES.chestGold });
+        pl.gold += OBSTACLES.chestGold;
+        s.events.push({ type: 'chest', ...p, gold: OBSTACLES.chestGold, p: pi });
       }
       return;
     }
@@ -357,8 +419,8 @@ function applyCmd(s, c) {
       const dmg = BARREL.dmg + s.wave * BARREL.dmgPerWave;
       for (const e of s.enemies) {
         if (e.dead || Math.hypot(e.x - b.x, e.y - b.y) > BARREL.radius) continue;
-        damage(s, e, dmg, { pierce: true });
-        ignite(s, e, 6, 2);
+        damage(s, e, dmg, pi, { pierce: true });
+        ignite(s, e, 6, 2, pi);
       }
       s.events.push({ type: 'barrel', x: b.x, y: b.y, r: BARREL.radius });
       return;
@@ -367,44 +429,46 @@ function applyCmd(s, c) {
       const i = s.coins.findIndex((k) => k.id === c.id);
       if (i < 0) return;
       const coin = s.coins[i];
-      s.gold += coin.value;
+      pl.gold += coin.value;
       s.coins.splice(i, 1);
-      s.events.push({ type: 'coin', x: coin.x, y: coin.y, gold: coin.value });
+      s.events.push({ type: 'coin', x: coin.x, y: coin.y, gold: coin.value, p: pi });
       return;
     }
     case 'smite': {
       const e = s.enemies.find((k) => k.id === c.id && !k.dead);
       if (!e) return;
-      s.combo = s.comboT > 0 ? Math.min(SMITE.maxCombo, s.combo + 1) : 1;
-      s.comboT = Math.round(SMITE.window * T);
-      const dmg = (SMITE.dmg + s.wave * SMITE.perWave) * (1 + 0.5 * (s.combo - 1)) * s.mods.smite;
-      s.events.push({ type: 'smite', x: e.x, y: e.y, combo: s.combo });
-      damage(s, e, dmg, { pierce: true, big: s.combo >= 3 });
+      pl.combo = pl.comboT > 0 ? Math.min(SMITE.maxCombo, pl.combo + 1) : 1;
+      pl.comboT = Math.round(SMITE.window * T);
+      const dmg = (SMITE.dmg + s.wave * SMITE.perWave) * (1 + SMITE.comboStep * (pl.combo - 1)) * pl.mods.smite;
+      s.events.push({ type: 'smite', x: e.x, y: e.y, combo: pl.combo, p: pi });
+      damage(s, e, dmg, pi, { pierce: true, big: pl.combo >= 3 });
       return;
     }
     case 'nextWave': {
       if (s.queue.length || s.wave >= CONFIG.winWave) return;
       const bonus = s.wave > 0 ? Math.ceil(s.countdown / T) * CONFIG.earlyBonus : 0;
-      s.gold += bonus;
-      if (bonus) s.events.push({ type: 'bonus', gold: bonus });
+      if (bonus) {
+        for (const q of s.players) q.gold += bonus;
+        s.events.push({ type: 'bonus', gold: bonus });
+      }
       startWave(s);
       return;
     }
     case 'meteor': {
-      if (s.cds.meteor > 0) return;
-      s.cds.meteor = abilityMax(s, 'meteor');
+      if (pl.cds.meteor > 0) return;
+      pl.cds.meteor = abilityMax(s, 'meteor', pi);
       const dmg = 40 + s.wave * 6;
       for (const e of s.enemies) {
         if (e.dead || Math.hypot(e.x - c.x, e.y - c.y) > ABILITIES.meteor.radius) continue;
-        damage(s, e, dmg, { pierce: true });
-        ignite(s, e, 8, 3);
+        damage(s, e, dmg, pi, { pierce: true });
+        ignite(s, e, 8, 3, pi);
       }
-      s.events.push({ type: 'meteor', x: c.x, y: c.y, r: ABILITIES.meteor.radius });
+      s.events.push({ type: 'meteor', x: c.x, y: c.y, r: ABILITIES.meteor.radius, p: pi });
       return;
     }
     case 'nova': {
-      if (s.cds.nova > 0) return;
-      s.cds.nova = abilityMax(s, 'nova');
+      if (pl.cds.nova > 0) return;
+      pl.cds.nova = abilityMax(s, 'nova', pi);
       const a = ABILITIES.nova;
       for (const e of s.enemies) {
         if (e.dead) continue;
@@ -413,16 +477,16 @@ function applyCmd(s, c) {
         e.wetT = Math.round(a.wet * T);
         e.burnT = 0;
       }
-      s.events.push({ type: 'nova' });
+      s.events.push({ type: 'nova', p: pi });
       return;
     }
     case 'wall': {
-      if (s.cds.wall > 0 || !isRoad(s, c.tx, c.ty) || c.tx < 0) return;
+      if (pl.cds.wall > 0 || !isRoad(s, c.tx, c.ty) || c.tx < 0) return;
       if (s.walls.some((w) => w.tx === c.tx && w.ty === c.ty)) return;
-      s.cds.wall = abilityMax(s, 'wall');
-      const hp = Math.round((ABILITIES.wall.hp + s.wave * ABILITIES.wall.hpPerWave) * s.mods.wall);
+      pl.cds.wall = abilityMax(s, 'wall', pi);
+      const hp = Math.round((ABILITIES.wall.hp + s.wave * ABILITIES.wall.hpPerWave) * pl.mods.wall);
       s.walls.push({ id: s.nextId++, tx: c.tx, ty: c.ty, ...center(c.tx, c.ty), hp, max: hp });
-      s.events.push({ type: 'wallup', ...center(c.tx, c.ty) });
+      s.events.push({ type: 'wallup', ...center(c.tx, c.ty), p: pi });
       return;
     }
   }
@@ -439,14 +503,25 @@ function startWave(s) {
   s.wave++;
   const w = s.wave;
   for (const b of s.barrels) b.ready = true;
-  if (s.mods.interest > 0) {
-    const gain = Math.floor(s.gold * s.mods.interest);
-    if (gain) { s.gold += gain; s.events.push({ type: 'bonus', gold: gain }); }
+  // Surviving a wave earns every player their own talent choice (never pauses, never skipped by early calls).
+  if (w >= 2) {
+    for (let i = 0; i < s.players.length; i++) {
+      s.players[i].drafts.push(pickCards(s, s.opts.cards));
+      s.events.push({ type: 'draft', p: i });
+    }
+  }
+  for (let i = 0; i < s.players.length; i++) {
+    const pl = s.players[i];
+    if (pl.mods.interest > 0) {
+      const gain = Math.min(30, Math.floor(pl.gold * pl.mods.interest));
+      if (gain) { pl.gold += gain; s.events.push({ type: 'bonus', gold: gain, p: i }); }
+    }
   }
   const lanes = s.plan;
-  const hpMul = (1 + 0.2 * (w - 1) + 0.012 * (w - 1) * (w - 1)) * s.opts.hpMul;
+  const hpMul = (1 + 0.22 * (w - 1) + 0.025 * (w - 1) * (w - 1)) * s.opts.hpMul;
   const pool = Object.keys(UNLOCKS).filter((k) => UNLOCKS[k] <= w);
-  let budget = 8 + w * 5;
+  // co-op: a bit more enemies so two players still have to work
+  let budget = (8 + w * 6) * (s.players.length > 1 ? 1.5 : 1);
   let at = s.tick + T;
   // Enemies come in small packs of one type, each pack on one of the planned lanes.
   while (budget > 0) {
@@ -479,8 +554,8 @@ function spawn(s, type, lane, dist, hpMul) {
   const p = posAt(s.map, lane, dist);
   const e = {
     id: s.nextId++, type, lane, hp, maxHp: hp, armor: ENEMIES[type].armor, hpMul,
-    dist, x: p.x, y: p.y, px: p.x, py: p.y,
-    slowT: 0, slowF: 1, wetT: 0, burnT: 0, burnDps: 0, burnAcc: 0, flash: 0, dead: false, blocked: false,
+    dist, x: p.x, y: p.y, px: p.x, py: p.y, lap: 0, speedMul: 1,
+    slowT: 0, slowF: 1, wetT: 0, burnT: 0, burnDps: 0, burnAcc: 0, burnOwner: 0, flash: 0, dead: false, blocked: false,
   };
   s.enemies.push(e);
   return e;
@@ -489,6 +564,7 @@ function spawn(s, type, lane, dist, hpMul) {
 function updateEnemy(s, e) {
   if (e.dead) return;
   const def = ENEMIES[e.type];
+  const L = s.map.lanes[e.lane];
   e.px = e.x; e.py = e.y;
   if (e.flash > 0) e.flash--;
   if (e.slowT > 0) e.slowT--;
@@ -499,7 +575,7 @@ function updateEnemy(s, e) {
     if (e.burnAcc >= 1) {
       const d = Math.floor(e.burnAcc);
       e.burnAcc -= d;
-      damage(s, e, d, { pierce: true, quiet: true });
+      damage(s, e, d, e.burnOwner, { pierce: true, quiet: true });
       if (e.dead) return;
     }
   }
@@ -513,7 +589,7 @@ function updateEnemy(s, e) {
     }
     if (healed) s.events.push({ type: 'heal', x: e.x, y: e.y });
   }
-  const speed = def.speed * (e.slowT > 0 ? e.slowF : 1);
+  const speed = def.speed * e.speedMul * (e.slowT > 0 ? e.slowF : 1);
   const next = posAt(s.map, e.lane, e.dist + speed / T);
   // Barricades stop enemies walking into them; enemies chew through the wall.
   const wall = s.walls.find((w) => w.hp > 0 && Math.hypot(next.x - w.x, next.y - w.y) < 16 && Math.hypot(next.x - w.x, next.y - w.y) < Math.hypot(e.x - w.x, e.y - w.y));
@@ -525,13 +601,23 @@ function updateEnemy(s, e) {
   }
   e.dist += speed / T;
   e.x = next.x; e.y = next.y;
-  if (e.dist >= s.map.lanes[e.lane].total) {
+  if (L.loop) {
+    // every full lap makes the monster faster and heals it a bit
+    const lap = e.dist > L.loopStart ? Math.floor((e.dist - L.loopStart) / L.loopLen) : 0;
+    if (lap > e.lap) {
+      e.lap = lap;
+      const cm = MODES.circle;
+      if (lap <= cm.lapMax) e.speedMul += cm.lapSpeed;
+      e.hp = Math.min(e.maxHp, e.hp + Math.round(e.maxHp * cm.lapHeal));
+      s.events.push({ type: 'lap', x: e.x, y: e.y, lap });
+    }
+  } else if (e.dist >= L.total) {
     e.dead = true;
     s.lives -= def.lives || 1;
     if (def.steal) {
-      const lost = Math.min(s.gold, def.steal);
-      s.gold -= lost;
-      s.events.push({ type: 'stolen', x: e.x, y: e.y, gold: lost });
+      // the thief robs everyone a little
+      for (const pl of s.players) pl.gold -= Math.min(pl.gold, def.steal);
+      s.events.push({ type: 'stolen', x: e.x, y: e.y, gold: def.steal });
     }
     s.events.push({ type: 'leak', x: e.x, y: e.y, boss: !!def.lives });
   }
@@ -541,7 +627,7 @@ function updateZone(s, z) {
   z.life--;
   if (z.life % 5) return;
   for (const e of s.enemies) {
-    if (!e.dead && Math.hypot(e.x - z.x, e.y - z.y) <= z.r) damage(s, e, z.dps / 4, { pierce: true, quiet: true });
+    if (!e.dead && Math.hypot(e.x - z.x, e.y - z.y) <= z.r) damage(s, e, z.dps / 4, z.owner, { pierce: true, quiet: true });
   }
 }
 
@@ -566,7 +652,7 @@ function updateTower(s, t) {
   if (def.chain !== undefined) { zap(s, t, target, st, def); return; }
   for (const e of targets.slice(0, def.multi || 1)) {
     s.projs.push({
-      kind: def.proj, tower: t.kind, level: t.level, dmg: st.dmg, speed: def.speed,
+      kind: def.proj, tower: t.kind, owner: t.owner, level: t.level, dmg: st.dmg, speed: def.speed,
       x: t.x, y: t.y - 14, px: t.x, py: t.y - 14, target: e.id, tx: e.x, ty: e.y, done: false,
     });
   }
@@ -574,26 +660,27 @@ function updateTower(s, t) {
 }
 
 function pulse(s, t, def, st, targets) {
+  const m = player(s, t.owner).mods;
   for (const e of targets) {
-    damage(s, e, st.dmg, { quiet: def.burn !== undefined });
+    damage(s, e, st.dmg, t.owner, { quiet: def.burn !== undefined });
     if (e.dead) continue;
-    if (def.slow !== undefined) applyCold(s, e, def);
-    if (def.burn) ignite(s, e, def.burn, def.burnTime);
+    if (def.slow !== undefined) applyCold(e, def, m);
+    if (def.burn) ignite(s, e, def.burn, def.burnTime, t.owner);
   }
   s.events.push({ type: 'pulse', x: t.x, y: t.y, r: st.range, kind: t.kind });
 }
 
-function applyCold(s, e, def) {
+function applyCold(e, def, m) {
   const boss = !!ENEMIES[e.type].lives;
   e.slowT = Math.round(def.slowTime * T * (boss && def.freeze ? 0.4 : 1));
   e.slowF = def.slow;
-  e.wetT = Math.round((def.wetTime + s.mods.wet) * T);
+  e.wetT = Math.round((def.wetTime + m.wet) * T);
   e.burnT = 0; // water puts out fire
 }
 
 function zap(s, t, first, st, def) {
   const hit = [first];
-  let jumps = def.chain + s.mods.chain + (first.wetT > 0 ? 1 : 0);
+  let jumps = def.chain + player(s, t.owner).mods.chain + (first.wetT > 0 ? 1 : 0);
   let cur = first;
   while (jumps-- > 0) {
     let next = null, nd = Infinity;
@@ -610,7 +697,7 @@ function zap(s, t, first, st, def) {
   for (const e of hit) {
     pts.push({ x: e.x, y: e.y - 6 });
     const wet = e.wetT > 0;
-    damage(s, e, st.dmg * (wet ? 2 : 1), { big: wet });
+    damage(s, e, st.dmg * (wet ? 2 : 1), t.owner, { big: wet });
   }
   s.events.push({ type: 'zap', pts });
 }
@@ -632,60 +719,62 @@ function updateProj(s, p) {
   }
 }
 
-function explode(s, x, y, r, dmg) {
+function explode(s, x, y, r, dmg, owner) {
   for (const e of s.enemies) {
-    if (!e.dead && Math.hypot(e.x - x, e.y - y) <= r) damage(s, e, dmg, { pierce: true });
+    if (!e.dead && Math.hypot(e.x - x, e.y - y) <= r) damage(s, e, dmg, owner, { pierce: true });
   }
   s.events.push({ type: 'explode', x, y, r });
 }
 
 function hit(s, p, target) {
   const def = TOWERS[p.tower];
+  const m = player(s, p.owner).mods;
   const lvMul = def.from ? 1.6 : 1 + 0.6 * (p.level - 1);
   switch (p.kind) {
     case 'arrow':
-      if (target) damage(s, target, p.dmg, { pierce: def.pierce, crit: rand(s) < s.mods.crit });
+      if (target) damage(s, target, p.dmg, p.owner, { pierce: def.pierce, crit: rand(s) < m.crit });
       break;
     case 'ball':
-      explode(s, p.x, p.y + 6, def.splash, p.dmg);
+      explode(s, p.x, p.y + 6, def.splash, p.dmg, p.owner);
       for (let i = 0; i < (def.bomblets || 0); i++) {
         const a = rand(s) * Math.PI * 2, r = 15 + rand(s) * 21;
-        explode(s, p.x + Math.cos(a) * r, p.y + 6 + Math.sin(a) * r, 18, p.dmg * 0.4);
+        explode(s, p.x + Math.cos(a) * r, p.y + 6 + Math.sin(a) * r, 18, p.dmg * 0.4, p.owner);
       }
       break;
     case 'ice':
       if (!target) break;
-      damage(s, target, p.dmg);
-      if (!target.dead) applyCold(s, target, def);
+      damage(s, target, p.dmg, p.owner);
+      if (!target.dead) applyCold(target, def, m);
       break;
     case 'fire':
       if (def.puddle) {
-        s.zones.push({ x: p.x, y: p.y + 6, r: def.puddle.r, dps: def.puddle.dps * s.mods.burn, life: def.puddle.time * T, max: def.puddle.time * T });
+        s.zones.push({ x: p.x, y: p.y + 6, r: def.puddle.r, dps: def.puddle.dps * m.burn, life: def.puddle.time * T, max: def.puddle.time * T, owner: p.owner });
       }
       if (!target) break;
       if (target.wetT > 0) {
         // Synergy: fire + wet = steam explosion.
         target.wetT = 0;
-        const dmg = CONFIG.steamDmg * lvMul * s.mods.steam;
+        const dmg = CONFIG.steamDmg * lvMul * m.steam;
         for (const e of s.enemies) {
-          if (!e.dead && Math.hypot(e.x - target.x, e.y - target.y) <= CONFIG.steamRadius) damage(s, e, dmg, { pierce: true });
+          if (!e.dead && Math.hypot(e.x - target.x, e.y - target.y) <= CONFIG.steamRadius) damage(s, e, dmg, p.owner, { pierce: true });
         }
         s.events.push({ type: 'steam', x: target.x, y: target.y });
       } else {
-        damage(s, target, p.dmg);
-        ignite(s, target, def.burn * lvMul, def.burnTime);
+        damage(s, target, p.dmg, p.owner);
+        ignite(s, target, def.burn * lvMul, def.burnTime, p.owner);
       }
       break;
   }
 }
 
-function ignite(s, e, dps, time) {
+function ignite(s, e, dps, time, owner) {
   if (e.dead) return;
-  e.burnDps = Math.max(e.burnT > 0 ? e.burnDps : 0, dps * s.mods.burn);
+  e.burnDps = Math.max(e.burnT > 0 ? e.burnDps : 0, dps * player(s, owner).mods.burn);
   e.burnT = Math.round(time * T);
+  e.burnOwner = owner;
 }
 
-function damage(s, e, amount, { pierce = false, crit = false, big = false, quiet = false } = {}) {
+function damage(s, e, amount, owner, { pierce = false, crit = false, big = false, quiet = false } = {}) {
   if (e.dead) return;
   let d = pierce ? amount : amount - e.armor;
   if (crit) d *= 2;
@@ -693,17 +782,20 @@ function damage(s, e, amount, { pierce = false, crit = false, big = false, quiet
   e.hp -= d;
   e.flash = 2;
   if (!quiet) s.events.push({ type: 'hit', x: e.x, y: e.y, dmg: d, crit: crit || big });
-  if (e.hp <= 0) kill(s, e);
+  if (e.hp <= 0) kill(s, e, owner);
 }
 
-function kill(s, e) {
+// The player who lands the killing blow gets the gold.
+function kill(s, e, owner) {
   e.dead = true;
   const def = ENEMIES[e.type];
-  const gold = Math.round(def.gold * s.mods.gold);
-  s.gold += gold;
+  const pl = player(s, owner);
+  const gold = Math.round(def.gold * pl.mods.gold);
+  pl.gold += gold;
+  pl.kills++;
   s.kills++;
-  s.events.push({ type: 'death', x: e.x, y: e.y, kind: e.type, gold });
-  // Coins drop on the map and must be picked up with the mouse.
+  s.events.push({ type: 'death', x: e.x, y: e.y, kind: e.type, gold, p: s.players[owner] ? owner : 0 });
+  // Coins drop on the map and must be picked up with the mouse (by anyone).
   const n = def.coins || (rand(s) < COIN.chance ? 1 : 0);
   for (let i = 0; i < n; i++) {
     s.coins.push({
@@ -712,6 +804,9 @@ function kill(s, e) {
     });
   }
   if (def.splits) {
-    for (const off of [-7, 7]) spawn(s, def.splits, e.lane, Math.max(0, e.dist + off), e.hpMul);
+    for (const off of [-7, 7]) {
+      const m = spawn(s, def.splits, e.lane, Math.max(0, e.dist + off), e.hpMul);
+      m.lap = e.lap; m.speedMul = e.speedMul;
+    }
   }
 }

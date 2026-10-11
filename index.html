@@ -23,6 +23,14 @@
           <p class="tag">Вистій 20 хвиль. Збирай кристали. Відкривай нове. Грай з другом.</p>
           <div class="menu-cols">
             <section>
+              <h3>Твій нік</h3>
+              <div class="row left">
+                <input id="nick" maxlength="16" placeholder="Нік" autocomplete="off">
+                <button id="nickSave">Зберегти</button>
+                <small id="nickMsg" class="hint"></small>
+              </div>
+              <h3>Режим</h3>
+              <div id="modes"></div>
               <h3>Складність</h3>
               <div id="diffs"></div>
               <button id="playSolo" class="big primary">▶ Грати соло</button>
@@ -41,6 +49,8 @@
               <h3>Магазин <span class="crys-badge">💎 <b id="crystals">0</b></span></h3>
               <div id="shop"></div>
               <small class="hint">Кристали дають за кожну гру — навіть програну. Перемога дає +15.</small>
+              <h3>Лідери <span class="tabs"><button data-board="classic">Класика</button><button data-board="circle">Коло</button></span></h3>
+              <div id="board"></div>
             </section>
           </div>
         </div>
@@ -51,10 +61,12 @@
       <div class="panel-head">
         <div id="waveInfo">Хвиля 0 / 20</div>
         <div class="progress"><div id="waveBar"></div></div>
+        <div id="coopInfo" class="hidden"></div>
         <div id="netStatus"></div>
       </div>
       <div id="towers"></div>
       <div id="abilities"></div>
+      <button id="talent" class="hidden">✦ Талант [T]</button>
       <button id="next" class="primary">Почати ▶</button>
       <div class="controls">
         <button id="speed" title="Швидкість [F]">x1</button>

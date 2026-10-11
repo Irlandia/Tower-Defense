@@ -24,18 +24,19 @@ function spots(s) {
 const free = (s, n) => spots(s).slice(0, n).map((p) => [p.tx, p.ty]);
 
 // Simple bot: cycles tower types, upgrades/evolves when rich, picks first card, uses abilities.
-function runBot(seed, maxWaves) {
-  const s = createGame(seed);
+function runBot(seed, maxWaves, opts = {}) {
+  const s = createGame(seed, opts);
+  const pl = s.players[0];
   const SP = spots(s);
   let i = 0, guard = 0;
   const hashes = [];
   while (!s.over && s.wave <= maxWaves && guard++ < 200000) {
     const cmds = [];
-    if (s.draft) cmds.push({ type: 'pick', index: 0 });
+    if (s.players[0].drafts.length) cmds.push({ type: "pick", index: 0 });
     const kind = TOWER_ORDER[i % TOWER_ORDER.length];
     const spot = SP.find((p) => canPlace(s, p.tx, p.ty));
-    if (spot && s.gold >= TOWERS[kind].cost) { cmds.push({ type: 'place', kind, tx: spot.tx, ty: spot.ty }); i++; }
-    else if (s.gold > 250) {
+    if (spot && pl.gold >= TOWERS[kind].cost) { cmds.push({ type: 'place', kind, tx: spot.tx, ty: spot.ty }); i++; }
+    else if (pl.gold > 250) {
       const e = s.towers.find(canEvolve);
       const t = s.towers.find((t) => t.level < 3 && !TOWERS[t.kind].from);
       if (e) cmds.push({ type: 'evolve', id: e.id, kind: BRANCHES[e.kind][e.id % 2] });
@@ -43,11 +44,11 @@ function runBot(seed, maxWaves) {
     }
     if (s.enemies.length > 4) {
       const lead = s.enemies.reduce((a, b) => (a.dist > b.dist ? a : b));
-      if (s.cds.meteor === 0) cmds.push({ type: 'meteor', x: lead.x, y: lead.y });
-      if (s.cds.nova === 0) cmds.push({ type: 'nova' });
+      if (pl.cds.meteor === 0) cmds.push({ type: 'meteor', x: lead.x, y: lead.y });
+      if (pl.cds.nova === 0) cmds.push({ type: 'nova' });
     }
     step(s, cmds);
-    if (s.tick % 100 === 0) hashes.push(`${s.tick}:${s.gold}:${s.lives}:${s.enemies.length}:${s.enemies.reduce((a, e) => a + e.hp + e.dist, 0).toFixed(3)}`);
+    if (s.tick % 100 === 0) hashes.push(`${s.tick}:${pl.gold}:${s.lives}:${s.enemies.length}:${s.enemies.reduce((a, e) => a + e.hp + e.dist, 0).toFixed(3)}`);
   }
   return { s, hash: hashes.join('|') };
 }
@@ -81,7 +82,7 @@ try {
   step(h, [{ type: 'place', kind: 'tesla', tx: free(h, 1)[0][0], ty: free(h, 1)[0][1] }]);
   check('locked tower cannot be built', h.towers.length === 0);
   step(g, free(g, 2).map(([tx, ty]) => ({ type: 'place', kind: 'cannon', tx, ty })));
-  check('gold limits building', g.towers.length === 1 && g.gold === 160 - 90, `gold=${g.gold}`);
+  check('gold limits building', g.towers.length === 1 && g.players[0].gold === 160 - 90, `gold=${g.players[0].gold}`);
 
   const ev = createGame(3, { bonusGold: 2000 });
   const [ax, ay] = free(ev, 1)[0];
@@ -93,9 +94,9 @@ try {
   check('cannot evolve into other family', tw.kind === 'arrow' && tw.level === 3);
   step(ev, [{ type: 'evolve', id: tw.id, kind: 'sniper' }]);
   check('evolve to sniper', tw.kind === 'sniper');
-  const ob = ev.obstacles[0], g0 = ev.gold;
+  const ob = ev.obstacles[0], g0 = ev.players[0].gold;
   step(ev, [{ type: 'clear', id: ob.id }]);
-  check('clear obstacle', !ev.obstacles.includes(ob) && ev.gold === g0 - (ob.kind === 'tree' ? 15 : 25) + (ob.chest ? 45 : 0));
+  check('clear obstacle', !ev.obstacles.includes(ob) && ev.players[0].gold === g0 - (ob.kind === 'tree' ? 15 : 25) + (ob.chest ? 45 : 0));
   step(ev, [{ type: 'barrel', id: 1 }, { type: 'barrel', id: 1 }]);
   check('barrel used once per wave', !ev.barrels[0].ready && ev.events.filter((e) => e.type === 'barrel').length === 1);
 
@@ -107,9 +108,9 @@ try {
   const hp0 = tgt.hp;
   step(ab, [{ type: 'smite', id: tgt.id }], false);
   step(ab, [{ type: 'smite', id: tgt.id }], false);
-  check('smite damages and builds combo', (tgt.hp < hp0 || tgt.dead) && ab.combo === 2, `combo=${ab.combo}`);
+  check('smite damages and builds combo', (tgt.hp < hp0 || tgt.dead) && ab.players[0].combo === 2, `combo=${ab.players[0].combo}`);
   step(ab, [{ type: 'nova' }]);
-  check('nova freezes everyone', ab.enemies.every((e) => e.slowF === 0 && e.wetT > 0) && ab.cds.nova > 0);
+  check('nova freezes everyone', ab.enemies.every((e) => e.slowF === 0 && e.wetT > 0) && ab.players[0].cds.nova > 0);
   step(ab, [{ type: 'nova' }]);
   check('nova respects cooldown', ab.events.filter((e) => e.type === 'nova').length === 0);
   const lead = ab.enemies.reduce((p, q) => (p.dist > q.dist ? p : q));
@@ -120,12 +121,43 @@ try {
   for (let i = 0; i < 120; i++) step(ab);
   check('wall blocks / takes damage', ab.walls.length === 0 || ab.walls[0].hp < ab.walls[0].max || ab.enemies.some((e) => e.blocked));
 
+  // circle mode: one looping lane, enemies never leak, overflow = defeat
+  let loopOk = true;
+  for (let seed = 1; seed <= 100; seed++) {
+    const cm = createGame(seed, { mode: "circle" });
+    const L = cm.map.lanes[0];
+    const a = posAt(cm.map, 0, L.loopStart + 5), b = posAt(cm.map, 0, L.loopStart + L.loopLen + 5);
+    if (!L.loop || cm.map.lanes.length !== 1 || Math.abs(a.x - b.x) > 0.01 || Math.abs(a.y - b.y) > 0.01) loopOk = false;
+  }
+  check("100 circle maps: closed loop", loopOk);
+  const ci = createGame(5, { mode: "circle" });
+  step(ci, [{ type: "nextWave", p: 0 }]);
+  for (let i = 0; i < 1500; i++) step(ci);
+  check("circle: enemies loop instead of leaking", ci.lives === 20 && ci.enemies.some((e) => e.lap >= 1), `alive=${ci.enemies.length}`);
+  ci.limit = ci.enemies.length;
+  step(ci);
+  check("circle: too many alive = defeat", ci.over && !ci.won);
+
+  // co-op: separate wallets, talents and ownership
+  const co = createGame(9, { players: 2 });
+  const [c1, c2] = free(co, 2);
+  step(co, [{ type: "place", kind: "cannon", tx: c1[0], ty: c1[1], p: 0 }, { type: "place", kind: "arrow", tx: c2[0], ty: c2[1], p: 1 }]);
+  check("co-op: each player pays from own gold", co.players[0].gold === 70 && co.players[1].gold === 110);
+  step(co, [{ type: "sell", id: co.towers[0].id, p: 1 }]);
+  check("co-op: cannot sell partner tower", co.towers.length === 2);
+  step(co, [{ type: "nextWave", p: 0 }]);
+  while (co.wave < 2) step(co);
+  check("co-op: both players get their own talent draft", co.players.every((q) => q.drafts.length === 1));
+  step(co, [{ type: "pick", index: 0, p: 1 }]);
+  check("co-op: picking a talent is personal", co.players[1].drafts.length === 0 && co.players[0].drafts.length === 1);
+
   log('');
   log('Balance bot (seed, wave reached, lanes, towers):');
-  for (const seed of [1, 2, 3, 4, 5]) {
+  for (const seed of [1, 2, 3, 4, 5, 6, 7, 8]) {
     const { s } = runBot(seed, 25);
+    const c = runBot(seed, 25, { mode: "circle" }).s;
     const evo = s.towers.filter((t) => TOWERS[t.kind].from).map((t) => t.kind).join(',');
-    log(`  seed ${seed}: wave ${s.wave}${s.won ? ' (WON)' : s.over ? ' (lost)' : ''} lanes ${s.map.lanes.length} kills ${s.kills} towers ${s.towers.length} evo [${evo}]`);
+    log(`  seed ${seed}: wave ${s.wave}${s.won ? ' (WON)' : s.over ? ' (lost)' : ''} lanes ${s.map.lanes.length} kills ${s.kills} towers ${s.towers.length} evo [${evo}] | circle: wave ${c.wave}${c.won ? " (WON)" : ""}`);
   }
 } catch (e) {
   failed++;

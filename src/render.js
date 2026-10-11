@@ -6,6 +6,7 @@ import {
   drawObstacle, drawBarrel, drawCoin, drawChest, drawWall, ellipse,
 } from './sprites.js';
 
+export const PLAYER_COLORS = [C.yellow, C.cyan];
 export const W = 640;
 export const H = 360;
 export const HUD = 20;
@@ -190,6 +191,10 @@ export class Renderer {
             this.burst(e.x, e.y, 12, C.white, e.r * 1.5);
           }
           break;
+        case "lap":
+          this.rings.push({ x: e.x, y: e.y - 6, r: 2, max: 14, c: C.orange, life: 0.6 });
+          this.text(e.x, e.y - 26, "+" , C.orange, 2);
+          break;
         case 'heal':
           this.burst(e.x, e.y - 6, 5, C.lime, 25, -35);
           break;
@@ -241,7 +246,7 @@ export class Renderer {
     if (sel) this.rangeCircle(sel.x, sel.y, towerStats(s, sel).range, true);
     if (ui.build && ui.hover) {
       const { tx, ty } = ui.hover;
-      const ok = canPlace(s, tx, ty) && s.gold >= TOWERS[ui.build].cost;
+      const ok = canPlace(s, tx, ty) && (s.players[ui.me || 0] || s.players[0]).gold >= TOWERS[ui.build].cost;
       this.rangeCircle(tx * TILE + 12, ty * TILE + 12, TOWERS[ui.build].range * s.mods.range, ok);
     }
     if (ui.ability === 'meteor' && ui.mouse) this.rangeCircle(ui.mouse.x, ui.mouse.y, ABILITIES.meteor.radius, true, C.orange);
@@ -263,7 +268,7 @@ export class Renderer {
     for (const b of s.barrels) items.push({ y: b.y, b });
     for (const w of s.walls) items.push({ y: w.y, w });
     for (const e of s.enemies) items.push({ y: e.py + (e.y - e.py) * alpha, e });
-    items.push({ y: s.map.castle[1] * TILE + 12, castle: true });
+    if (s.map.castle) items.push({ y: s.map.castle[1] * TILE + 12, castle: true });
     items.sort((a, b) => a.y - b.y);
     const hov = (tx, ty) => ui.hover && ui.hover.tx === tx && ui.hover.ty === ty;
     for (const it of items) {
@@ -280,6 +285,7 @@ export class Renderer {
       } else if (it.t) {
         const t = it.t;
         drawTower(g, t.kind, t.tx * TILE, t.ty * TILE, TOWERS[t.kind].from ? 4 : t.level, t.aim, s.tick, s.tick - t.fired < 2);
+        if (s.players.length > 1) this.ownerMark(t.tx * TILE, t.ty * TILE, t.owner);
         if (towerStats(s, t).buff) this.buffMark(t.tx * TILE, t.ty * TILE, s.tick);
         if ('t' + t.id === ui.selected || hov(t.tx, t.ty)) this.outline(t.tx * TILE, t.ty * TILE);
       } else this.drawEnemy(g, it.e, alpha, s.tick, ui.hoverEnemy === it.e.id);
@@ -324,7 +330,7 @@ export class Renderer {
 
     if (this.redFlash > 0) { g.fillStyle = `rgba(177,62,83,${this.redFlash})`; g.fillRect(0, 0, W, H); }
     if (this.blueFlash > 0) { g.fillStyle = `rgba(115,239,247,${this.blueFlash})`; g.fillRect(0, 0, W, H); }
-    this.drawHud(s);
+    this.drawHud(s, ui.me || 0);
   }
 
   drawWater(s) {
@@ -454,16 +460,29 @@ export class Renderer {
     for (const [ox, oy] of [[0, 0], [23, 0], [0, 19], [23, 19]]) g.fillRect(x + ox, y + oy, 1, 5);
   }
 
-  drawHud(s) {
+  ownerMark(x, y, owner) {
+    const g = this.g;
+    g.fillStyle = C.ink; g.fillRect(x + 1, y - 4, 6, 5);
+    g.fillStyle = PLAYER_COLORS[owner] || C.white; g.fillRect(x + 2, y - 3, 4, 3);
+  }
+
+  drawHud(s, me) {
+    const pl = s.players[me] || s.players[0];
     const g = this.g;
     g.fillStyle = C.ink;
     g.fillRect(0, 0, W, HUD);
     g.fillStyle = C.dark;
     g.fillRect(0, HUD - 1, W, 1);
-    drawIcon(g, 'heart', 8, 7);
-    drawNum(g, s.lives, 18, 5, s.lives <= 5 ? C.red : C.white, 2);
-    drawIcon(g, 'coin', 76, 7);
-    drawNum(g, s.gold, 84, 5, C.yellow, 2);
+    if (s.mode === "circle") {
+      const danger = s.enemies.length >= s.limit * 0.75;
+      drawIcon(g, "skull", 8, 8);
+      drawNum(g, s.enemies.length + "/" + s.limit, 18, 5, danger ? C.red : C.white, 2);
+    } else {
+      drawIcon(g, "heart", 8, 7);
+      drawNum(g, s.lives, 18, 5, s.lives <= 5 ? C.red : C.white, 2);
+    }
+    drawIcon(g, "coin", 86, 7);
+    drawNum(g, pl.gold, 94, 5, C.yellow, 2);
     drawIcon(g, 'flag', 160, 7);
     drawNum(g, s.wave + '/' + CONFIG.winWave, 168, 5, C.white, 2);
     drawIcon(g, 'skull', 250, 8);
@@ -478,11 +497,11 @@ export class Renderer {
       drawIcon(g, 'skull', 330, 8);
       drawNum(g, s.queue.length, 338, 5, C.red, 2);
     }
-    if (s.combo > 1) {
+    if (pl.combo > 1) {
       const w = 60, x = 560;
-      drawNum(g, 'x' + s.combo, x - 28, 5, s.combo >= 3 ? C.yellow : C.orange, 2);
+      drawNum(g, "x" + pl.combo, x - 28, 5, pl.combo >= 3 ? C.yellow : C.orange, 2);
       g.fillStyle = C.dark; g.fillRect(x, 6, w, 8);
-      g.fillStyle = C.yellow; g.fillRect(x + 1, 7, Math.round((w - 2) * (s.comboT / (1.5 * TICK_RATE))), 6);
+      g.fillStyle = C.yellow; g.fillRect(x + 1, 7, Math.round((w - 2) * (pl.comboT / (1.5 * TICK_RATE))), 6);
     }
   }
 
