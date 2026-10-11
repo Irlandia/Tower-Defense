@@ -367,7 +367,8 @@ export function step(s, cmds = [], advance = true) {
     s.lives = Math.max(0, s.lives);
     s.over = true;
     s.events.push({ type: 'gameover' });
-  } else if (!s.endless && s.wave >= CONFIG.winWave && !s.queue.length && !s.enemies.length) {
+  } else if (!s.endless && s.wave >= CONFIG.winWave && !s.queue.length && (s.mode === "circle" ? !s.enemies.some((e) => ENEMIES[e.type].lives) : !s.enemies.length)) {
+    // circle: enemies pile up by design, so the win is "wave 20 fully out and its bosses dead"
     s.won = true;
     s.over = true;
     s.events.push({ type: 'victory' });

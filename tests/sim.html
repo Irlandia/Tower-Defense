@@ -207,6 +207,17 @@ try {
   step(bw, [{ type: "wall", tx: rt[6][0], ty: rt[6][1], p: 0 }]);
   check("barricade: only one standing per player", bw.walls.length === 1);
 
+  // circle win: wave 20 out and its bosses dead is enough, leftover small enemies do not block the choice
+  const cw = createGame(31, { mode: "circle" });
+  cw.wave = 19;
+  cw.limit = 1e9; // no towers in this test: do not lose to overflow first
+  step(cw, [{ type: "nextWave", p: 0 }]);
+  for (let i = 0; i < 6000 && !cw.over; i++) {
+    step(cw);
+    for (const e of cw.enemies) if (e.type === "king") e.hp = 0, e.dead = true;
+  }
+  check("circle: victory offered after wave 20 bosses die even with enemies left", cw.won && cw.over && cw.wave === 20, `won=${cw.won} alive=${cw.enemies.length}`);
+
   // endless circle: continue after the win, waves go past 20 with more bosses
   const en = createGame(21, { mode: "circle" });
   en.wave = 20; en.won = true; en.over = true;

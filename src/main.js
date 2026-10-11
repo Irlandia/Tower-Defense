@@ -322,7 +322,7 @@ $('talent').addEventListener('click', openTalent);
 $('speed').addEventListener('click', toggleSpeed);
 $('pause').addEventListener('click', togglePause);
 $('mute').addEventListener('click', () => { sfx.muted = !sfx.muted; $('mute').textContent = sfx.muted ? '🔇' : '🔊'; });
-$('toMenu').addEventListener('click', () => { if (confirm('Вийти в меню? Поточна гра буде втрачена.')) openMenu(); });
+$('toMenu').addEventListener('click', () => openMenu()); // the run is kept: 'Повернутися до гри' in the menu resumes it
 
 // ---------- on-map popup for towers / obstacles ----------
 let popKey = '';
@@ -577,7 +577,21 @@ function openMenu(fromNet = false) {
 }
 
 // The big start button depends on the room: solo, start together (host), or wait (guest).
+// Back to the paused run (solo or host). The host brings the guest back with a full resync.
+function canResume() {
+  return !!game && !state.over && state.tick > 0 && net.role !== "guest";
+}
+function resumeGame() {
+  if (!canResume()) return;
+  hide("menu");
+  document.body.classList.remove("in-menu");
+  running = true;
+  popKey = ""; infoKey = "";
+  if (net.role === "host" && net.connected && state.players.length > 1) net.send({ t: "resync", ...game, log: cmdLog, tick: state.tick, v: VERSION });
+}
+
 function updatePlayButton() {
+  $("resume").classList.toggle("hidden", !canResume());
   const b = $("playSolo");
   if (net.role === "host" && net.connected) { b.textContent = "▶ Почати разом"; b.disabled = false; }
   else if (net.role === "guest" && net.connected) { b.textContent = "Чекаємо, поки хост почне…"; b.disabled = true; }
@@ -656,6 +670,7 @@ $('nickSave').addEventListener('click', saveNick);
 $('nick').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') saveNick(); });
 Api.getNick().then((n) => { nick = n; $('nick').value = n; });
 
+$("resume").addEventListener("click", () => { sfx.unlock(); resumeGame(); });
 $("playSolo").addEventListener("click", () => {
   sfx.unlock();
   if (net.role === "host" && net.connected) { newRun(); return; } // keep the room, start with the chosen mode
