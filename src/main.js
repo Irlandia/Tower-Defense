@@ -370,10 +370,16 @@ function placePop(tx, ty) {
   const pop = $('pop');
   const scale = canvas.clientWidth / W;
   const cx = (MX + tx * TILE + 12) * scale;
-  const above = ty >= 5;
-  const y = (MY + (above ? ty * TILE - 12 : (ty + 1) * TILE)) * scale;
+  const H = canvas.clientHeight;
+  // never taller than the field; scrolls if it really cannot fit
+  pop.style.maxHeight = H - 8 + 'px';
+  const h = pop.offsetHeight;
+  const topAbove = (MY + ty * TILE - 12) * scale - h - 6; // above the tower
+  const topBelow = (MY + (ty + 1) * TILE) * scale + 6; // below the tower
+  // prefer above; otherwise below; otherwise pinned so the whole menu (incl. evolution) stays visible
+  let top = topAbove >= 4 ? topAbove : topBelow + h <= H - 4 ? topBelow : Math.max(4, H - h - 4);
   pop.style.left = Math.max(0, Math.min(canvas.clientWidth - pop.offsetWidth, cx - pop.offsetWidth / 2)) + 'px';
-  pop.style.top = (above ? y - pop.offsetHeight - 6 : y + 6) + 'px';
+  pop.style.top = top + 'px';
 }
 
 function updatePop() {

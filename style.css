@@ -199,3 +199,5 @@ body.side #ui { align-self: center; }
 
 /* Baron magnet: hide the real cursor, a dragged pixel cursor is drawn on the canvas */
 #game.magnet { cursor: none !important; }
+
+#pop { overflow-y: auto; }
