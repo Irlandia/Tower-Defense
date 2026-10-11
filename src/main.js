@@ -144,12 +144,13 @@ net.onMessage = (m) => {
       break;
   }
 };
-// heartbeat both ways + timeout (PeerJS 'close' is not always fired, e.g. when a tab is killed)
-setInterval(() => {
+// heartbeat both ways + timeout (PeerJS 'close' is not always fired, e.g. when a tab is killed).
+// Driven by the background ticker (once a second) so it keeps beating in hidden tabs.
+function heartbeat() {
   if (!net.online || !net.conn) return;
   net.send({ t: 'ping' });
   if (partnerAlive && performance.now() - lastMsgAt > 5000) partnerLost();
-}, 1000);
+}
 
 // ---------- layout: as big as the window allows ----------
 function fit() {
@@ -789,13 +790,13 @@ let acc = 0;
 let last = performance.now();
 let lastTickAt = 0;
 
-function tick(cmds, advance = true) {
+function tick(cmds, advance = true, quiet = false) {
   step(state, cmds, advance);
   if (net.role === 'host') {
     net.send({ t: advance ? 'tick' : 'cmds', cmds });
     if (cmds.length) cmdLog.push([state.tick - (advance ? 1 : 0), advance, cmds]);
   }
-  handleEvents(state.events);
+  handleEvents(state.events, quiet);
 }
 
 function frame(now) {
@@ -808,10 +809,13 @@ function frame(now) {
   }
 }
 
-function loop(now) {
-  const real = Math.min(250, now - last);
-  last = now;
-  let alpha = 1;
+// Advances the game; returns the interpolation alpha for drawing. Called every frame while visible and
+// by the background ticker while the tab is hidden, so the run never stalls for the other player.
+let lastSim = performance.now();
+function simulate(now) {
+  const real = Math.min(250, now - lastSim);
+  lastSim = now;
+  const quiet = document.hidden; // nobody is watching: skip effects/sounds (they would pile up)
   if (running && net.role === 'guest') {
     // replay the host's ticks; after a long gap catch up fast and silently
     const backlog = net.inbox.length;
@@ -819,26 +823,51 @@ function loop(now) {
     while (net.inbox.length && n++ < 60) {
       const m = net.inbox.shift();
       step(state, m.cmds, m.t === 'tick');
-      handleEvents(state.events, backlog > 10);
+      handleEvents(state.events, quiet || backlog > 10);
       if (m.t === 'tick') lastTickAt = now;
     }
-    alpha = Math.min(1, (now - lastTickAt) / DT);
-  } else if (running) {
-    if (state.over) acc = 0;
-    else if (!paused && !draftPause && now >= freezeUntil) acc += real * speed;
-    while (acc >= DT) {
-      const cmds = pending;
-      pending = [];
-      tick(cmds);
-      acc -= DT;
-    }
-    // commands issued while paused apply without advancing time
-    if (pending.length) { const cmds = pending; pending = []; tick(cmds, false); }
-    alpha = paused || draftPause ? 1 : acc / DT;
+    return Math.min(1, (now - lastTickAt) / DT);
   }
+  if (!running) return 1;
+  if (state.over) acc = 0;
+  else if (!paused && !draftPause && now >= freezeUntil) acc += real * speed;
+  while (acc >= DT) {
+    const cmds = pending;
+    pending = [];
+    tick(cmds, true, quiet);
+    acc -= DT;
+  }
+  // commands issued while paused apply without advancing time
+  if (pending.length) { const cmds = pending; pending = []; tick(cmds, false, quiet); }
+  return paused || draftPause ? 1 : acc / DT;
+}
+
+function loop(now) {
+  const real = Math.min(250, now - last);
+  last = now;
+  const alpha = simulate(now);
   renderer.draw(state, alpha, ui, real / 1000);
   drawPartnerCursor();
   if (running) updateUI();
+}
+
+// Background ticker: browsers freeze requestAnimationFrame and throttle timers in hidden tabs,
+// but not timers inside a Worker. It keeps the simulation and the co-op heartbeat running.
+let bgBeats = 0;
+function backgroundTick() {
+  try {
+    if (document.hidden) simulate(performance.now());
+    if (++bgBeats % 20 === 0) heartbeat();
+  } catch (err) {
+    console.error(err);
+  }
+}
+try {
+  const src = 'setInterval(() => postMessage(0), 50);';
+  const ticker = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+  ticker.onmessage = backgroundTick;
+} catch {
+  setInterval(backgroundTick, 50); // no workers: best effort
 }
 
 buildToolbar();
