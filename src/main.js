@@ -7,7 +7,7 @@ import {
 } from './sim/sim.js';
 import { Renderer, W, H, MX, MY, PLAYER_COLORS } from './render.js';
 import { drawTower, C } from './sprites.js';
-import { Sfx } from './audio.js';
+import { Sfx, Music } from "./audio.js";
 import { Net } from './net.js';
 import * as Meta from './meta.js';
 import * as Api from './api.js';
@@ -16,6 +16,7 @@ const $ = (id) => document.getElementById(id);
 const canvas = $('game');
 const renderer = new Renderer(canvas);
 const sfx = new Sfx();
+const music = new Music(sfx); // seasonal ambient soundtrack
 renderer.onStomp = (king) => sfx.play(king ? 'stompBig' : 'stomp');
 const net = new Net();
 const meta = Meta.load();
@@ -46,6 +47,7 @@ const P = () => state.players[me()] || state.players[0];
 // ---------- game lifecycle ----------
 function startGame(seed, opts) {
   state = createGame(seed, opts);
+  music.play(state.season);
   setTimeout(() => (state.brawl ? banner(`${state.brawl.icon} ${state.brawl.name.toUpperCase()}`, "boss intro", state.brawl.desc, 3200) : banner(SEASONS[state.season].name.toUpperCase(), "gold", "сезон", 1800)), 200);
   endShown = false;
   game = { seed, opts };
@@ -274,6 +276,7 @@ canvas.addEventListener('mouseleave', () => { ui.hover = null; ui.mouse = null; 
 canvas.addEventListener('contextmenu', (ev) => { ev.preventDefault(); cancel(); });
 canvas.addEventListener('mousedown', (ev) => {
   sfx.unlock();
+  if (running) music.play(state.season); // audio may only start after a user gesture
   if (ev.button !== 0 || !running) return;
   const m = toMap(ev);
   if (m.y < 0) return;
@@ -403,7 +406,18 @@ $('next').addEventListener('click', nextWave);
 $('talent').addEventListener('click', openTalent);
 $('speed').addEventListener('click', toggleSpeed);
 $('pause').addEventListener('click', togglePause);
-$('mute').addEventListener('click', () => { sfx.muted = !sfx.muted; $('mute').textContent = sfx.muted ? '🔇' : '🔊'; });
+$("mute").addEventListener("click", () => {
+  sfx.muted = !sfx.muted;
+  $("mute").textContent = sfx.muted ? "🔇" : "🔊";
+  if (sfx.muted) music.stop(); else if (running) music.play(state.season);
+});
+$("music").textContent = music.on ? "♪" : "♪̸";
+$("music").addEventListener("click", () => {
+  sfx.unlock();
+  music.setOn(!music.on);
+  $("music").textContent = music.on ? "♪" : "♪̸";
+  if (music.on && running) music.play(state.season);
+});
 $('toMenu').addEventListener('click', () => openMenu()); // the run is kept: 'Повернутися до гри' in the menu resumes it
 
 // ---------- on-map popup for towers / obstacles ----------
@@ -1023,3 +1037,30 @@ requestAnimationFrame(frame);
 // (possibly hidden) button such as "Ще раз" / "Почати разом", restarting the game and wiping the enemies.
 document.addEventListener('click', (ev) => { const b = ev.target.closest('button'); if (b) b.blur(); });
 document.addEventListener('keyup', (ev) => { if (ev.key === ' ' && ev.target.tagName === 'BUTTON') ev.preventDefault(); }, true);
+
+// ---------- custom pixel cursors: high-contrast, readable on grass, snow and roads ----------
+const CURSOR_MAPS = {
+  arrow: { hot: [0, 0], c: { K: '#1a1c2c', Y: '#ffcd75', W: '#f4f4f4' }, rows: ['K...........', 'KK..........', 'KWK.........', 'KYWK........', 'KYYYK.......', 'KYYYYK......', 'KYYYYYK.....', 'KYYYYYYK....', 'KYYYYKKKK...', 'KYKKYK......', 'KK..KYK.....', '.....KK.....'] },
+  build: { hot: [5, 4], c: { K: '#1a1c2c', G: '#a7f070' }, rows: ['....KKK....', '....KGK....', '....KGK....', 'KKKK...KKKK', 'KGGG.G.GGGK', 'KKKK...KKKK', '....KGK....', '....KGK....', '....KKK....'] },
+  target: { hot: [5, 5], c: { K: '#1a1c2c', R: '#ef7d57', Y: '#ffcd75' }, rows: ['...KKKKK...', '..KRRRRRK..', '.KRK...KRK.', 'KRK.....KRK', 'KRK..Y..KRK', 'KRK.YYY.KRK', 'KRK..Y..KRK', 'KRK.....KRK', '.KRK...KRK.', '..KRRRRRK..', '...KKKKK...'] },
+  move: { hot: [5, 5], c: { K: '#1a1c2c', B: '#73eff7' }, rows: ['....KKK....', '...KBBBK...', '....KBK....', '.K..KBK..K.', 'KBKKKBKKKBK', 'KBBBBBBBBBK', 'KBKKKBKKKBK', '.K..KBK..K.', '....KBK....', '...KBBBK...', '....KKK....'] },
+};
+const CURSORS = {};
+for (const [k, m] of Object.entries(CURSOR_MAPS)) {
+  const S = 2; // drawn at 2x so they stay crisp and big enough
+  const cv = document.createElement('canvas');
+  cv.width = m.rows[0].length * S; cv.height = m.rows.length * S;
+  const g = cv.getContext('2d');
+  m.rows.forEach((row, y) => { for (let x = 0; x < row.length; x++) { const col = m.c[row[x]]; if (col) { g.fillStyle = col; g.fillRect(x * S, y * S, S, S); } } });
+  CURSORS[k] = `url(${cv.toDataURL()}) ${m.hot[0] * S} ${m.hot[1] * S}, crosshair`;
+}
+let cursorKind = '';
+function updateCursor() {
+  const k = ui.moving ? 'move' : ui.build ? 'build' : ui.ability ? 'target' : 'arrow';
+  if (k === cursorKind) return;
+  cursorKind = k;
+  canvas.style.cursor = CURSORS[k];
+}
+setInterval(updateCursor, 50);
+updateCursor();
+document.body.style.cursor = CURSORS.arrow; // menus and panels use the same arrow

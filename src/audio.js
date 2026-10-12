@@ -80,3 +80,126 @@ export class Sfx {
     src.stop(t + d);
   }
 }
+
+// ---------- generative ambient music per season (no files: WebAudio synth) ----------
+// A slow chord loop: soft pad + bass on the downbeat + a gentle random arpeggio from the chord,
+// plus a seasonal ambience layer (birds, crickets, wind, sleigh-bell twinkles).
+const midi = (n) => 440 * 2 ** ((n - 69) / 12);
+const SONGS = {
+  spring: { bpm: 92, wave: 'triangle', chords: [[60, 64, 67, 72], [57, 60, 64, 69], [65, 69, 72, 77], [67, 71, 74, 79]], amb: 'birds' },
+  summer: { bpm: 100, wave: 'square', chords: [[55, 59, 62, 67], [52, 55, 59, 64], [48, 52, 55, 60], [50, 54, 57, 62]], amb: 'crickets' },
+  autumn: { bpm: 76, wave: 'triangle', chords: [[57, 60, 64, 69], [53, 57, 60, 65], [55, 59, 62, 67], [52, 56, 59, 64]], amb: 'wind' },
+  winter: { bpm: 64, wave: 'sine', chords: [[62, 65, 69, 74], [58, 62, 65, 70], [60, 64, 67, 72], [57, 61, 64, 69]], amb: 'bells' },
+};
+
+export class Music {
+  constructor(sfx) {
+    this.sfx = sfx; // shares the AudioContext and its noise buffer
+    this.on = true;
+    try { this.on = localStorage.getItem('pixeltd-music') !== 'off'; } catch { /* storage unavailable */ }
+    this.song = null;
+    this.timer = null;
+    this.out = null;
+  }
+
+  get ctx() { return this.sfx.ctx; }
+
+  setOn(on) {
+    this.on = on;
+    try { localStorage.setItem('pixeltd-music', on ? 'on' : 'off'); } catch { /* storage unavailable */ }
+    if (!on) this.stop();
+    else if (this.season) this.play(this.season);
+  }
+
+  play(season) {
+    this.season = season;
+    if (!this.on || !this.ctx || this.sfx.muted) return;
+    if (this.song === season && this.timer) return;
+    this.stop();
+    this.song = season;
+    this.out = this.ctx.createGain();
+    this.out.gain.setValueAtTime(0.0001, this.ctx.currentTime);
+    this.out.gain.exponentialRampToValueAtTime(0.5, this.ctx.currentTime + 2); // fade in
+    this.out.connect(this.ctx.destination);
+    this.step = 0;
+    this.next = this.ctx.currentTime + 0.1;
+    this.timer = setInterval(() => this.schedule(), 100);
+  }
+
+  stop() {
+    if (this.timer) clearInterval(this.timer);
+    this.timer = null;
+    this.song = null;
+    if (this.out && this.ctx) {
+      const o = this.out;
+      o.gain.cancelScheduledValues(this.ctx.currentTime);
+      o.gain.setValueAtTime(Math.max(0.0001, o.gain.value), this.ctx.currentTime);
+      o.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + 0.8);
+      setTimeout(() => o.disconnect(), 1000);
+    }
+    this.out = null;
+  }
+
+  // look ahead ~0.3 s and schedule eighth-note steps
+  schedule() {
+    if (!this.out || document.hidden) { if (this.ctx) this.next = this.ctx.currentTime + 0.1; return; }
+    const S = SONGS[this.song] || SONGS.summer;
+    const eighth = 60 / S.bpm / 2;
+    while (this.next < this.ctx.currentTime + 0.3) {
+      const bar = Math.floor(this.step / 8) % S.chords.length;
+      const chord = S.chords[bar];
+      const pos = this.step % 8;
+      if (pos === 0) {
+        for (const n of chord.slice(0, 3)) this.note(midi(n - 12), this.next, eighth * 8, 0.035, 'triangle', 0.6); // pad
+        this.note(midi(chord[0] - 24), this.next, eighth * 4, 0.06, 'triangle', 0.02); // bass
+      }
+      if (pos === 4) this.note(midi(chord[0] - 24 + 7), this.next, eighth * 3, 0.04, 'triangle', 0.02);
+      // sparse arpeggio: not every step, a little randomness so it never loops exactly
+      if (Math.random() < (pos % 2 ? 0.35 : 0.7)) {
+        const n = chord[Math.floor(Math.random() * chord.length)] + (Math.random() < 0.3 ? 12 : 0);
+        this.note(midi(n), this.next, eighth * 1.6, S.wave === 'square' ? 0.012 : 0.03, S.wave, 0.01);
+      }
+      this.ambience(S.amb, this.next, eighth);
+      this.next += eighth;
+      this.step++;
+    }
+  }
+
+  note(freq, t, dur, vol, type, attack) {
+    const o = this.ctx.createOscillator(), g = this.ctx.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(freq, t);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + attack + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(this.out);
+    o.start(t);
+    o.stop(t + dur + 0.05);
+  }
+
+  ambience(kind, t, eighth) {
+    const r = Math.random();
+    if (kind === 'birds' && r < 0.06) {
+      // two quick chirps sliding up
+      for (let i = 0; i < 2; i++) {
+        const o = this.ctx.createOscillator(), g = this.ctx.createGain(), f = 2200 + Math.random() * 1200, tt = t + i * 0.09;
+        o.type = 'sine';
+        o.frequency.setValueAtTime(f, tt); o.frequency.exponentialRampToValueAtTime(f * 1.4, tt + 0.06);
+        g.gain.setValueAtTime(0.0001, tt); g.gain.exponentialRampToValueAtTime(0.012, tt + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, tt + 0.07);
+        o.connect(g).connect(this.out); o.start(tt); o.stop(tt + 0.08);
+      }
+    }
+    if (kind === 'crickets' && r < 0.25) {
+      for (let i = 0; i < 3; i++) this.note(4200 + Math.random() * 300, t + i * 0.03, 0.02, 0.004, 'square', 0.002);
+    }
+    if ((kind === 'wind' || kind === 'bells') && r < 0.03 && this.sfx.noiseBuf) {
+      // a slow gust of filtered noise
+      const src = this.ctx.createBufferSource(), f = this.ctx.createBiquadFilter(), g = this.ctx.createGain();
+      src.buffer = this.sfx.noiseBuf; src.loop = true;
+      f.type = 'bandpass'; f.frequency.setValueAtTime(kind === 'bells' ? 900 : 400, t); f.frequency.linearRampToValueAtTime(kind === 'bells' ? 1500 : 700, t + 2);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.03, t + 1.2); g.gain.exponentialRampToValueAtTime(0.0001, t + 3);
+      src.connect(f).connect(g).connect(this.out); src.start(t); src.stop(t + 3.1);
+    }
+    if (kind === 'bells' && r > 0.94) this.note(midi(84 + [0, 3, 7, 10][Math.floor(Math.random() * 4)]), t, eighth * 6, 0.02, 'sine', 0.003); // twinkle
+  }
+}
