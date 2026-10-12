@@ -760,7 +760,8 @@ function renderMenu() {
   for (const t of TILES) {
     const b = document.createElement('button');
     b.className = `mode-tile mode-${t.id}` + (mode === t.id ? ' active' : '');
-    b.innerHTML = `<span class="mt-ico">${t.icon}</span><b>${t.name}</b><small>${esc(t.sub)}</small>`;
+    b.innerHTML = `<span class="mt-ico"></span><b>${t.name}</b><small>${esc(t.sub)}</small>`;
+    b.querySelector(".mt-ico").append(pixelIcon(modeIcon(t.id)));
     b.addEventListener('click', () => { mode = t.id; renderMenu(); });
     ml.append(b);
   }
@@ -1244,4 +1245,18 @@ setInterval(() => {
 // debug: ?demo&select=N opens the popup of the N-th tower (for screenshots)
 if (new URLSearchParams(location.search).has('select')) {
   setTimeout(() => { const t = state.towers[+new URLSearchParams(location.search).get('select') || 0]; if (t) ui.selected = 't' + t.id; }, 600);
+}
+
+// Pixel-art mode icons for the lobby tiles (same style as the ability icons).
+function modeIcon(id) { // a function so the menu can use it before this point of the file runs
+  return {
+  classic: { c: { s: '#94b0c2', d: '#566c86', r: '#b13e53', y: '#ffcd75', k: '#1a1c2c' },
+    rows: ['.r.......r..', 'rrr.....rrr.', '.s...y...s..', '.s..yyy..s..', 'sssssssssss.', 'sdsdsdsdsds.', 'sssssssssss.', 'ssss.k.ssss.', 'ssss.k.ssss.', 'dddd.k.dddd.', '............'] },
+  circle: { c: { c: '#73eff7', b: '#41a6f6', w: '#f4f4f4', y: '#ffcd75' },
+    rows: ['...cccc.....', '..c....c....', '.c......cy..', 'c.......cyy.', 'c........c..', 'c........c..', 'c........c..', '.c......c...', '..c....c....', '...cccc.....', '............'] },
+  brawl: { c: { s: '#f4f4f4', m: '#94b0c2', y: '#ffcd75', o: '#ef7d57' },
+    rows: ['s.........s.', '.s.......s..', '..s.....s...', '...s...s....', '....s.s.....', '.....m......', '....s.s.....', '..yo...oy...', '.yy.....yy..', 'yy.......yy.', '............'] },
+  campaign: { c: { p: '#f4e1b6', d: '#c29a6b', b: '#8a6248', r: '#b13e53' },
+    rows: ['.dpppppppd..', 'dppppppppd..', '.pbbbbbp....', '.pppppppp...', '.pbbbbp.....', '.pppppppp...', '.pbbbbbbp...', '.ppppppprr..', 'dpppppppprr.', '.dppppppd...', '............'] },
+  }[id];
 }
