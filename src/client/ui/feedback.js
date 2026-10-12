@@ -5,7 +5,7 @@ import { app, bus, net, sfx, music, me } from '../app.js';
 import { $, hide } from '../dom.js';
 import { nickOf } from '../roster.js';
 import { banner } from './banner.js';
-import { buildToolbar, resetInfo } from './hud.js';
+import { buildToolbar, buildAbilities, resetInfo } from './hud.js';
 import { resetPopup } from './popup.js';
 import { openTalent } from './talents.js';
 
@@ -24,6 +24,7 @@ bus.on('run:start', () => {
   document.body.classList.remove('in-menu');
   resetInfo(); resetPopup();
   buildToolbar();
+  buildAbilities();
   document.body.classList.toggle('guest', net.role === 'guest');
 });
 
@@ -67,6 +68,9 @@ bus.on('sim:events', (events) => {
       }
       case 'bossRage': sfx.play('leak'); break;
       case 'nova': sfx.play('frost'); sfx.play('explode'); break;
+      case 'quake': sfx.play('rumble'); break;
+      case 'goldrain': if (mine(e)) sfx.play('sell'); break;
+      case 'overdrive': if (mine(e)) { sfx.play('card'); banner('ОВЕРДРАЙВ!', 'gold', 'твої вежі стріляють швидше', 1600); } break;
       case 'wallup': case 'wallbreak': sfx.play('cannon'); break;
       case 'bonus': if (mine(e)) banner(`+${e.gold} золота`, 'gold'); break;
       // co-op pranks

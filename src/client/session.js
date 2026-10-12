@@ -61,8 +61,8 @@ export function finishRun(won) {
   if (net.role === 'host') net.send({ t: 'end', won });
   app.running = false;
   app.talentOpen = false;
-  const { earned, record } = Meta.finishRun(meta, app.state);
-  bus.emit('run:end', { won, earned, record });
+  const { earned, record, level, levelUp } = Meta.finishRun(meta, app.state);
+  bus.emit('run:end', { won, earned, record, level, levelUp });
 }
 
 /** Circle mode: the player chose to go on after the win. */

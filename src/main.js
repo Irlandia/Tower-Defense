@@ -13,12 +13,13 @@ import './client/ui/feedback.js';
 import './client/ui/endscreen.js';
 import './client/ui/menu.js';
 import { fit } from './client/ui/layout.js';
-import { buildToolbar } from './client/ui/hud.js';
+import { buildToolbar, buildAbilities } from './client/ui/hud.js';
 import { startLoop } from './client/loop.js';
 import { enterLobby } from './client/session.js';
 import { runDemoIfRequested } from './client/debug.js';
 
 buildToolbar();
+buildAbilities();
 fit();
 if (!runDemoIfRequested()) enterLobby();
 startLoop();

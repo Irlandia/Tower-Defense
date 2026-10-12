@@ -56,11 +56,12 @@ canvas.addEventListener('mousedown', (ev) => {
     else if (!mt) ui.moving = null;
     return;
   }
-  if (ui.ability === 'meteor') { send({ type: 'meteor', x: m.x, y: m.y }); ui.ability = null; return; }
   if (ui.ability === 'wall') {
     if (isRoad(s, m.tx, m.ty)) { send({ type: 'wall', tx: m.tx, ty: m.ty }); ui.ability = null; }
     return;
   }
+  // every other targeted ability (meteor, goldrain, quake) hits the point under the cursor
+  if (ui.ability) { send({ type: ui.ability, x: m.x, y: m.y }); ui.ability = null; return; }
   const t = towerAt(s, m.tx, m.ty);
   if (t) { select('t' + t.id); ui.build = null; return; }
   const b = barrelAt(s, m.tx, m.ty);
@@ -85,10 +86,9 @@ window.addEventListener('keydown', (ev) => {
   const k = ev.key.toLowerCase();
   if (app.talentOpen && ['1', '2', '3', '4'].includes(k)) { pickCard(+k - 1); return; }
   const idx = ['1', '2', '3', '4', '5', '6'].indexOf(k);
+  const slot = ['q', 'w', 'e', 'r'].indexOf(k);
   if (idx >= 0) selectBuild(TOWER_ORDER[idx]);
-  else if (k === 'q') useAbility('meteor');
-  else if (k === 'w') useAbility('nova');
-  else if (k === 'e') useAbility('wall');
+  else if (slot >= 0) useAbility(P().abilities[slot]);
   else if (k === 't') openTalent();
   else if (k === ' ') { ev.preventDefault(); nextWave(); }
   else if (k === 'm') startMove();

@@ -9,6 +9,7 @@ import { say, SAY } from "./say.js";
 import { Critters } from './critters.js';
 
 export const PLAYER_COLORS = [C.yellow, C.cyan, C.lime, "#f4b6d2"];
+const ABILITY_COLOR = { meteor: C.orange, goldrain: C.yellow, quake: '#8a6248' };
 // where a spawn tile sits on the map edge: cave and "!" marker positions
 function edgeOf([x, y]) {
   if (x === 0) return "left";
@@ -121,6 +122,7 @@ export class Renderer {
         if (!road(tx + 1, ty) && tx < COLS - 1) g.fillRect(x + TILE - 2, y, 2, TILE);
       }
     }
+    this.drawRoadDecor(g, map, season, road, rnd);
     if (season === "winter") {
       // snowy road edges and slush
       for (const k of map.tiles) {
@@ -144,6 +146,78 @@ export class Renderer {
       else drawCave(g, x * TILE + 6, ROWS * TILE - 10);
     }
     return cv;
+  }
+
+  // Atmosphere on the roads (static background only): wheel ruts, puddles / ice / dry cracks,
+  // pebbles, hoof prints, grass at the edges, signposts on bends, cobbles near the castle.
+  drawRoadDecor(g, map, season, road, rnd) {
+    const P = (x, y, w, h, c) => { g.fillStyle = c; g.fillRect(Math.round(x), Math.round(y), w, h); };
+    const tiles = [...map.tiles].map((k) => k.split(',').map(Number)).filter(([x, y]) => x >= 0 && x < COLS && y >= 0 && y < ROWS);
+    const castle = map.castle;
+    for (const [tx, ty] of tiles) {
+      const x = tx * TILE, y = ty * TILE;
+      const L = road(tx - 1, ty), Rr = road(tx + 1, ty), U = road(tx, ty - 1), D = road(tx, ty + 1);
+      const near = castle && Math.abs(tx - castle[0]) + Math.abs(ty - castle[1]) <= 3;
+      if (near) {
+        // cobblestones on the approach to the castle
+        for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++) {
+          const cx = x + 2 + i * 5 + (j % 2) * 2, cy = y + 2 + j * 5;
+          P(cx, cy, 4, 3, season === 'winter' ? '#c9d6de' : '#94b0c2'); P(cx, cy + 3, 4, 1, '#566c86');
+        }
+        continue;
+      }
+      // wheel ruts along the direction of travel
+      const rut = season === 'winter' ? '#b9c7d0' : '#6b4a36';
+      if ((L || Rr) && !(U && D && !L && !Rr)) for (let i = 0; i < TILE; i += 3) if (rnd() < 0.8) { P(x + i, y + 8, 2, 1, rut); P(x + i, y + 15, 2, 1, rut); }
+      if ((U || D) && !(L && Rr && !U && !D)) for (let i = 0; i < TILE; i += 3) if (rnd() < 0.8) { P(x + 8, y + i, 1, 2, rut); P(x + 15, y + i, 1, 2, rut); }
+      // puddles, ice patches or dry cracks
+      const r = rnd();
+      if (r < 0.07) {
+        const px = x + 5 + rnd() * 10, py = y + 6 + rnd() * 10;
+        if (season === 'winter') { ellipse(g, px, py, 5, 2, '#dff3fa'); P(px - 2, py - 1, 3, 1, C.white); }
+        else if (season === 'summer') { const c = '#5a3e2c'; P(px, py, 4, 1, c); P(px + 3, py + 1, 3, 1, c); P(px + 1, py - 1, 1, 2, c); P(px + 5, py - 1, 1, 1, c); }
+        else {
+          ellipse(g, px, py, 5, 2, '#3b5dc9'); P(px - 3, py - 1, 3, 1, '#73eff7');
+          if (season === 'autumn') P(px + 1, py, 2, 1, C.orange); // a leaf floating in it
+        }
+      } else if (r < 0.2) {
+        // a bigger pebble with a highlight
+        const px = x + 3 + rnd() * 16, py = y + 3 + rnd() * 16;
+        P(px, py, 3, 2, '#94b0c2'); P(px, py, 1, 1, C.white); P(px, py + 2, 3, 1, '#566c86');
+      } else if (r < 0.26 && season !== 'winter') {
+        // hoof prints
+        const vert = U || D;
+        for (let i = 0; i < 3; i++) {
+          const px = x + (vert ? 10 + (i % 2) * 3 : 4 + i * 7), py = y + (vert ? 4 + i * 7 : 10 + (i % 2) * 3);
+          P(px, py, 2, 1, '#5a3e2c'); P(px, py + 1, 1, 1, '#5a3e2c'); P(px + 1, py + 1, 1, 1, '#5a3e2c');
+        }
+      }
+      // grass and the odd flower creeping onto the road edges
+      if (season !== 'winter') {
+        const tuft = season === 'autumn' ? '#c9a046' : C.green, bloom = season === 'autumn' ? C.orange : C.yellow;
+        const edge = (ex, ey, horiz) => {
+          for (let i = 0; i < 3; i++) {
+            const gx = ex + (horiz ? 3 + rnd() * 18 : 0), gy = ey + (horiz ? 0 : 3 + rnd() * 18);
+            P(gx, gy, 1, 2, tuft); P(gx + 1, gy + 1, 1, 1, tuft);
+            if (rnd() < 0.15) P(gx, gy - 1, 1, 1, bloom);
+          }
+        };
+        if (!U) edge(x, y + 3, true);
+        if (!D) edge(x, y + TILE - 5, true);
+        if (!L && tx > 0) edge(x + 2, y, false);
+        if (!Rr && tx < COLS - 1) edge(x + TILE - 4, y, false);
+      }
+      // signposts on bends, on the outer corner of the turn
+      const bend = (L || Rr) && (U || D) && !(L && Rr) && !(U && D);
+      if (bend && rnd() < 0.45) {
+        const sx = x + (L ? TILE - 3 : 1), sy = y + (U ? TILE - 3 : 2);
+        P(sx, sy - 9, 1, 10, '#5a3e2c');
+        P(sx - 4, sy - 9, 9, 4, '#c28569'); P(sx - 4, sy - 9, 9, 1, '#e0b089');
+        P(Rr ? sx + 4 : sx - 5, sy - 8, 1, 2, '#c28569'); // the board's arrow tip points along the road
+        P(sx - 2, sy - 7, 5, 1, '#5a3e2c');
+        if (season === 'winter') P(sx - 4, sy - 10, 9, 1, C.white);
+      }
+    }
   }
 
   // ---------- events -> effects ----------
@@ -174,6 +248,17 @@ export class Renderer {
           this.burst(e.x, e.y, 18, C.silver, 60, -30);
           this.text(e.x, e.y - 28, 'x2', C.cyan, 2);
           this.shake = Math.max(this.shake, 2.5);
+          break;
+        case 'goldrain':
+          // coins rain down over the circle, sparkling as they land
+          this.rings.push({ x: e.x, y: e.y, r: 4, max: e.r, c: C.yellow, life: 1 });
+          for (let i = 0; i < 12; i++) this.burst(e.x + Math.random() * e.r - e.r / 2, e.y + Math.random() * e.r / 2, 3, C.yellow, 30, -40);
+          break;
+        case 'quake':
+          this.rings.push({ x: e.x, y: e.y, r: 4, max: e.r, c: '#8a6248', life: 1 });
+          this.rings.push({ x: e.x, y: e.y, r: 2, max: e.r * 0.6, c: C.orange, life: 0.8 });
+          this.burst(e.x, e.y + 4, 30, '#8a6248', 70, -20);
+          this.shake = Math.max(this.shake, 5);
           break;
         case 'zap':
           this.zaps.push({ pts: e.pts, life: 0.18 });
@@ -350,7 +435,10 @@ export class Renderer {
       const ok = canPlace(s, tx, ty) && (s.players[ui.me || 0] || s.players[0]).gold >= TOWERS[ui.build].cost;
       this.rangeCircle(tx * TILE + 12, ty * TILE + 12, TOWERS[ui.build].range * (s.players[ui.me || 0] || s.players[0]).mods.range, ok);
     }
-    if (ui.ability === 'meteor' && ui.mouse) this.rangeCircle(ui.mouse.x, ui.mouse.y, ABILITIES.meteor.radius, true, C.orange);
+    // targeted abilities: the blast circle under the cursor (its colour says what it does)
+    if (ui.ability && ui.ability !== 'wall' && ui.mouse && ABILITIES[ui.ability].radius) {
+      this.rangeCircle(ui.mouse.x, ui.mouse.y, ABILITIES[ui.ability].radius, true, ABILITY_COLOR[ui.ability] || C.orange);
+    }
     if (ui.ability === 'wall' && ui.hover) {
       g.fillStyle = isRoad(s, ui.hover.tx, ui.hover.ty) ? 'rgba(255,205,117,0.35)' : 'rgba(177,62,83,0.4)';
       g.fillRect(ui.hover.tx * TILE, ui.hover.ty * TILE, TILE, TILE);
@@ -397,6 +485,7 @@ export class Renderer {
         const t = it.t;
         drawTower(g, t.kind, t.tx * TILE, t.ty * TILE, TOWERS[t.kind].support ? t.aura.dmg + t.aura.rate : TOWERS[t.kind].from ? 4 : t.level, t.aim, s.tick, s.tick - t.fired < 2);
         if (s.players.length > 1) this.ownerMark(t.tx * TILE, t.ty * TILE, t.owner);
+        if (s.players[t.owner] && s.players[t.owner].overT > 0 && !TOWERS[t.kind].support) this.buffMark(t.tx * TILE, t.ty * TILE, s.tick); // Overdrive sparks
         this.auraMarks(s, t);
         if (t.stunT > 0) this.stunMark(t, s.tick);
         if ('t' + t.id === ui.selected || hov(t.tx, t.ty)) this.outline(t.tx * TILE, t.ty * TILE);

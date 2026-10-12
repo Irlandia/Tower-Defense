@@ -31,7 +31,6 @@ export const app = {
   diff: 'normal',
   mode: 'classic',
   season: 'random',
-  treeBranch: 'general',
   selectedMission: 1,
   menuTab: 'play',
   boardMode: 'classic',

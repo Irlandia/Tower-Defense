@@ -1,7 +1,7 @@
 // On-map popup for the selected tower / obstacle: stats, upgrade, evolve, aura, move, sell, clear.
 // The HTML is rebuilt only when `key` changes, so it does not flicker or eat clicks.
 import { TICK_RATE, TOWERS, BRANCHES, CONFIG, AURA } from '../../sim/data.js';
-import { family, towerStats, upgradeCost, canEvolve, sellValue, clearCost, auraCost } from '../../sim/sim.js';
+import { family, towerStats, upgradeCost, canEvolve, sellValue, sellRatioOf, clearCost, auraCost } from '../../sim/sim.js';
 import { W, MX, MY, PLAYER_COLORS } from '../../render.js';
 import { TILE } from '../../sim/data.js';
 import { app, ui, canvas, me, P } from '../app.js';
@@ -54,7 +54,7 @@ function towerHtml(t, gold) {
   const mine = t.owner === me();
   const up = upgradeCost(t);
   const evo = canEvolve(t);
-  let key = `t${t.id}:${t.kind}:${t.level}:${Math.floor(gold / 5)}:${Math.round(st.dmg)}:${st.buff}:${Math.ceil((t.moveCd || 0) / TICK_RATE)}`;
+  let key = `t${t.id}:${t.kind}:${t.level}:${Math.floor(gold / 5)}:${Math.round(st.dmg)}:${st.buff}:${Math.ceil((t.moveCd || 0) / TICK_RATE)}:${sellValue(t, sellRatioOf(s, t.owner))}`;
   // header: tower icon on a family-coloured tile, name, level badge
   let html = `<div class="pop-title" style="--fam: var(--fam-${family(t.kind)})"><span class="pop-ico" data-icon="${t.kind}"></span>
       <b>${def.name}</b><span class="lvl-badge">${def.from ? '★ еволюція' : 'рів. ' + t.level}</span></div>
@@ -88,7 +88,7 @@ function towerHtml(t, gold) {
   const mcd = Math.ceil((t.moveCd || 0) / TICK_RATE);
   html += '<div class="pa-row">'
     + act('data-act="move"', 'pa-move', '↔ Перемістити', mcd ? `зачекай ${mcd} с` : `до ${CONFIG.moveRange} клітинок · M`, '', mcd)
-    + act('data-act="sell"', 'pa-sell', 'Продати', '', `+${sellValue(t)}`, false)
+    + act('data-act="sell"', 'pa-sell', 'Продати', '', `+${sellValue(t, sellRatioOf(s, me()))}`, false)
     + '</div>';
   return { key, html };
 }

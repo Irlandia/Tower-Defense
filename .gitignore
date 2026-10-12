@@ -1,4 +1,5 @@
 api/data/*.json
 
-.idea/
+# local tooling, not project code
 .codegraph/
+.idea/

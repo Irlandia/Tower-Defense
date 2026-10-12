@@ -3,6 +3,7 @@ import { TOWERS, MODES, CONFIG, BOSSES, CAMPAIGN, brawlWeek, brawlOf, VERSION } 
 import { PLAYER_COLORS } from '../../render.js';
 import * as Meta from '../../meta.js';
 import * as Api from '../../api.js';
+import { renderTreeView } from '../../treeui.js';
 import { app, bus, net, meta, sfx } from '../app.js';
 import { $, esc, hide, show } from '../dom.js';
 import { myEntry } from '../roster.js';
@@ -86,42 +87,14 @@ function renderDifficulty() {
   }
 }
 
-// talent tree: branch tabs, then the branch's nodes top to bottom (each needs the previous one)
 function renderTree() {
-  const shop = $('shop');
-  shop.innerHTML = '';
-  const tabs = document.createElement('div');
-  tabs.className = 'tree-tabs';
-  for (const br of Meta.BRANCHES) {
-    const t = document.createElement('button');
-    const got = Meta.TREE.filter((n) => n.branch === br.id && Meta.level(meta, n.id)).length;
-    t.className = 'tree-tab' + (app.treeBranch === br.id ? ' active' : '');
-    t.title = br.name;
-    t.innerHTML = `${br.icon}<small>${got}/${Meta.TREE.filter((n) => n.branch === br.id).length}</small>`;
-    t.addEventListener('click', () => { app.treeBranch = br.id; renderMenu(); });
-    tabs.append(t);
-  }
-  shop.append(tabs);
-  const title = document.createElement('div');
-  title.className = 'tree-title';
-  title.textContent = Meta.BRANCHES.find((b) => b.id === app.treeBranch).name;
-  shop.append(title);
-  for (const n of Meta.TREE.filter((k) => k.branch === app.treeBranch)) {
-    const lv = Meta.level(meta, n.id);
-    const max = lv >= n.cost.length;
-    const reqOk = !n.req || Meta.level(meta, n.req) > 0;
-    const b = document.createElement('button');
-    b.className = 'shop-item tree-node' + (max ? ' max' : '') + (lv ? ' owned' : '') + (reqOk ? '' : ' blocked');
-    b.disabled = max || !Meta.canBuy(meta, n);
-    const price = max ? 'ВИВЧЕНО' : reqOk ? `${n.cost[lv]} ✦` : `🔒 ${Meta.nodeOf(n.req).name}`;
-    b.innerHTML = `<b>${n.name}</b><span>${n.desc}</span><i>${price}${n.cost.length > 1 ? ` · ${lv}/${n.cost.length}` : ''}</i>`;
-    b.addEventListener('click', () => { if (Meta.buy(meta, n.id)) { sfx.unlock(); sfx.play('card'); renderMenu(); } });
-    shop.append(b);
-  }
+  renderTreeView($('shop'), meta, renderMenu);
 }
 
 export function renderMenu() {
-  $('crystals').textContent = meta.xp;
+  const L = Meta.level(meta);
+  $('lvl').textContent = L;
+  $('xpLine').textContent = L < Meta.MAX_LEVEL ? `${meta.xp - Meta.xpForLevel(L)} / ${Meta.levelCost(L)} до рівня ${L + 1}` : 'максимальний рівень';
   for (const t of document.querySelectorAll('.menu-tabs [data-tab]')) t.classList.toggle('active', t.dataset.tab === app.menuTab);
   for (const s of document.querySelectorAll('.menu-tab')) s.classList.toggle('hidden', s.dataset.tab !== app.menuTab);
   renderModes();

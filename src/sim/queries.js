@@ -31,10 +31,13 @@ export function clearCost(o) {
   return OBSTACLES[o.kind];
 }
 export const hasWall = (s, p) => s.walls.some((w) => w.owner === p && w.hp > 0);
+const CD_KEY = { meteor: "meteorCd", nova: "novaCd", wall: "wallCd", goldrain: "goldrainCd", overdrive: "overdriveCd", quake: "quakeCd" };
 export function abilityMax(s, id, p = 0) {
   const m = player(s, p).mods;
-  return Math.round(ABILITIES[id].cd * (id === "meteor" ? m.meteorCd : id === "nova" ? m.novaCd : 1) * T);
+  return Math.round(ABILITIES[id].cd * (m[CD_KEY[id]] ?? 1) * m.cdAll * T);
 }
+// Only abilities in the player's loadout can be cast (talent tree decides the loadout).
+export const hasAbility = (pl, id) => pl.abilities.includes(id);
 export function enemyAt(s, x, y, r = 14) {
   let best = null, bd = r;
   for (const e of s.enemies) {
@@ -62,14 +65,15 @@ export function auraCost(t, k) {
 
 export function towerStats(s, t) {
   const def = TOWERS[t.kind];
-  const m = player(s, t.owner).mods;
+  const pl = player(s, t.owner), m = pl.mods;
   if (def.support) return { range: def.range, dmg: 0, period: 0, buff: 0, aura: auraOf(s, t) };
   const lv = def.from ? 0 : t.level - 1;
   const aura = auraOf(s, t);
+  const od = pl.overT > 0 ? 1 + ABILITIES.overdrive.bonus : 1; // Overdrive: the owner's towers fire faster
   return {
     range: (def.range + lv * CONFIG.rangePerLevel) * m.range * (m.towerRange[family(t.kind)] || 1) * (s.mission && s.mission.night ? 0.7 : 1), // night: shorter sight
     dmg: def.dmg * (1 + 0.6 * lv) * (m.dmg[family(t.kind)] || 1) * (1 + aura.dmg),
-    period: Math.max(1, Math.round(T / (def.rate * m.rate * (m.towerRate[family(t.kind)] || 1) * (1 + aura.rate)))),
+    period: Math.max(1, Math.round(T / (def.rate * m.rate * (m.towerRate[family(t.kind)] || 1) * (1 + aura.rate) * od))),
     buff: aura.dmg + aura.rate,
     aura,
   };
@@ -82,7 +86,8 @@ export function isLocked(s, p, kind) {
 }
 // Build price for this player (talent tree discounts, e.g. cheaper totems).
 export function placeCost(s, p, kind) {
-  const d = (player(s, p).mods.discount || {})[kind] || 0;
+  const disc = player(s, p).mods.discount || {};
+  const d = Math.min(0.8, (disc[kind] || 0) + (disc.all || 0)); // "all" = every tower (tree)
   return Math.round(TOWERS[kind].cost * (1 - d));
 }
 
@@ -99,8 +104,10 @@ export function canMove(s, t, tx, ty) {
   return !(t.moveCd > 0) && Math.hypot(tx - t.tx, ty - t.ty) <= CONFIG.moveRange && canPlace(s, tx, ty);
 }
 
-export function sellValue(t) {
-  return Math.floor(t.spent * CONFIG.sellRatio);
+// Share of the spent gold a player gets back when selling (tree: Торг, Ковальня).
+export const sellRatioOf = (s, p) => Math.min(1, CONFIG.sellRatio + player(s, p).mods.sell);
+export function sellValue(t, ratio = CONFIG.sellRatio) {
+  return Math.floor(t.spent * ratio);
 }
 
 // Campaign stars: 1 for the win, 1 for the mission's side objective, 1 for a brisk pace (early wave calls).

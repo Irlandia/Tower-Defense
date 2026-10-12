@@ -30,10 +30,10 @@ export function selectBuild(kind) {
 
 export function useAbility(id) {
   sfx.unlock();
-  if (P().cds[id] > 0 || !app.running) return;
+  if (!app.running || !id || !P().abilities.includes(id) || P().cds[id] > 0) return;
   if (id === 'wall' && hasWall(app.state, me())) { banner('Барикада вже стоїть', 'gold'); return; }
   ui.build = null;
-  if (id === 'nova') { send({ type: 'nova' }); return; }
+  if (id === 'nova' || id === 'overdrive') { send({ type: id }); return; } // no target: fires at once
   ui.ability = ui.ability === id ? null : id;
 }
 

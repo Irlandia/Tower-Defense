@@ -25,19 +25,28 @@ function newPlayer(opts, i = 0) {
   const dmg = { arrow: 1, cannon: 1, frost: 1, tesla: 1, fire: 1 };
   for (const f in k.dmg || {}) dmg[f] = (dmg[f] || 1) * k.dmg[f];
   const BR = opts.brawlRules || {};
-  if (BR.towerDmg) for (const f in dmg) dmg[f] *= BR.towerDmg;
+  const dmgAll = (k.dmgAll ?? 1) * (BR.towerDmg || 1);
+  for (const f in dmg) dmg[f] *= dmgAll;
   return {
     gold: (opts.brawlRules && opts.brawlRules.startGold) || CONFIG.startGold + (k.bonusGold ?? (i === 0 ? opts.bonusGold || 0 : 0)),
     mods: {
       dmg,
-      rate: 1, range: BR.towerRange || 1, chain: k.chain || 0, burn: k.burn || 1, wet: k.wet || 0, steam: k.steam || 1, gold: 1, interest: 0, crit: 0.1 + (k.crit || 0),
-      meteorCd: (k.meteorCd || opts.meteorCd || 1) * (BR.meteorCd || 1), wall: 1,
-      critMul: 2, aura: k.aura || 1, moveCd: k.moveCd || 1, novaCd: k.novaCd || 1, barrel: 1, lapDmg: 0, hunter: 0, thief: 0,
-      towerRate: { ...(k.rate || {}) }, towerRange: { ...(k.range || {}) }, splash: k.splash || 1, discount: { ...(k.discount || {}) },
+      rate: 1, range: BR.towerRange || 1, chain: k.chain || 0, wetChain: k.wetChain || 0, burn: k.burn || 1, wet: k.wet || 0,
+      steam: k.steam || 1, steamR: k.steamR || 1, gold: k.gold || 1, interest: 0, wage: k.wage || 0, sell: k.sell || 0,
+      crit: 0.1 + (k.crit || 0), critMul: 2 + (k.critMul || 0),
+      // cooldown multipliers: each ability reads its own, cdAll applies to all (keystone Focus, tree)
+      cdAll: k.cdAll ?? 1, meteorCd: (k.meteorCd || opts.meteorCd || 1) * (BR.meteorCd || 1), novaCd: k.novaCd || 1, wallCd: k.wallCd || 1,
+      goldrainCd: 1, overdriveCd: 1, quakeCd: 1,
+      wall: k.wall || 1, meteorDmg: k.meteorDmg || 1, novaFreeze: k.novaFreeze || 0, overSec: k.overSec || 0,
+      aura: k.aura || 1, moveCd: k.moveCd || 1, barrel: 1, lapDmg: 0, hunter: 0, thief: 0,
+      towerRate: { ...(k.rate || {}) }, towerRange: { ...(k.range || {}) }, multi: { ...(k.multi || {}) }, splash: k.splash || 1, discount: { ...(k.discount || {}) },
       cards: k.cards || opts.cards || 3,
     },
     picked: {}, // talent id -> times taken (cards have a max)
-    cds: { meteor: 0, nova: 0, wall: 0 },
+    // the loadout by slot (Q/W/E/R); null = empty slot. Casting is allowed only for abilities in it.
+    abilities: k.abilities || ['meteor', 'nova', 'wall'],
+    cds: { meteor: 0, nova: 0, wall: 0, goldrain: 0, overdrive: 0, quake: 0 },
+    overT: 0, // ticks left of Overdrive
     drafts: [], // pending talent choices (arrays of card ids); picking never pauses the game
     kills: 0,
   };
@@ -128,6 +137,7 @@ export function step(s, cmds = [], advance = true) {
   s.tick++;
   for (const pl of s.players) {
     for (const k in pl.cds) if (pl.cds[k] > 0) pl.cds[k]--;
+    if (pl.overT > 0) pl.overT--;
   }
 
   if (!s.queue.length && (s.wave < s.winWave || s.endless)) {
@@ -301,7 +311,9 @@ function updateTower(s, t) {
 
   if (def.pulse) { pulse(s, t, def, st, targets); return; }
   if (def.chain !== undefined) { zap(s, t, target, st, def); return; }
-  for (const e of targets.slice(0, def.multi || 1)) {
+  // tree: extra targets per shot for a family
+  const extra = player(s, t.owner).mods.multi[family(t.kind)] || 0;
+  for (const e of targets.slice(0, (def.multi || 1) + extra)) {
     s.projs.push({
       kind: def.proj, tower: t.kind, owner: t.owner, level: t.level, dmg: st.dmg, speed: def.speed,
       x: t.x, y: t.y - 14, px: t.x, py: t.y - 14, target: e.id, tx: e.x, ty: e.y, done: false,
@@ -331,7 +343,8 @@ function applyCold(e, def, m) {
 
 function zap(s, t, first, st, def) {
   const hit = [first];
-  let jumps = def.chain + player(s, t.owner).mods.chain + (first.wetT > 0 ? 1 : 0);
+  const om = player(s, t.owner).mods;
+  let jumps = def.chain + om.chain + (first.wetT > 0 ? 1 + om.wetChain : 0);
   let cur = first;
   while (jumps-- > 0) {
     let next = null, nd = Infinity;
@@ -408,8 +421,9 @@ function hit(s, p, target) {
         // Synergy: fire + wet = steam explosion.
         target.wetT = 0;
         const dmg = CONFIG.steamDmg * lvMul * m.steam;
+        const radius = CONFIG.steamRadius * m.steamR;
         for (const e of s.enemies) {
-          if (!e.dead && Math.hypot(e.x - target.x, e.y - target.y) <= CONFIG.steamRadius) damage(s, e, dmg, p.owner, { pierce: true, src });
+          if (!e.dead && Math.hypot(e.x - target.x, e.y - target.y) <= radius) damage(s, e, dmg, p.owner, { pierce: true, src });
         }
         s.events.push({ type: 'steam', x: target.x, y: target.y });
       } else {

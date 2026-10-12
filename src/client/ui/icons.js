@@ -38,6 +38,18 @@ export const AB_ICONS = {
     c: { B: '#c28569', b: '#8a6248', D: '#5a3e2c', s: '#94b0c2' },
     rows: ['.B...B...B..', 'BbB.BbB.BbB.', 'BbB.BbB.BbB.', 'DDDDDDDDDDD.', 'BsB.BsB.BsB.', 'BbB.BbB.BbB.', 'DDDDDDDDDDD.', 'BbB.BbB.BbB.', 'BbB.BbB.BbB.', 'bbb.bbb.bbb.', '............'],
   },
+  goldrain: {
+    c: { y: '#ffcd75', o: '#c28569', w: '#fff4d6' },
+    rows: ['....oooo....', '..oowyyyoo..', '.oyywyyyyo.', '.oyywyyyyo.', 'oyyywyyyyyo.', 'oyyyyyyyyyo.', 'oyyyyyyyyyo.', '.oyyyyyyyo..', '..oyyyyyo...', '....oooo....', '............'],
+  },
+  overdrive: {
+    c: { w: '#fff4d6', y: '#ffcd75', o: '#ef7d57' },
+    rows: ['.......ww...', '......wy....', '.....wyy....', '....wyyyyy..', '.....yyyyy..', '......yyo...', '.....yy.....', '....yy......', '...yy.......', '..yo........', '............'],
+  },
+  quake: {
+    c: { s: '#94b0c2', d: '#566c86', k: '#5a3e2c' },
+    rows: ['.....ss.....', '...sssss....', '.sssssssss..', 'ssssssssssss', 'sssskssssss.', 'dddkdddddddd', '.....kd.....', '....kk......', '...kk.......', '..kd........', '............'],
+  },
 };
 
 export const MODE_ICONS = {

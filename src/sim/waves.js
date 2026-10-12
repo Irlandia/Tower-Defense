@@ -31,6 +31,7 @@ export function startWave(s) {
       const gain = Math.min(25, Math.floor(pl.gold * pl.mods.interest));
       if (gain) { pl.gold += gain; s.events.push({ type: 'bonus', gold: gain, p: i }); }
     }
+    if (pl.mods.wage > 0) { pl.gold += pl.mods.wage; s.events.push({ type: "bonus", gold: pl.mods.wage, p: i }); } // tree: wage
   }
   const lanes = s.plan;
   const over20 = Math.max(0, w - s.winWave);

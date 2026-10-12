@@ -3,6 +3,7 @@
 import { TOWERS, TOWER_ORDER, ABILITIES, CONFIG, MODES, ENEMIES, TICK_RATE } from '../../sim/data.js';
 import { placeCost, isLocked, abilityMax, hasWall } from '../../sim/sim.js';
 import { PLAYER_COLORS } from '../../render.js';
+import * as Meta from '../../meta.js';
 import { app, ui, sfx, music, me, P, bus } from '../app.js';
 import { $, esc } from '../dom.js';
 import { nickOf } from '../roster.js';
@@ -25,7 +26,7 @@ export function buildToolbar() {
     const b = document.createElement('button');
     b.className = 'tower-btn' + (locked ? ' locked' : '');
     b.dataset.kind = kind;
-    b.title = locked ? 'Відкривається в магазині за кристали' : `${def.name} [${i + 1}] — ${def.desc}`;
+    b.title = locked ? (Meta.UNLOCK_LEVEL[kind] ? `Відкривається на рівні ${Meta.UNLOCK_LEVEL[kind]} (дерево талантів не потрібне)` : 'Недоступно в цьому режимі') : `${def.name} [${i + 1}] — ${def.desc}`;
     b.append(towerIcon(kind));
     const label = document.createElement('span');
     label.className = 'label';
@@ -40,18 +41,33 @@ export function buildToolbar() {
   });
 }
 
-// ability buttons (static) with pixel icons instead of emoji
-for (const id of Object.keys(ABILITIES)) {
-  const a = ABILITIES[id];
-  const b = document.createElement('button');
-  b.className = 'ability';
-  b.id = 'ab-' + id;
-  b.title = a.desc;
-  b.dataset.ab = id;
-  b.innerHTML = `<span class="ab-icon"></span><span class="ab-name">${a.name}</span><span class="key">${a.key}</span><span class="cd"></span>`;
-  if (AB_ICONS[id]) b.querySelector('.ab-icon').append(pixelIcon(AB_ICONS[id]));
-  b.addEventListener('click', () => useAbility(id));
-  $('abilities').append(b);
+const KEYS = ['Q', 'W', 'E', 'R']; // ability slots, left to right
+
+/** Ability bar: one button per slot of the local player's loadout (Q/W/E/R). Empty slots stay visible but inert. */
+export function buildAbilities() {
+  const bar = $('abilities');
+  bar.innerHTML = '';
+  const slots = P().abilities || [];
+  bar.style.setProperty('--ab-n', slots.length || 3);
+  slots.forEach((id, i) => {
+    const b = document.createElement('button');
+    if (!id) {
+      b.className = 'ability empty';
+      b.disabled = true;
+      b.innerHTML = `<span class="ab-name">—</span><span class="key">${KEYS[i]}</span>`;
+      bar.append(b);
+      return;
+    }
+    const a = ABILITIES[id];
+    b.className = 'ability';
+    b.id = 'ab-' + i;
+    b.title = `${a.name} [${KEYS[i]}] — ${a.desc}`;
+    b.dataset.ab = id;
+    b.innerHTML = `<span class="ab-icon"></span><span class="ab-name">${a.name}</span><span class="key">${KEYS[i]}</span><span class="cd"></span>`;
+    if (AB_ICONS[id]) b.querySelector('.ab-icon').append(pixelIcon(AB_ICONS[id]));
+    b.addEventListener('click', () => useAbility(id));
+    bar.append(b);
+  });
 }
 
 $('next').addEventListener('click', nextWave);
@@ -130,8 +146,8 @@ export function updateUI() {
     b.classList.toggle('active', ui.build === b.dataset.kind);
     b.classList.toggle('poor', pl.gold < placeCost(s, me(), b.dataset.kind));
   }
-  for (const id of Object.keys(ABILITIES)) {
-    const b = $('ab-' + id);
+  for (const b of document.querySelectorAll('.ability[data-ab]')) {
+    const id = b.dataset.ab;
     b.classList.toggle('active', ui.ability === id);
     b.classList.toggle('cooling', pl.cds[id] > 0 || (id === 'wall' && hasWall(s, me())));
     b.style.setProperty('--cd', (pl.cds[id] / abilityMax(s, id, me())).toFixed(3));

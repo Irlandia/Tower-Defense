@@ -1,17 +1,19 @@
 // Player commands (Command pattern): one handler per `c.type`, looked up in COMMANDS.
 // Every handler validates its input itself: commands come from the network and must never be trusted.
 // Handler signature: (s, pl, pi, c) where pl = s.players[pi], pi = acting player index, c = the command.
-import { TOWERS, CARDS, CONFIG, OBSTACLES, BARREL, ABILITIES, AURA, ENEMIES, TICK_RATE as T } from './data.js';
+import { TILE, COLS, ROWS, TOWERS, CARDS, CONFIG, OBSTACLES, BARREL, ABILITIES, AURA, ENEMIES, COIN, TICK_RATE as T } from './data.js';
+import { rand } from './rng.js';
 import { center } from './mapgen.js';
 import {
   canPlace, isRoad, isLocked, placeCost, upgradeCost, canEvolve, canMove, sellValue, clearCost,
-  auraCost, abilityMax, hasWall,
+  auraCost, abilityMax, hasWall, hasAbility, sellRatioOf,
 } from './queries.js';
 import { damage, ignite } from './combat.js';
 import { startWave } from './waves.js';
 
 const isTile = (v) => Number.isInteger(v);
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const own = (s, pi, id) => s.towers.find((k) => k.id === id && k.owner === pi);
 
 export const COMMANDS = {
@@ -85,9 +87,10 @@ export const COMMANDS = {
     const i = s.towers.findIndex((k) => k.id === c.id && k.owner === pi);
     if (i < 0) return;
     const t = s.towers[i];
-    pl.gold += sellValue(t);
+    const gold = sellValue(t, sellRatioOf(s, pi));
+    pl.gold += gold;
     s.towers.splice(i, 1);
-    s.events.push({ type: 'sell', x: t.x, y: t.y, gold: sellValue(t), p: pi });
+    s.events.push({ type: 'sell', x: t.x, y: t.y, gold, p: pi });
   },
 
   clear(s, pl, pi, c) {
@@ -140,9 +143,9 @@ export const COMMANDS = {
   },
 
   meteor(s, pl, pi, c) {
-    if (!isNum(c.x) || !isNum(c.y) || pl.cds.meteor > 0) return;
+    if (!isNum(c.x) || !isNum(c.y) || !hasAbility(pl, 'meteor') || pl.cds.meteor > 0) return;
     pl.cds.meteor = abilityMax(s, 'meteor', pi);
-    const dmg = 40 + s.wave * 6;
+    const dmg = (40 + s.wave * 6) * pl.mods.meteorDmg;
     for (const e of s.enemies) {
       if (e.dead || Math.hypot(e.x - c.x, e.y - c.y) > ABILITIES.meteor.radius) continue;
       damage(s, e, dmg, pi, { pierce: true });
@@ -151,13 +154,47 @@ export const COMMANDS = {
     s.events.push({ type: 'meteor', x: c.x, y: c.y, r: ABILITIES.meteor.radius, p: pi });
   },
 
+  goldrain(s, pl, pi, c) {
+    if (!isNum(c.x) || !isNum(c.y) || !hasAbility(pl, 'goldrain') || pl.cds.goldrain > 0) return;
+    pl.cds.goldrain = abilityMax(s, 'goldrain', pi);
+    const A = ABILITIES.goldrain;
+    for (let n = 0; n < A.coins; n++) {
+      const a = rand(s) * Math.PI * 2, r = rand(s) * A.radius;
+      s.coins.push({
+        id: s.nextId++, x: clamp(c.x + Math.cos(a) * r, 0, COLS * TILE - 1), y: clamp(c.y + Math.sin(a) * r, 0, ROWS * TILE - 1),
+        value: A.value + s.wave, life: COIN.life * T,
+      });
+    }
+    s.events.push({ type: 'goldrain', x: c.x, y: c.y, r: A.radius, p: pi });
+  },
+
+  overdrive(s, pl, pi) {
+    if (!hasAbility(pl, 'overdrive') || pl.cds.overdrive > 0) return;
+    pl.cds.overdrive = abilityMax(s, 'overdrive', pi);
+    pl.overT = Math.round((ABILITIES.overdrive.dur + pl.mods.overSec) * T);
+    s.events.push({ type: 'overdrive', p: pi });
+  },
+
+  quake(s, pl, pi, c) {
+    if (!isNum(c.x) || !isNum(c.y) || !hasAbility(pl, 'quake') || pl.cds.quake > 0) return;
+    pl.cds.quake = abilityMax(s, 'quake', pi);
+    const A = ABILITIES.quake, dmg = A.dmg + s.wave * A.dmgPerWave;
+    for (const e of s.enemies) {
+      if (e.dead || Math.hypot(e.x - c.x, e.y - c.y) > A.radius) continue;
+      damage(s, e, dmg, pi, { pierce: true });
+      e.slowT = Math.round(A.slow * T * (ENEMIES[e.type].lives ? 0.5 : 1));
+      e.slowF = A.slowF;
+    }
+    s.events.push({ type: 'quake', x: c.x, y: c.y, r: A.radius, p: pi });
+  },
+
   nova(s, pl, pi) {
-    if (pl.cds.nova > 0) return;
+    if (!hasAbility(pl, 'nova') || pl.cds.nova > 0) return;
     pl.cds.nova = abilityMax(s, 'nova', pi);
-    const a = ABILITIES.nova;
+    const a = ABILITIES.nova, freeze = a.freeze + pl.mods.novaFreeze;
     for (const e of s.enemies) {
       if (e.dead) continue;
-      e.slowT = Math.round(a.freeze * T * (ENEMIES[e.type].lives ? 0.5 : 1));
+      e.slowT = Math.round(freeze * T * (ENEMIES[e.type].lives ? 0.5 : 1));
       e.slowF = 0;
       e.wetT = Math.round(a.wet * T);
       e.burnT = 0;
@@ -167,7 +204,7 @@ export const COMMANDS = {
 
   wall(s, pl, pi, c) {
     if (!isTile(c.tx) || !isTile(c.ty)) return;
-    if (pl.cds.wall > 0 || !isRoad(s, c.tx, c.ty) || c.tx < 0) return;
+    if (!hasAbility(pl, 'wall') || pl.cds.wall > 0 || !isRoad(s, c.tx, c.ty) || c.tx < 0) return;
     if (hasWall(s, pi)) return; // one standing barricade per player
     if (s.walls.some((w) => w.tx === c.tx && w.ty === c.ty)) return;
     pl.cds.wall = abilityMax(s, 'wall', pi);
