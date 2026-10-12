@@ -550,3 +550,11 @@ details.camp-brief summary::-webkit-details-marker { display: none; }
 #tutor .tt-skip { flex: none; padding: 0 6px; font-size: 12px; background: #1a1c2c; color: #94b0c2; box-shadow: none; }
 #tutor.pop { animation: tutPop .25s ease-out; }
 @keyframes tutPop { from { transform: translateX(-50%) translateY(-8px); opacity: 0; } }
+/* talents: three rarities */
+.card.common .rar { color: #94b0c2; }
+.card.epic { background: #4a2a12; box-shadow: inset -3px -3px 0 var(--ink), inset 3px 3px 0 #ef7d57, 0 0 0 2px #ffcd75, 0 0 18px rgba(255,205,117,.45); animation: epicGlow 1.6s ease-in-out infinite; }
+.card.epic .rar { color: #ffcd75; font-weight: 800; }
+.card.epic b { color: #ffe9b0; }
+@keyframes epicGlow { 50% { box-shadow: inset -3px -3px 0 var(--ink), inset 3px 3px 0 #ef7d57, 0 0 0 2px #ffcd75, 0 0 30px rgba(255,205,117,.7); } }
+#reroll { margin-top: 10px; }
+#reroll:disabled { opacity: .45; }

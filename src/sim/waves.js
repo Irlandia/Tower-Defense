@@ -22,7 +22,7 @@ export function startWave(s) {
   for (let i = 0; i < s.players.length; i++) {
     const pl = s.players[i], other = s.players[(i + 1) % s.players.length]; // picks the next player's pocket
     if (!pl.mods.thief || !other) continue;
-    const cut = Math.min(20, Math.floor(other.gold * pl.mods.thief));
+    const cut = Math.min(40, Math.floor(other.gold * pl.mods.thief));
     if (cut > 0) { other.gold -= cut; pl.gold += cut; s.events.push({ type: "steal", p: i, from: s.players.indexOf(other), gold: cut }); }
   }
   for (let i = 0; i < s.players.length; i++) {

@@ -48,6 +48,7 @@ function newPlayer(opts, i = 0) {
     cds: { meteor: 0, nova: 0, wall: 0, goldrain: 0, overdrive: 0, quake: 0 },
     overT: 0, // ticks left of Overdrive
     drafts: [], // pending talent choices (arrays of card ids); picking never pauses the game
+    rerolls: 0, // draft rerolls in stock (one per boss, see DRAFT.maxRerolls)
     kills: 0,
   };
 }

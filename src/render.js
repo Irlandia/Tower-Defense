@@ -13,6 +13,7 @@ export const PLAYER_COLORS = [C.yellow, C.cyan, C.lime, "#f4b6d2"];
 const ABILITY_COLOR = { meteor: C.orange, goldrain: C.yellow, quake: '#8a6248' };
 // where a spawn tile sits on the map edge: cave and "!" marker positions
 
+const SHAKE = 0.35; // global screen-shake strength (1 = old, very shaky)
 export const W = 640;
 export const H = 360;
 export const HUD = 20;
@@ -261,14 +262,16 @@ export class Renderer {
     g.save();
     g.fillStyle = C.ink;
     g.fillRect(0, 0, W, H);
-    const sx = this.shake > 0 ? Math.round((Math.random() * 2 - 1) * this.shake) : 0;
-    let sy = this.shake > 0 ? Math.round((Math.random() * 2 - 1) * this.shake) : 0;
+    // screen shake is toned down globally (SHAKE) and capped, so heavy fights stay readable
+    const amp = Math.min(3, this.shake * SHAKE);
+    const sx = amp >= 0.5 ? Math.round((Math.random() * 2 - 1) * amp) : 0;
+    let sy = amp >= 0.5 ? Math.round((Math.random() * 2 - 1) * amp) : 0;
     let qx = 0;
     if (this.quake > 0) {
       // slow rolling sway instead of jitter: feels like the ground moves
       const k = Math.min(1, this.quake), t = performance.now();
-      qx = Math.round(Math.sin(t * 0.04) * 2.5 * k);
-      sy += Math.round(Math.sin(t * 0.065) * 1.2 * k);
+      qx = Math.round(Math.sin(t * 0.04) * 1.2 * k);
+      sy += Math.round(Math.sin(t * 0.065) * 0.6 * k);
       if (Math.random() < 0.5) this.parts.push({ x: Math.random() * COLS * TILE, y: -2, vx: 0, vy: 40 + Math.random() * 40, life: 0.6, c: Math.random() < 0.5 ? "#8a6248" : C.slate, s: 2 });
     }
     g.translate(MX + sx + qx, MY + sy);

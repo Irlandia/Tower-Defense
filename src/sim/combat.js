@@ -1,26 +1,34 @@
 // Combat primitives: spawning, damage, kills, burning, explosions, talent draws.
 // Everything here mutates the state passed in and draws randomness only from state.rngState.
-import { ENEMIES, BOSSES, MODES, CARDS, RARITY, COIN, TICK_RATE as T } from './data.js';
+import { ENEMIES, BOSSES, MODES, CARDS, RARITY, DRAFT, COIN, TICK_RATE as T } from './data.js';
 import { rand, randInt } from './rng.js';
 import { posAt } from './mapgen.js';
 import { player, isLocked, vsMult, family } from './queries.js';
 
 
 // Weighted draw without repeats from the cards valid for this mode and not maxed out by this player.
-export function pickCards(s, n, pl, guaranteeRare = false) {
+// guarantee: true / 'rare' = at least one rare-or-better card, 'epic' = at least one epic (falls back to rare).
+const RANK = { common: 0, rare: 1, epic: 2 };
+export function rarityWeight(s, r) {
+  return Math.max(0.2, RARITY[r].weight + RARITY[r].perWave * s.wave);
+}
+export function pickCards(s, n, pl, guarantee = false) {
   const pool = CARDS.filter((c) => (!c.modes || c.modes.includes(s.mode)) && !(c.needs && isLocked(s, s.players.indexOf(pl), c.needs)) && !(c.coop && s.players.length < 2) && (pl.picked[c.id] || 0) < c.max);
   const out = [];
-  if (guaranteeRare) {
-    const rares = pool.filter((c) => c.rarity === "rare");
-    if (rares.length) { const c = rares[randInt(s, rares.length)]; out.push(c.id); pool.splice(pool.indexOf(c), 1); }
-  }
-  while (out.length < n && pool.length) {
-    const total = pool.reduce((a, c) => a + RARITY[c.rarity].weight, 0);
+  const draw = (list) => {
+    const total = list.reduce((a, c) => a + rarityWeight(s, c.rarity), 0);
     let r = rand(s) * total, i = 0;
-    while (i < pool.length - 1 && (r -= RARITY[pool[i].rarity].weight) > 0) i++;
-    out.push(pool.splice(i, 1)[0].id);
+    while (i < list.length - 1 && (r -= rarityWeight(s, list[i].rarity)) > 0) i++;
+    return list[i];
+  };
+  if (guarantee) {
+    const min = guarantee === 'epic' ? 2 : 1;
+    let best = pool.filter((c) => RANK[c.rarity] >= min);
+    if (!best.length) best = pool.filter((c) => RANK[c.rarity] >= 1);
+    if (best.length) { const c = best[randInt(s, best.length)]; out.push(c.id); pool.splice(pool.indexOf(c), 1); }
   }
-  if (guaranteeRare && out.length > 1) { const j = randInt(s, out.length); [out[0], out[j]] = [out[j], out[0]]; }
+  while (out.length < n && pool.length) out.push(pool.splice(pool.indexOf(draw(pool)), 1)[0].id);
+  if (guarantee && out.length > 1) { const j = randInt(s, out.length); [out[0], out[j]] = [out[j], out[0]]; }
   return out;
 }
 
@@ -88,7 +96,9 @@ export function kill(s, e, owner) {
   // Talents come only from bosses: every player gets a personal choice (never pauses co-op)
   if (def.lives) {
     for (let i = 0; i < s.players.length; i++) {
-      s.players[i].drafts.push(pickCards(s, s.players[i].mods.cards, s.players[i], true));
+      const q = s.players[i];
+      q.drafts.push(pickCards(s, q.mods.cards, q, s.wave >= DRAFT.epicFrom || s.endless ? "epic" : "rare"));
+      q.rerolls = Math.min(DRAFT.maxRerolls + (q.picked.wisdom ? 1 : 0), (q.rerolls || 0) + 1); // every boss: one more reroll
       s.events.push({ type: "draft", p: i });
     }
   }

@@ -24,11 +24,13 @@ export function closeTalent() {
 export function renderTalent() {
   const draft = P().drafts[0];
   if (!draft) { closeTalent(); return; }
-  const k = draft.join() + P().drafts.length;
+  const k = draft.join() + P().drafts.length + ':' + (P().rerolls || 0);
   if (k === talentKey) return;
   talentKey = k;
   const m = $('modal');
-  m.innerHTML = `<h2>Обери талант</h2><p>${net.online ? 'Твій особистий вибір — гра не зупиняється' : 'Гра на паузі'} · Esc — пізніше</p><div class="cards"></div>`;
+  const rr = P().rerolls || 0;
+  m.innerHTML = `<h2>Обери талант</h2><p>${net.online ? "Твій особистий вибір — гра не зупиняється" : "Гра на паузі"} · Esc — пізніше</p><div class="cards"></div>
+    <button id="reroll" ${rr ? "" : "disabled"} title="Нові картки (бос дає одне перекидання)">🎲 Перекинути (${rr})</button>`;
   draft.forEach((id, i) => {
     const c = CARDS.find((x) => x.id === id);
     const el = document.createElement('button');
@@ -39,6 +41,7 @@ export function renderTalent() {
     el.addEventListener('click', () => pickCard(i));
     m.querySelector('.cards').append(el);
   });
+  $('reroll').addEventListener('click', () => { if (P().rerolls > 0) { send({ type: 'reroll' }); sfx.play('click'); } });
   m.classList.remove('hidden');
 }
 

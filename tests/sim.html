@@ -255,7 +255,7 @@ try {
         for (const id of d) {
           offered[md].add(id);
           const card = CARDS.find((c) => c.id === id);
-          total++; if (card.rarity === "rare") rare++;
+          total++; if (card.rarity !== "common") rare++;
           if ((pl2.picked[id] || 0) >= card.max) maxOk = false;
         }
         step(tg2, [{ type: "pick", index: 0, p: 0 }]);
@@ -267,7 +267,7 @@ try {
   check("talents: circle never offers classic-only cards", only("circle").every((id) => !offered.circle.has(id)));
   check("talents: mode cards do appear in their mode", offered.classic.has("walls") && offered.circle.has("dam"));
   check("talents: a card is never offered past its max", maxOk);
-  check("talents: rare cards are rarer", rare / total > 0.1 && rare / total < 0.55, `rare ${Math.round(100 * rare / total)}%`);
+  check("talents: rare+epic cards are rarer than common", rare / total > 0.15 && rare / total < 0.65, `rare ${Math.round(100 * rare / total)}%`);
 
   // bosses: one per player, arriving right after the announcement
   for (const md of ["classic", "circle"]) for (const np of [1, 2]) {
@@ -312,7 +312,7 @@ try {
   pr.players[1].gold = 400;
   const pg0 = pr.players[0].gold;
   step(pr, [{ type: "nextWave", p: 0 }]);
-  check("thief: takes 4% of partner gold (max 20) at wave start", pr.players[1].gold === 384 && pr.players[0].gold === pg0 + 16, `${pr.players[1].gold}`);
+  check("thief: takes 8% of partner gold (max 40) at wave start", pr.players[1].gold === 368 && pr.players[0].gold === pg0 + 32, `${pr.players[1].gold}`);
 
   // boss skills: brood spawns slimes, magnet pulls tower fire, decree stuns towers, king splits on rage
   const skillOf = (wave) => {
@@ -450,7 +450,7 @@ try {
   co.queue = [{ type: "boss", lane: 0, at: co.tick + 1, hpMul: 0.01 }];
   for (let i = 0; i < 4000 && !co.players[0].drafts.length; i++) step(co);
   check("co-op: a boss kill gives both players their own talent draft", co.players.every((q) => q.drafts.length === 1));
-  check("talents: boss draft contains a rare card", co.players.every((q) => q.drafts[0].some((id) => CARDS.find((c) => c.id === id).rarity === "rare")));
+  check("talents: boss draft contains a rare-or-better card", co.players.every((q) => q.drafts[0].some((id) => CARDS.find((c) => c.id === id).rarity !== "common")));
   step(co, [{ type: "pick", index: 0, p: 1 }]);
   check("co-op: picking a talent is personal", co.players[1].drafts.length === 0 && co.players[0].drafts.length === 1);
 
@@ -554,6 +554,40 @@ try {
   for (let i = 0; i < 400 && !firstShot; i++) { step(ml); if (ml.projs.length) firstShot = ml.projs.length; }
   check('Подвійний залп: one arrow shot targets two enemies', firstShot === 2, `projs=${firstShot}`);
 
+  // Talents v2: three rarities, epic guaranteed late, rerolls, every card changes something
+  check('talents: three rarities, each with cards', ['common', 'rare', 'epic'].every((r) => CARDS.some((c) => c.rarity === r)));
+  const tl = createGame(8, { players: 1 });
+  tl.wave = 16;
+  let epicOk = true;
+  for (let i = 0; i < 30; i++) if (!pickCards(tl, 3, tl.players[0], 'epic').some((id) => CARDS.find((c) => c.id === id).rarity === 'epic')) epicOk = false;
+  check('talents: late boss draft always holds an epic', epicOk);
+  const early = createGame(8), late = createGame(8);
+  early.wave = 5; late.wave = 20;
+  const epicShare = (g) => { let e = 0, n = 0; for (let i = 0; i < 300; i++) for (const id of pickCards(g, 3, g.players[0])) { n++; if (CARDS.find((c) => c.id === id).rarity === 'epic') e++; } return e / n; };
+  const eE = epicShare(early), eL = epicShare(late);
+  check('talents: epic cards get more common with waves', eL > eE * 1.5 && eE > 0, `w5 ${Math.round(eE * 100)}% w20 ${Math.round(eL * 100)}%`);
+  // every card visibly changes the player or the state (no dead cards)
+  const snap = (g) => JSON.stringify([g.players.map((q) => [q.gold, q.mods, q.rerolls]), g.lives, g.limit, g.lapSpeedMul]);
+  let dead = [];
+  for (const c of CARDS) {
+    const g = createGame(3, { players: c.coop ? 2 : 1, mode: c.modes ? c.modes[0] : 'classic' });
+    const before = snap(g);
+    c.apply(g, g.players[0]);
+    if (snap(g) === before) dead.push(c.id);
+  }
+  check('talents: every card changes something', !dead.length, dead.join(','));
+  // reroll: spends one, keeps the guarantee, does nothing without stock
+  const rr = createGame(4);
+  rr.players[0].drafts.push(pickCards(rr, 3, rr.players[0], 'rare'));
+  const d0 = rr.players[0].drafts[0].join();
+  step(rr, [{ type: 'reroll', p: 0 }]);
+  check('reroll: no stock, no change', rr.players[0].drafts[0].join() === d0);
+  rr.players[0].rerolls = 1;
+  let changed = false;
+  step(rr, [{ type: 'reroll', p: 0 }]);
+  changed = rr.players[0].drafts[0].join() !== d0;
+  check('reroll: new cards, stock spent, still rare-or-better', changed && rr.players[0].rerolls === 0 && rr.players[0].drafts[0].some((id) => CARDS.find((c) => c.id === id).rarity !== 'common'), rr.players[0].drafts[0].join());
+
   // Boss roster: every boss has a valid 8x8 look (if any) and a working skill
   for (const k of BOSS_POOL) {
     const d = BOSSES[k];
@@ -606,7 +640,7 @@ try {
 
   // Golden replay: a fixed bot run must give the same fingerprint until VERSION is bumped.
   // When you change src/sim on purpose: VERSION++ and paste the new hash printed below.
-  const GOLDEN = { version: 42, hash: 2616498659 };
+  const GOLDEN = { version: 43, hash: 2616498659 };
   const gh = stateHash(runBot(4242, 6).s);
   if (VERSION === GOLDEN.version) check('golden replay: sim unchanged at this VERSION (else bump VERSION)', gh === GOLDEN.hash, `got ${gh}`);
   else log(`NOTE golden replay: VERSION ${VERSION} — set GOLDEN = { version: ${VERSION}, hash: ${gh} }`);

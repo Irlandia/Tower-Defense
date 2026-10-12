@@ -8,7 +8,7 @@ import {
   canPlace, isRoad, isLocked, placeCost, upgradeCost, canEvolve, canMove, sellValue, clearCost,
   auraCost, abilityMax, hasWall, hasAbility, sellRatioOf,
 } from './queries.js';
-import { damage, ignite } from './combat.js';
+import { damage, ignite, pickCards } from './combat.js';
 import { startWave } from './waves.js';
 
 const isTile = (v) => Number.isInteger(v);
@@ -37,6 +37,16 @@ export const COMMANDS = {
     pl.picked[card.id] = (pl.picked[card.id] || 0) + 1;
     pl.drafts.shift();
     s.events.push({ type: 'picked', p: pi, card: card.id });
+  },
+
+  // swap the current draft for a fresh one with the same guarantee (one reroll per boss)
+  reroll(s, pl, pi) {
+    const draft = pl.drafts[0];
+    if (!draft || !(pl.rerolls > 0)) return;
+    pl.rerolls--;
+    const best = draft.some((id) => CARDS.find((k) => k.id === id).rarity === "epic") ? "epic" : "rare";
+    pl.drafts[0] = pickCards(s, draft.length, pl, best);
+    s.events.push({ type: "reroll", p: pi });
   },
 
   place(s, pl, pi, c) {
