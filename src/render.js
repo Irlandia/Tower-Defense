@@ -187,7 +187,7 @@ export class Renderer {
           this.shake = 8;
           break;
         case "bossSpawn": {
-          const info = bossFor(e.wave);
+          const info = e.bk ? BOSSES[e.bk] : bossFor(e.wave);
           this.bossInfo[e.id] = info;
           this.quake = 2.2;
           this.say(e.id, info.lines[Math.floor(Math.random() * info.lines.length)], 3.5);
@@ -200,7 +200,7 @@ export class Renderer {
           if (e.kind === "decree") { this.rings.push({ x: e.x, y: e.y, r: 4, max: e.r, c: C.plum, life: 1 }); this.rings.push({ x: e.x, y: e.y, r: 2, max: e.r * 0.6, c: C.yellow, life: 1 }); this.shake = Math.max(this.shake, 4); }
           break;
         case "bossRage": {
-          const info = this.bossInfo[e.id] || bossFor(e.wave);
+          const info = this.bossInfo[e.id] || (e.bk ? BOSSES[e.bk] : bossFor(e.wave));
           this.say(e.id, info.rage[Math.floor(Math.random() * info.rage.length)], 2.5);
           this.shake = Math.max(this.shake, 4);
           break;
@@ -443,6 +443,9 @@ export class Renderer {
       drawNum(g, t.str, t.x - numWidth(t.str, t.scale) / 2, t.y, t.c, t.scale, C.ink);
       g.globalAlpha = 1;
     }
+    if (s.mission && s.mission.night) this.drawNight(s, ui);
+    if (s.farmMax && s.map.farm) this.drawFarmBar(s);
+    this.critters.drawFarmSay(g);
     this.drawSpeech(s, alpha);
     this.drawBossBar(s);
     g.restore();
@@ -450,6 +453,40 @@ export class Renderer {
     if (this.redFlash > 0) { g.fillStyle = `rgba(177,62,83,${this.redFlash})`; g.fillRect(0, 0, W, H); }
     if (this.blueFlash > 0) { g.fillStyle = `rgba(115,239,247,${this.blueFlash})`; g.fillRect(0, 0, W, H); }
     this.drawHud(s, ui.me || 0);
+  }
+
+  // Night (campaign): darkness over the map with pools of light around towers, the castle, the farm and the cursor.
+  drawNight(s, ui) {
+    const w = COLS * TILE, h = ROWS * TILE;
+    if (!this.nightCv) { this.nightCv = document.createElement("canvas"); this.nightCv.width = w; this.nightCv.height = h; }
+    const n = this.nightCv.getContext("2d");
+    n.globalCompositeOperation = "source-over";
+    n.clearRect(0, 0, w, h);
+    n.fillStyle = "rgba(10,12,34,0.62)";
+    n.fillRect(0, 0, w, h);
+    n.globalCompositeOperation = "destination-out";
+    const light = (x, y, r) => {
+      const gr = n.createRadialGradient(x, y, r * 0.35, x, y, r);
+      gr.addColorStop(0, "rgba(0,0,0,1)"); gr.addColorStop(1, "rgba(0,0,0,0)");
+      n.fillStyle = gr; n.beginPath(); n.arc(x, y, r, 0, Math.PI * 2); n.fill();
+    };
+    for (const t of s.towers) light(t.x, t.y, towerStats(s, t).range || 40);
+    if (s.map.castle) light(s.map.castle[0] * TILE + 12, s.map.castle[1] * TILE + 12, 50);
+    if (s.map.farm) light(s.map.farm.house[0] * TILE + 12, s.map.farm.house[1] * TILE + 12, 34);
+    for (const e of s.enemies) if (e.burnT > 0) light(e.x, e.y, 18); // burning enemies glow
+    if (ui.mouse) light(ui.mouse.x, ui.mouse.y, 30);
+    this.g.drawImage(this.nightCv, 0, 0);
+  }
+
+  // Campaign: the farm's health over the house.
+  drawFarmBar(s) {
+    const g = this.g, f = s.map.farm;
+    const x = f.x * TILE + 4, y = f.y * TILE - 6, w = f.w * TILE - 8;
+    const k = Math.max(0, s.farmHp / s.farmMax);
+    g.fillStyle = C.ink; g.fillRect(x - 1, y - 1, w + 2, 5);
+    g.fillStyle = C.plum; g.fillRect(x, y, w, 3);
+    g.fillStyle = k > 0.5 ? C.lime : k > 0.25 ? C.yellow : C.red; g.fillRect(x, y, Math.round(w * k), 3);
+    drawIcon(g, "heart", x - 9, y - 2);
   }
 
   // Comic-style bubbles above talking bosses.
@@ -740,10 +777,10 @@ export class Renderer {
     drawIcon(g, "coin", 86, 7);
     drawNum(g, pl.gold, 94, 5, C.yellow, 2);
     drawIcon(g, 'flag', 160, 7);
-    drawNum(g, s.wave + '/' + CONFIG.winWave, 168, 5, C.white, 2);
+    drawNum(g, s.wave + '/' + s.winWave, 168, 5, C.white, 2);
     drawIcon(g, 'skull', 250, 8);
     drawNum(g, s.kills, 258, 5, C.silver, 2);
-    if (!s.queue.length && !s.over && s.wave < CONFIG.winWave) {
+    if (!s.queue.length && !s.over && s.wave < s.winWave) {
       const total = (s.wave === 0 ? CONFIG.firstWaveDelay : CONFIG.waveDelay) * TICK_RATE;
       const w = 110, x = 330;
       g.fillStyle = C.dark; g.fillRect(x, 6, w, 8);

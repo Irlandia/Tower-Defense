@@ -3,7 +3,7 @@
 <title>Sim tests</title>
 <pre id="out">running…</pre>
 <script type="module">
-import { createGame, step, canPlace, canEvolve, isRoad, posAt, towerStats, vsMult, pickCards, placeCost, isLocked } from '../src/sim/sim.js';
+import { createGame, step, canPlace, canEvolve, isRoad, posAt, towerStats, vsMult, pickCards, placeCost, isLocked, missionStars } from '../src/sim/sim.js';
 import { TOWERS, TOWER_ORDER, BRANCHES, COLS, ROWS, CARDS, BRAWLS, brawlOf } from '../src/sim/data.js';
 
 const lines = [];
@@ -403,6 +403,35 @@ try {
   step(rushG, [{ type: "nextWave", p: 0 }]); for (let i = 0; i < 40; i++) step(rushG);
   check("brawl rush: enemies faster", rushG.enemies.length > 0 && rushG.enemies.every((e) => e.speedMul >= 1.6));
   check("brawl week rotation covers all rulesets", new Set([...Array(12)].map((_, i) => brawlOf(i).id)).size === BRAWLS.length);
+
+  // campaign missions
+  const mis = (id, extra = {}) => createGame(4, { mode: "campaign", mission: id, ...extra });
+  const cm1 = mis(1);
+  check("campaign 1: only archers, 5 waves, spring", isLocked(cm1, 0, "cannon") && !isLocked(cm1, 0, "arrow") && cm1.winWave === 5 && cm1.season === "spring");
+  const cm2 = mis(2);
+  step(cm2, [{ type: "nextWave", p: 0 }]);
+  for (let i = 0; i < 4000 && !cm2.over; i++) step(cm2);
+  check("campaign 2: enemies trample the farm, losing it ends the game", cm2.farmMax === 40 && cm2.over && !cm2.won && (cm2.farmHp <= 0 || cm2.lives <= 0), `farm=${Math.round(cm2.farmHp)} lives=${cm2.lives}`);
+  const cm8 = mis(8, { bonusGold: 5000 });
+  const cf8 = free(cm8, 8);
+  step(cm8, cf8.map(([tx, ty]) => ({ type: "place", kind: "arrow", tx, ty, p: 0 })));
+  check("campaign 8: tower limit 6", cm8.towers.length === 6);
+  const cm6 = mis(6), cd6 = createGame(4, {});
+  const [cn6] = free(cm6, 1), [cn7] = free(cd6, 1);
+  step(cm6, [{ type: "place", kind: "arrow", tx: cn6[0], ty: cn6[1], p: 0 }]); step(cd6, [{ type: "place", kind: "arrow", tx: cn7[0], ty: cn7[1], p: 0 }]);
+  check("campaign 6: night shortens tower sight", Math.abs(towerStats(cm6, cm6.towers[0]).range / towerStats(cd6, cd6.towers[0]).range - 0.7) < 0.01);
+  const cm10 = mis(10);
+  cm10.wave = 3; step(cm10, [{ type: "nextWave", p: 0 }]);
+  check("campaign 10: a general on wave 4", cm10.queue.some((q) => q.type === "boss" && q.bk === 5));
+  const cm5 = mis(5);
+  check("campaign 5: circle with a low alive limit", cm5.mode === "circle" && cm5.limit === 30);
+  cm1.won = true; cm1.stats = { coins: 0, leaks: 0, peak: 0, early: 1 };
+  check("campaign stars: win + side + pace = 3", missionStars(cm1) === 3);
+  cm1.stats.leaks = 1; cm1.stats.early = 0;
+  check("campaign stars: just the win = 1", missionStars(cm1) === 1);
+  const sb = createGame(5, { mode: "brawl", week: BRAWLS.findIndex((b) => b.id === "slime") });
+  step(sb, [{ type: "nextWave", p: 0 }]); for (let i = 0; i < 40; i++) step(sb);
+  check("regression: brawl on the circle has a real alive limit", sb.limit >= 40 && !sb.over);
 
   // co-op: separate wallets, talents and ownership
   const co = createGame(9, { players: 2 });

@@ -3,7 +3,7 @@
 // Every command carries `p` = player index (0 = host/solo, 1 = guest); each player has own gold, talents, abilities.
 import {
   TILE, COLS, ROWS, TICK_RATE as T, CONFIG, TOWERS, ENEMIES, UNLOCKS, CARDS,
-  MAPGEN, SEASONS, SEASON_ORDER, MODES, TOWER_ORDER, brawlOf, BARREL, OBSTACLES, COIN, ABILITIES, AURA, BRANCHES, RARITY, BOSSES, bossKey,
+  MAPGEN, SEASONS, SEASON_ORDER, MODES, TOWER_ORDER, brawlOf, CAMPAIGN, BARREL, OBSTACLES, COIN, ABILITIES, AURA, BRANCHES, RARITY, BOSSES, bossKey,
 } from './data.js';
 import { rand, randInt } from './rng.js';
 
@@ -221,7 +221,10 @@ function newPlayer(opts, i = 0) {
 export function createGame(seed, opts = {}) {
   const o = { hpMul: 1, cards: 3, locked: [], mode: "classic", players: 1, ...opts };
   // Weekly Brawl: a ruleset on top of a normal board; the same towers are open for everyone
-  const B = o.mode === "brawl" ? brawlOf(o.week || 0) : null;
+  // Campaign missions reuse the brawl rule engine; boss waves come from the mission instead of "every 5th"
+  const M = o.mode === "campaign" ? CAMPAIGN[Math.max(0, Math.min(CAMPAIGN.length - 1, (o.mission || 1) - 1))] : null;
+  if (M) o.season = M.season;
+  const B = o.mode === "brawl" ? brawlOf(o.week || 0) : M ? { ...M.rules, map: M.map, weather: M.weather, bossEvery: 999 } : null;
   if (B && B.towers) { const lock = TOWER_ORDER.filter((k) => !B.towers.includes(k)); o.locked = lock; o.lockedBy = Array.from({ length: o.players }, () => lock); }
   if (B && !B.towers) o.lockedBy = Array.from({ length: o.players }, () => []); // brawls open every tower
   if (B) o.brawlRules = B;
@@ -230,11 +233,18 @@ export function createGame(seed, opts = {}) {
     opts: o,
     mode: B ? B.map : o.mode,
     brawl: B,
+    mission: M,
+    winWave: M ? M.waves : CONFIG.winWave,
+    farmHp: M && M.farmHp ? M.farmHp : 0,
+    farmMax: M && M.farmHp ? M.farmHp : 0,
+    stats: { coins: 0, leaks: 0, peak: 0, early: 0 },
+    stars: 0,
     won: false,
     lapSpeedMul: 1,
     tick: 0,
     lives: CONFIG.startLives + (o.bonusLives || 0),
-    limit: o.mode === 'circle' ? MODES.circle.maxAlive + 15 * (o.players - 1) + 5 * Math.round((o.bonusLives || 0) / 3) : 0, // more players, bigger waves, more room
+    // alive limit depends on the board (brawls and missions can be played on the circle too)
+    limit: (B ? B.map : o.mode) === 'circle' ? (M && M.limit ? M.limit : MODES.circle.maxAlive) + 15 * (o.players - 1) + 5 * Math.round((o.bonusLives || 0) / 3) : 0, // more players, bigger waves, more room
     wave: 0,
     countdown: CONFIG.firstWaveDelay * T,
     map: null,
@@ -349,7 +359,7 @@ export function towerStats(s, t) {
   const lv = def.from ? 0 : t.level - 1;
   const aura = auraOf(s, t);
   return {
-    range: (def.range + lv * CONFIG.rangePerLevel) * m.range * (m.towerRange[family(t.kind)] || 1),
+    range: (def.range + lv * CONFIG.rangePerLevel) * m.range * (m.towerRange[family(t.kind)] || 1) * (s.mission && s.mission.night ? 0.7 : 1), // night: shorter sight
     dmg: def.dmg * (1 + 0.6 * lv) * (m.dmg[family(t.kind)] || 1) * (1 + aura.dmg),
     period: Math.max(1, Math.round(T / (def.rate * m.rate * (m.towerRate[family(t.kind)] || 1) * (1 + aura.rate)))),
     buff: aura.dmg + aura.rate,
@@ -385,6 +395,16 @@ export function sellValue(t) {
   return Math.floor(t.spent * CONFIG.sellRatio);
 }
 
+// Campaign stars: 1 for the win, 1 for the mission's side objective, 1 for a brisk pace (early wave calls).
+export function missionStars(s) {
+  const M = s.mission, side = M.side || {};
+  const sideOk = side.type === "noLeak" ? s.stats.leaks === 0
+    : side.type === "farm" ? s.farmHp / (s.farmMax || 1) >= side.pct
+    : side.type === "coins" ? s.stats.coins >= side.n
+    : side.type === "peak" ? s.stats.peak <= side.n : false;
+  return 1 + (sideOk ? 1 : 0) + (s.stats.early >= (M.early || 0) ? 1 : 0);
+}
+
 // ---------- step ----------
 
 export function step(s, cmds = [], advance = true) {
@@ -397,7 +417,7 @@ export function step(s, cmds = [], advance = true) {
     for (const k in pl.cds) if (pl.cds[k] > 0) pl.cds[k]--;
   }
 
-  if (!s.queue.length && (s.wave < CONFIG.winWave || s.endless)) {
+  if (!s.queue.length && (s.wave < s.winWave || s.endless)) {
     s.countdown--;
     if (s.countdown <= 0) startWave(s);
   }
@@ -405,8 +425,8 @@ export function step(s, cmds = [], advance = true) {
     const q = s.queue.shift();
     const e = spawn(s, q.type, q.lane, 0, q.hpMul);
     e.bossWave = s.wave;
-    if (ENEMIES[q.type].lives) { e.bk = bossKey(s.wave); e.abT = BOSSES[e.bk].skill.every * T; }
-    if (ENEMIES[q.type].lives) s.events.push({ type: "bossSpawn", id: e.id, kind: q.type, wave: s.wave });
+    if (ENEMIES[q.type].lives) { e.bk = q.bk || bossKey(s.wave); e.abT = BOSSES[e.bk].skill.every * T; }
+    if (ENEMIES[q.type].lives) s.events.push({ type: "bossSpawn", id: e.id, kind: q.type, wave: s.wave, bk: e.bk });
   }
 
   for (const e of s.enemies) updateEnemy(s, e);
@@ -420,23 +440,31 @@ export function step(s, cmds = [], advance = true) {
   s.coins = s.coins.filter((c) => c.life > 0);
   s.walls = s.walls.filter((w) => w.hp > 0);
 
-  const overrun = s.mode === 'circle' && s.enemies.length >= s.limit;
-  if (s.lives <= 0 || overrun) {
+  s.stats.peak = Math.max(s.stats.peak, s.enemies.length);
+  // campaign: enemies passing by the farm trample it
+  if (s.farmMax && s.map.farm) {
+    const f = s.map.farm, fx = (f.x + f.w / 2) * TILE, fy = (f.y + f.h / 2) * TILE;
+    for (const e of s.enemies) if (Math.hypot(e.x - fx, e.y - fy) < 34) s.farmHp -= 0.04 * (ENEMIES[e.type].lives ? 4 : 1); // ~0.8 HP/s per enemy nearby
+    if (s.farmHp < 0) s.farmHp = 0;
+  }
+  const overrun = s.mode === "circle" && s.enemies.length >= s.limit;
+  if (s.lives <= 0 || overrun || (s.farmMax && s.farmHp <= 0)) {
     s.lives = Math.max(0, s.lives);
     s.over = true;
     s.events.push({ type: 'gameover' });
-  } else if (!s.endless && s.wave >= CONFIG.winWave && !s.queue.length && (s.mode === "circle" ? !s.enemies.some((e) => ENEMIES[e.type].lives) : !s.enemies.length)) {
+  } else if (!s.endless && s.wave >= s.winWave && !s.queue.length && (s.mode === "circle" ? !s.enemies.some((e) => ENEMIES[e.type].lives) : !s.enemies.length)) {
     // circle: enemies pile up by design, so the win is "wave 20 fully out and its bosses dead"
     s.won = true;
     s.over = true;
-    s.events.push({ type: 'victory' });
+    if (s.mission) s.stars = missionStars(s);
+    s.events.push({ type: "victory", stars: s.stars });
   }
 }
 
 function applyCmd(s, c) {
   // circle mode: after winning, the run can go on endlessly with ever harder waves
   if (c.type === "continue") {
-    if (s.won && s.over && !s.endless && s.mode === "circle") {
+    if (s.won && s.over && !s.endless && s.mode === "circle" && !s.mission) {
       s.over = false;
       s.endless = true;
       s.won = false; // the win is already credited; the endless run ends in a (scored) defeat
@@ -463,6 +491,7 @@ function applyCmd(s, c) {
     case 'place': {
       const def = TOWERS[c.kind];
       const cost = def ? placeCost(s, pi, c.kind) : 0;
+      if (s.mission && s.mission.maxTowers && s.towers.filter((k) => k.owner === pi).length >= s.mission.maxTowers) return; // tower limit
       if (!def || def.from || isLocked(s, pi, c.kind) || !canPlace(s, c.tx, c.ty) || pl.gold < cost) return;
       pl.gold -= cost;
       const t = { id: s.nextId++, owner: pi, kind: c.kind, tx: c.tx, ty: c.ty, ...center(c.tx, c.ty), level: 1, cd: 0, spent: cost, aim: 0, fired: 0 };
@@ -556,13 +585,15 @@ function applyCmd(s, c) {
       const coin = s.coins[i];
       pl.gold += coin.value;
       s.coins.splice(i, 1);
-      s.events.push({ type: 'coin', x: coin.x, y: coin.y, gold: coin.value, p: pi });
+      s.stats.coins++;
+      s.events.push({ type: "coin", x: coin.x, y: coin.y, gold: coin.value, p: pi });
       return;
     }
     case 'nextWave': {
-      if (s.queue.length || (s.wave >= CONFIG.winWave && !s.endless)) return;
+      if (s.queue.length || (s.wave >= s.winWave && !s.endless)) return;
       const bonus = s.wave > 0 ? Math.ceil(s.countdown / T) * CONFIG.earlyBonus : 0;
       if (bonus) {
+        s.stats.early++;
         for (const q of s.players) q.gold += bonus;
         s.events.push({ type: 'bonus', gold: bonus });
       }
@@ -645,7 +676,7 @@ function startWave(s) {
     }
   }
   const lanes = s.plan;
-  const over20 = Math.max(0, w - CONFIG.winWave);
+  const over20 = Math.max(0, w - s.winWave);
   const B = s.brawl || {};
   const hpMul = (B.hp || 1) * (1 + 0.22 * (w - 1) + 0.017 * (w - 1) * (w - 1)) * s.opts.hpMul * MODES.circle.endlessHpGrowth ** over20;
   const pool = B.pool || Object.keys(UNLOCKS).filter((k) => UNLOCKS[k] <= w);
@@ -670,7 +701,7 @@ function startWave(s) {
   }
   s.queue.sort((a, b) => a.at - b.at || a.lane - b.lane);
   // A rare gold thief: kill it for a pile of coins, or it steals from you.
-  if (w >= 3 && rand(s) < 0.4) {
+  if ((s.mission && s.mission.goblins) || (w >= 3 && rand(s) < 0.4)) {
     const mid = s.queue[Math.floor(s.queue.length / 2)].at;
     s.queue.push({ type: 'goblin', lane: lanes[randInt(s, lanes.length)], at: mid, hpMul });
     s.queue.sort((a, b) => a.at - b.at);
@@ -683,14 +714,19 @@ function startWave(s) {
     if (over20 % MODES.circle.endlessBossEvery === 0) { bosses = (1 + Math.floor(over20 / 6)) * s.players.length; kind = (i) => (i % 2 ? "king" : "boss"); }
   } else if (w % (B.bossEvery || 5) === 0) {
     bosses = s.players.length;
-    kind = () => (w === CONFIG.winWave ? "king" : "boss");
+    kind = () => (w === s.winWave ? "king" : "boss");
   }
   for (let i = 0; i < bosses; i++) {
     s.queue.push({ type: kind(i), lane: lanes[i % lanes.length], at: s.tick + 3 * T + i * 2 * T, hpMul: bossHp });
   }
+  // campaign: the mission names its generals by wave (one per player)
+  const mk = s.mission && s.mission.bosses && s.mission.bosses[w];
+  if (mk) for (let i = 0; i < s.players.length; i++) {
+    s.queue.push({ type: mk === 20 ? "king" : "boss", bk: mk, lane: lanes[i % lanes.length], at: s.tick + 3 * T + i * 2 * T, hpMul: (B.bossHp || 1) * (1 + Math.max(0, mk / 5 - 1) * 0.9) * s.opts.hpMul });
+  }
   s.queue.sort((a, b) => a.at - b.at);
   s.countdown = CONFIG.waveDelay * T;
-  s.events.push({ type: "wave", wave: w, boss: over20 ? over20 % MODES.circle.endlessBossEvery === 0 : w % 5 === 0, final: w === CONFIG.winWave, lanes });
+  s.events.push({ type: "wave", wave: w, boss: over20 ? over20 % MODES.circle.endlessBossEvery === 0 : w % 5 === 0, final: w === s.winWave, lanes });
   s.plan = planLanes(s);
 }
 
@@ -770,7 +806,8 @@ function updateEnemy(s, e) {
       for (const pl of s.players) pl.gold -= Math.min(pl.gold, def.steal);
       s.events.push({ type: 'stolen', x: e.x, y: e.y, gold: def.steal });
     }
-    s.events.push({ type: 'leak', x: e.x, y: e.y, boss: !!def.lives });
+    s.stats.leaks++;
+    s.events.push({ type: "leak", x: e.x, y: e.y, boss: !!def.lives });
   }
 }
 

@@ -1,6 +1,6 @@
 // Client entry: menu/lobby, fixed-tick loop (solo / co-op host / co-op guest), input, DOM UI.
 // All game rules live in ./sim; meta-progression in ./meta; networking in ./net; nick + leaderboard in ./api.
-import { TILE, TICK_RATE, TOWERS, TOWER_ORDER, BRANCHES, CARDS, CONFIG, ABILITIES, MODES, VERSION, BOSSES, bossFor, AURA, ENEMIES, RARITY, SEASONS, SEASON_ORDER, brawlWeek, brawlOf } from './sim/data.js';
+import { TILE, TICK_RATE, TOWERS, TOWER_ORDER, BRANCHES, CARDS, CONFIG, ABILITIES, MODES, VERSION, BOSSES, bossFor, AURA, ENEMIES, RARITY, SEASONS, SEASON_ORDER, brawlWeek, brawlOf, CAMPAIGN } from './sim/data.js';
 import {
   createGame, step, canPlace, towerAt, obstacleAt, barrelAt, towerStats, upgradeCost, canEvolve, sellValue, clearCost,
   enemyAt, abilityMax, isRoad, canMove, hasWall, auraCost, isLocked, placeCost,
@@ -29,6 +29,7 @@ let diff = 'normal';
 let mode = "classic";
 let season = "random";
 let treeBranch = "general";
+let selectedMission = 1;
 let nick = '';
 let myIdx = 0; // guest: player index assigned by the host at start
 const ui = { build: null, selected: null, hover: null, mouse: null, ability: null, hoverEnemy: null, partners: {}, me: 0, moving: null };
@@ -48,7 +49,8 @@ const P = () => state.players[me()] || state.players[0];
 function startGame(seed, opts) {
   state = createGame(seed, opts);
   music.play(state.season);
-  setTimeout(() => (state.brawl ? banner(`${state.brawl.icon} ${state.brawl.name.toUpperCase()}`, "boss intro", state.brawl.desc, 3200) : banner(SEASONS[state.season].name.toUpperCase(), "gold", "сезон", 1800)), 200);
+  if (state.mission) tellStory(state.mission.story.intro);
+  setTimeout(() => (state.mission ? banner(`Місія ${state.mission.id}: ${state.mission.title}`, "boss intro", state.mission.side.text, 2600) : state.brawl ? banner(`${state.brawl.icon} ${state.brawl.name.toUpperCase()}`, "boss intro", state.brawl.desc, 3200) : banner(SEASONS[state.season].name.toUpperCase(), "gold", "сезон", 1800)), 200);
   endShown = false;
   game = { seed, opts };
   cmdLog = [];
@@ -75,6 +77,7 @@ function newRun() {
   guests.forEach((g, i) => { g.idx = i + 1; slotIdx[g.slot] = i + 1; });
   const opts = Meta.gameOpts(meta, diff, mode, 1 + guests.length, season, guests.map((g) => g.perks));
   if (mode === "brawl") opts.week = brawlWeek(Date.now()); // every peer plays the host's week
+  if (mode === "campaign") opts.mission = selectedMission;
   for (const g of guests) net.sendTo(g.slot, { t: "start", seed, opts, v: VERSION, idx: g.idx });
   if (net.role === "host") broadcastRoster();
   startGame(seed, opts);
@@ -526,14 +529,14 @@ function updateUI() {
     b.style.setProperty('--cd', (pl.cds[id] / abilityMax(state, id, me())).toFixed(3));
   }
   const early = state.wave > 0 && !state.queue.length ? Math.ceil(state.countdown / TICK_RATE) * CONFIG.earlyBonus : 0;
-  const last = state.wave >= CONFIG.winWave;
+  const last = state.wave >= state.winWave;
   $('next').textContent = last ? 'Фінал!' : state.queue.length ? 'Хвиля йде…' : early ? `Хвиля ▶ +${early}●` : 'Почати ▶';
   $('next').disabled = state.queue.length > 0 || last;
   const n = pl.drafts.length;
   $('talent').classList.toggle('off', !n); // keep its slot so the panel never jumps
   $('talent').textContent = `✦ Талант${n > 1 ? ' x' + n : ''} [T]`;
-  $("waveInfo").textContent = `${state.brawl ? state.brawl.icon + " " + state.brawl.name : MODES[state.mode].name} · Хвиля ${state.wave} / ${CONFIG.winWave}`;
-  $('waveBar').style.width = (100 * state.wave) / CONFIG.winWave + '%';
+  $("waveInfo").textContent = `${state.mission ? "📜 Місія " + state.mission.id : state.brawl ? state.brawl.icon + " " + state.brawl.name : MODES[state.mode].name} · Хвиля ${state.wave} / ${state.winWave}`;
+  $('waveBar').style.width = (100 * state.wave) / state.winWave + '%';
   const coop = state.players.length > 1;
   $('coopInfo').classList.toggle('hidden', !coop);
   if (coop) {
@@ -569,7 +572,14 @@ function updateUI() {
     html = state.mode === 'circle'
       ? `<b>Коло</b><br>Вороги не доходять до замку — вони крутяться по колу і з кожним колом швидшають. Живих більше <b>${state.limit}</b> — поразка.`
       : '<b>Порада</b><br>Крига робить ворогів <span class="wet">мокрими</span>: Тесла бʼє їх x2, а Вогонь викликає вибух пари.';
-    if (state.brawl) html = `<b>${state.brawl.icon} Бійка: ${state.brawl.name}</b><br>${state.brawl.desc}`;
+    if (state.mission) {
+      const M = state.mission, mine = state.towers.filter((t) => t.owner === me()).length;
+      html = `<b>Місія ${M.id}: ${esc(M.title)}</b><br>★ ${esc(M.side.text)}`
+        + (M.maxTowers ? `<br>Веж: ${mine} / ${M.maxTowers}` : "")
+        + (state.farmMax ? `<br>Ферма: ${Math.ceil(state.farmHp)} / ${state.farmMax}` : "")
+        + (M.night ? "<br>Ніч: вежі бачать на 30% ближче" : "");
+      key += ":" + mine + ":" + Math.ceil(state.farmHp);
+    } else if (state.brawl) html = `<b>${state.brawl.icon} Бійка: ${state.brawl.name}</b><br>${state.brawl.desc}`;
     html += state.mode === "circle"
       ? "<br><span class=\"hint\">🌳 дерева — скарби · монети — наводь мишку. Удвох: кожен тримає свій вхід (печери зліва і справа).</span>"
       : "<br><span class=\"hint\">🛢 бочки — вибух · 🌳 дерева — скарби · монети — наводь мишку · стрілки показують, звідки піде хвиля.</span>";
@@ -634,19 +644,33 @@ function showEnd(won) {
   running = false;
   talentOpen = false;
   const { earned, record } = Meta.finishRun(meta, state);
-  const title = won ? "ПЕРЕМОГА!" : state.endless ? "Нескінченність скінчилась" : state.mode === "circle" ? "Коло переповнене" : "Замок впав";
-  const canContinue = won && state.mode === "circle" && net.role !== "guest";
+  const M = state.mission;
+  const farmLost = state.farmMax && state.farmHp <= 0;
+  const title = won ? "ПЕРЕМОГА!" : farmLost ? "Ферму потоптали" : state.endless ? "Нескінченність скінчилась" : state.mode === "circle" ? "Коло переповнене" : "Замок впав";
+  const canContinue = won && state.mode === "circle" && !M && net.role !== "guest";
   const m = $('modal');
-  m.innerHTML = `<h2 class="${won ? 'win' : ''}">${title}</h2>
-    <p>Хвиля <b>${state.wave}</b>${state.endless ? " (нескінченний)" : " / " + CONFIG.winWave} · Вбито <b>${state.kills}</b>${state.players.length > 1 ? ` (ти: ${P().kills})` : ''}${record ? ' · <span class="rec">Новий рекорд!</span>' : ''}</p>
+  // campaign: stars, the story's closing line and the way on
+  let camp = '';
+  if (M) {
+    const st = won ? state.stars : 0;
+    const next = CAMPAIGN.find((x) => x.id === M.id + 1);
+    camp = `<p class="stars">${'★'.repeat(st)}${'☆'.repeat(3 - st)}</p>
+      <p class="hint">★ перемога · ★ ${esc(M.side.text)} · ★ ранній виклик хвиль ×${M.early}</p>
+      ${won ? `<p class="outro"><b>${esc(M.story.outro[0])}:</b> «${esc(M.story.outro[1])}»</p>` : ''}
+      ${won && next && net.role !== 'guest' ? '<button id="nextMission" class="big primary">Наступна місія ▶</button>' : ''}
+      ${won && !next ? '<p class="rec">Кампанію пройдено! Долина врятована.</p>' : ''}`;
+  }
+  m.innerHTML = `<h2 class="${won ? 'win' : ''}">${M ? `Місія ${M.id}. ` : ''}${title}</h2>${camp}
+    <p>Хвиля <b>${state.wave}</b>${state.endless ? " (нескінченний)" : " / " + state.winWave} · Вбито <b>${state.kills}</b>${state.players.length > 1 ? ` (ти: ${P().kills})` : ''}${record ? ' · <span class="rec">Новий рекорд!</span>' : ''}</p>
     <p class="crys">+${earned} ✦ досвіду <span>(усього ${meta.xp})</span></p>
     <p id="scoreMsg">${nick ? 'Надсилаємо результат…' : 'Введи нік у меню, щоб потрапити в таблицю лідерів'}</p>
     <div class="row">${canContinue ? '<button id="endless" class="big primary">Продовжити ∞</button>' : ""}${net.role === "guest" ? (won && state.mode === "circle" ? "<p>Хост вирішує: продовжити чи ні…</p>" : "<p>Чекаємо, поки хост почне нову гру…</p>") : '<button id="again" class="big">Ще раз</button>'}<button id="menuBtn" class="big">Меню</button></div>`;
   m.classList.remove('hidden');
   if ($("again")) $("again").addEventListener("click", newRun);
+  if ($("nextMission")) $("nextMission").addEventListener("click", () => { selectedMission = M.id + 1; newRun(); });
   if ($("endless")) $("endless").addEventListener("click", () => send({ type: "continue" }));
   $('menuBtn').addEventListener('click', openMenu);
-  if (nick) {
+  if (nick && !M) { // campaign missions are not leaderboard runs
     Api.addScore({ mode: state.opts.mode === "brawl" ? "brawl" : state.mode, week: state.opts.week, diff: state.opts.diff, wave: state.wave, kills: state.kills, won, coop: state.players.length > 1, partner: others() })
       .then((r) => { $('scoreMsg').textContent = `Результат у таблиці лідерів: ${r.score} очок`; })
       .catch((e) => { $('scoreMsg').textContent = 'Таблиця лідерів недоступна: ' + e.message; });
@@ -721,6 +745,42 @@ function renderMenu() {
     b.innerHTML = `<b>${br.icon} Тижнева бійка: ${br.name}</b><span>${br.desc}</span><small>${br.map === 'circle' ? 'Коло' : 'Класика'} · нова бійка через ${left}</small>`;
     b.addEventListener('click', () => { mode = 'brawl'; renderMenu(); });
     ml.append(b);
+  }
+  // Campaign: a road of 10 missions; each opens after winning the previous one
+  {
+    const total = CAMPAIGN.reduce((a, x) => a + Meta.missionStars(meta, x.id), 0);
+    const b = document.createElement('button');
+    b.className = 'diff campaign' + (mode === 'campaign' ? ' active' : '');
+    b.innerHTML = `<b>📜 Кампанія «Останній прилив»</b><span>10 місій крізь рік: від першого лучника до битви з Королем Слизу.</span><small>★ ${total} / ${CAMPAIGN.length * 3}</small>`;
+    b.addEventListener('click', () => { mode = 'campaign'; renderMenu(); });
+    ml.append(b);
+  }
+  const cw = $('campaign');
+  cw.classList.toggle('hidden', mode !== 'campaign');
+  if (mode === 'campaign') {
+    if (!Meta.missionOpen(meta, selectedMission)) selectedMission = 1;
+    const SEA = { spring: '🌸', summer: '☀', autumn: '🍂', winter: '❄' };
+    cw.innerHTML = '<div class="camp-road">' + CAMPAIGN.map((x) => {
+      const open = Meta.missionOpen(meta, x.id), st = Meta.missionStars(meta, x.id);
+      return `<button class="camp-node${x.id === selectedMission ? ' active' : ''}${st ? ' done' : ''}" data-mission="${x.id}" ${open ? '' : 'disabled'}>
+        <b>${open ? x.id : '🔒'}</b><small>${SEA[x.season]}</small><i>${'★'.repeat(st)}${'☆'.repeat(open ? 3 - st : 0)}</i></button>`;
+    }).join('') + '</div>';
+    const M = CAMPAIGN.find((x) => x.id === selectedMission);
+    const rules = [`${M.waves} хвиль`, M.map === 'circle' ? 'Коло' : 'Класика'];
+    if (M.rules.towers) rules.push('вежі: ' + M.rules.towers.map((k) => TOWERS[k].name).join(', '));
+    if (M.farmHp) rules.push('захисти ферму');
+    if (M.maxTowers) rules.push(`не більше ${M.maxTowers} веж`);
+    if (M.night) rules.push('ніч: вежі бачать ближче');
+    if (M.goblins) rules.push('гобліни щохвилі');
+    if (M.rules.alwaysWet) rules.push('злива');
+    if (M.bosses) rules.push('генерали: ' + Object.entries(M.bosses).map(([w, k]) => `${BOSSES[k].name} (хв. ${w})`).join(', '));
+    const brief = document.createElement('div');
+    brief.className = 'camp-brief';
+    brief.innerHTML = `<b>Місія ${M.id}. ${esc(M.title)}</b><span class="hint">${rules.join(' · ')}</span>
+      ${M.story.intro.map(([who, t]) => `<p><i>${esc(who)}:</i> «${esc(t)}»</p>`).join('')}
+      <span class="hint">★ перемога · ★ ${esc(M.side.text)} · ★ ранній виклик хвиль ×${M.early}</span>`;
+    cw.append(brief);
+    for (const n of cw.querySelectorAll('[data-mission]')) n.addEventListener('click', () => { selectedMission = +n.dataset.mission; renderMenu(); });
   }
   const dl = $('diffs');
   dl.innerHTML = '';
@@ -857,7 +917,7 @@ function handleEvents(events, quiet = false) {
         banner(e.final ? 'ФІНАЛЬНА ХВИЛЯ!' : e.boss ? `Хвиля ${e.wave} — БОС!` : `Хвиля ${e.wave}`, e.boss ? 'boss' : '');
         break;
       case "bossSpawn": {
-        const info = bossFor(e.wave);
+        const info = e.bk ? BOSSES[e.bk] : bossFor(e.wave);
         sfx.play("rumble");
         banner(info.name.toUpperCase(), "boss intro", info.title, 2600);
         break;
@@ -1014,9 +1074,10 @@ if (new URLSearchParams(location.search).has('demo')) {
   // debug: start immediately with a few towers to check rendering
   const dm = new URLSearchParams(location.search).get('demo');
   season = new URLSearchParams(location.search).get('season') || 'random';
-  mode = dm === 'brawl' ? 'brawl' : dm && dm.startsWith('circle') ? 'circle' : 'classic';
+  mode = dm === 'campaign' ? 'campaign' : dm === 'brawl' ? 'brawl' : dm && dm.startsWith('circle') ? 'circle' : 'classic';
   const dOpts = Meta.gameOpts(meta, diff, mode, dm === 'circle2' ? 2 : dm === 'circle4' ? 4 : 1, season);
   if (mode === 'brawl') dOpts.week = +(new URLSearchParams(location.search).get('week') || brawlWeek(Date.now()));
+  if (mode === 'campaign') dOpts.mission = +(new URLSearchParams(location.search).get('mission') || 1);
   startGame(12345, dOpts);
   state.players[0].gold = 2000;
   state.opts.locked = []; state.opts.lockedBy = null;
@@ -1064,3 +1125,15 @@ function updateCursor() {
 setInterval(updateCursor, 50);
 updateCursor();
 document.body.style.cursor = CURSORS.arrow; // menus and panels use the same arrow
+
+// Campaign story: intro lines appear one by one as speech bubbles over the farmer (client-side only,
+// never pauses co-op); without a farm they fall back to banners.
+function tellStory(lines) {
+  lines.forEach(([who, text], i) => setTimeout(() => {
+    if (!running) return;
+    const F = renderer.critters.farm;
+    const line = who === 'Дід Панас' ? text : `${who}: ${text}`;
+    if (F) { F.farmer.say = line; F.farmer.sayT = 4; F.farmer.state = 'idle'; F.farmer.t = 4; }
+    else banner(who, 'gold', text, 3500);
+  }, 1800 + i * 4200));
+}

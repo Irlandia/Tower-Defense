@@ -6,7 +6,7 @@ export const COLS = 26;
 export const ROWS = 14;
 export const TICK_RATE = 20;
 // Bump on every change to sim/data: co-op peers refuse to play with a different version.
-export const VERSION = 33;
+export const VERSION = 35;
 
 export const CONFIG = {
   startGold: 160,
@@ -205,3 +205,41 @@ export function brawlWeek(now) {
   return Math.floor((now - Date.UTC(2024, 0, 1)) / (7 * 24 * 3600 * 1000));
 }
 export const brawlOf = (week) => BRAWLS[((week % BRAWLS.length) + BRAWLS.length) % BRAWLS.length];
+
+// ---------- Campaign «Останній прилив»: 10 missions played in order ----------
+// rules: same engine as brawls (towers, alwaysWet, pool, split, killGold, coinChance, speed, regen, hp, budget)
+// plus mission mechanics: farmHp (protect the farm), maxTowers, night (shorter tower sight), goblins (a thief every wave),
+// limit (circle alive limit), bosses (wave -> BOSSES key). side = the second star's objective; early = early calls for the third star.
+// story: intro lines (speaker: text) and an outro line.
+export const CAMPAIGN = [
+  { id: 1, title: 'Перші паростки', season: 'spring', map: 'classic', waves: 5, early: 1,
+    rules: { towers: ['arrow'], hp: 0.8 }, side: { type: 'noLeak', text: 'не пропусти жодного ворога' },
+    story: { intro: [['Дід Панас', 'Тарасе, з болота лізуть слизи! Став лучника біля дороги.'], ['Дід Панас', 'Бочки — вибухають, монети — збирай мишкою.']], outro: ['Дід Панас', 'Непогано для першого разу. Але це лише розвідка…'] } },
+  { id: 2, title: 'Брід', season: 'spring', map: 'classic', waves: 8, early: 2,
+    rules: { towers: ['arrow', 'frost'] }, farmHp: 40, side: { type: 'farm', pct: 0.5, text: 'ферма ≥ 50% здоровʼя' },
+    story: { intro: [['Дід Панас', 'Вони йдуть повз мою ферму! Не дай їм потоптати посіви.'], ['Дід Панас', 'Крига робить їх мокрими — запамʼятай, знадобиться.']], outro: ['Бровко', 'Гав! (Посіви цілі)'] } },
+  { id: 3, title: 'Гоблінський базар', season: 'summer', map: 'classic', waves: 8, early: 2,
+    rules: { towers: ['arrow', 'frost', 'cannon'] }, goblins: true, side: { type: 'coins', n: 10, text: 'збери 10 монет' },
+    story: { intro: [['Дід Панас', 'Слизи найняли гоблінів-злодіїв. Ті тягнуть золото!'], ['Дід Панас', 'Гармата бʼє по площі — для натовпу саме те.']], outro: ['Гоблін', 'Нечесно! Ми ж лише позичали…'] } },
+  { id: 4, title: 'Гроза над пагорбами', season: 'summer', map: 'classic', waves: 10, early: 3,
+    rules: { towers: ['arrow', 'frost', 'cannon', 'tesla'], alwaysWet: true }, bosses: { 10: 5 }, weather: 'rain', side: { type: 'noLeak', text: 'замок без втрат' },
+    story: { intro: [['Дід Панас', 'Злива! Мокрі слизи — найкраща мішень для Тесли.'], ['Ґрок', 'Хрум-хрум… ваші вежі — мої зубочистки!']], outro: ['Дід Панас', 'Ґрок — лише перший з генералів Короля.'] } },
+  { id: 5, title: 'Кругообіг', season: 'summer', map: 'circle', waves: 8, early: 2,
+    rules: { hp: 0.8 }, limit: 30, side: { type: 'peak', n: 18, text: 'живих ворогів ніколи > 18' },
+    story: { intro: [['Дід Панас', 'Ці не йдуть до замку — кружляють довкола, доки не впадуть.'], ['Дід Панас', 'Не дай їм розплодитися: забагато живих — і ми пропали.']], outro: ['Дід Панас', 'Добре кружляєш! А тепер… стемніло.'] } },
+  { id: 6, title: 'Ніч слизу', season: 'autumn', map: 'classic', waves: 10, early: 2,
+    rules: { pool: ['slime', 'splitter'], split: 3, budget: 1.3 }, night: true, side: { type: 'noLeak', text: 'замок без втрат' },
+    story: { intro: [['Дід Панас', 'Вночі вежі бачать лише поруч. Став їх ближче до дороги.'], ['Мама Слизу', 'Діточки, ховайтесь у темряві…']], outro: ['Дід Панас', 'Світанок. Ти вистояв ніч, хлопче.'] } },
+  { id: 7, title: 'Осінній ярмарок', season: 'autumn', map: 'classic', waves: 10, early: 3,
+    rules: { killGold: 0, coinChance: 0.4, coinValue: 2 }, bosses: { 10: 10 }, side: { type: 'coins', n: 25, text: 'збери 25 монет' },
+    story: { intro: [['Дід Панас', 'Ярмарок! Золото не дають за вбивства — лише монети, що падають.'], ['Мама Слизу', 'Хто образив моїх слизиків?!']], outro: ['Дід Панас', 'Мама Слизу відступила. Але на півночі брязкає залізо…'] } },
+  { id: 8, title: 'Залізний легіон', season: 'autumn', map: 'classic', waves: 12, early: 3,
+    rules: { pool: ['knight', 'healer'] }, maxTowers: 6, bosses: { 12: 15 }, side: { type: 'noLeak', text: 'замок без втрат' },
+    story: { intro: [['Дід Панас', 'Лицарі в броні. Веж — лише шість: кожну прокачуй до кінця.'], ['Барон Іржавий', 'Сталь не боїться ваших стріл!']], outro: ['Барон Іржавий', 'Король… він не пробачить старому Панасу…'] } },
+  { id: 9, title: 'Вічна зима', season: 'winter', map: 'circle', waves: 12, early: 3,
+    rules: { regen: 0.02 }, limit: 45, side: { type: 'peak', n: 35, text: 'живих ворогів ніколи > 35' },
+    story: { intro: [['Тарас', 'Діду, про що казав Барон?'], ['Дід Панас', '…Колись я загатив болото, щоб полити поле. Їхнє болото висохло. Це моя вина.'], ['Дід Панас', 'Але долину треба вберегти. Вони не вмирають від холоду — бий швидко!']], outro: ['Тарас', 'Після битви — відкриємо загату. Обіцяю.'] } },
+  { id: 10, title: 'Останній прилив', season: 'winter', map: 'classic', waves: 12, early: 3,
+    rules: {}, farmHp: 60, bosses: { 4: 5, 7: 10, 10: 15, 12: 20 }, side: { type: 'farm', pct: 0.5, text: 'ферма ≥ 50% здоровʼя' },
+    story: { intro: [['Король Слизу', 'Ви висушили мій дім. Тепер я затоплю ваш!'], ['Дід Панас', 'Тарасе… тримай долину. А потім — відкриємо загату.']], outro: ['Король Слизу', '…Загата відкрита? Тоді… ми повернемось на болото. Миру вам, люди.'] } },
+];

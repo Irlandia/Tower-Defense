@@ -537,6 +537,20 @@ Object.assign(Critters.prototype, {
     return false;
   },
 
+  // farmer's and dog's lines, drawn after everything else so they stay readable (even at night)
+  drawFarmSay(g) {
+    const F = this.farm;
+    if (!F) return;
+    for (const k of [F.farmer, F.dog]) {
+      if (!(k.sayT > 0) || !k.say || !k.sayAt) continue;
+      g.font = "8px \"Pixelify Sans\", monospace";
+      const w = Math.ceil(g.measureText(k.say).width);
+      const x = Math.max(2, Math.min(COLS * TILE - w - 2, Math.round(k.sayAt[0] - w / 2))), y = k.sayAt[1];
+      g.fillStyle = "rgba(26,28,44,0.8)"; g.fillRect(x - 2, y - 8, w + 4, 11);
+      g.fillStyle = "#f4f4f4"; g.fillText(k.say, x, y);
+    }
+  },
+
   farmItems() {
     const F = this.farm;
     if (!F) return [];
@@ -576,7 +590,7 @@ Object.assign(Critters.prototype, {
       if (s === 'summer') { g.fillStyle = '#41a6f6'; g.fillRect(hx, hy, 4, 3); g.fillRect(hx + (fm.dir > 0 ? 4 : -1), hy - 1, 1, 1); }
       if (s === 'autumn') { g.fillStyle = '#8a6248'; g.fillRect(hx - 1, hy + 1, 5, 3); g.fillStyle = '#ef7d57'; g.fillRect(hx, hy, 3, 1); }
       if (s === 'winter') { g.fillStyle = '#94b0c2'; g.fillRect(hx, hy - 4, 1, 8); g.fillRect(hx - 1, hy + 4, 3, 2); }
-      say(fm, fm.x, y - 3);
+      fm.sayAt = [fm.x, y - 3]; // text is drawn later, above the night overlay (drawFarmSay)
       for (const p of F.sparks) {
         const px = Math.round(p.x), py = Math.round(p.y);
         if (p.heart) {
@@ -596,7 +610,7 @@ Object.assign(Critters.prototype, {
       g.drawImage(spr, x, y);
       // wagging tail
       if (d.state !== 'run' && Math.floor(performance.now() / 150) % 2) { g.fillStyle = '#a8805e'; g.fillRect(d.dir > 0 ? x - 1 : x + 9, y + 1, 1, 1); }
-      say(d, d.x, y - 2);
+      d.sayAt = [d.x, y - 2];
     }
   },
 });

@@ -56,7 +56,11 @@ export const TREE = [
   { id: 'o3', branch: 'totem', name: 'Древні руни', desc: 'Аури тотемів ще +15%', cost: [40], req: 'o2', fx: (p) => { p.aura *= 1.15; } },
 ];
 
-const empty = () => ({ xp: 0, tree: {}, best: {}, wins: {}, runs: 0 });
+const empty = () => ({ xp: 0, tree: {}, best: {}, wins: {}, runs: 0, campaign: {} });
+
+// campaign: mission id -> best stars (1..3). Mission 1 is always open, the next opens after a win.
+export const missionStars = (m, id) => (m.campaign && m.campaign[id]) || 0;
+export const missionOpen = (m, id) => id === 1 || missionStars(m, id - 1) > 0;
 
 export function load() {
   let m;
@@ -139,7 +143,8 @@ export function finishRun(m, s) {
   const earned = s.endless && !s.won
     ? Math.round(Math.max(0, s.wave - 20) * 2 * d.reward)
     : Math.round((s.wave + (s.won ? 15 : 0) + Math.floor(s.kills / 40)) * d.reward);
-  const key = s.opts.mode === 'brawl' ? 'brawl-' + s.opts.week + '-' + d.id : (s.mode === 'circle' ? 'circle-' : '') + d.id;
+  const key = s.opts.mode === 'campaign' ? 'campaign-' + s.mission.id : s.opts.mode === 'brawl' ? 'brawl-' + s.opts.week + '-' + d.id : (s.mode === 'circle' ? 'circle-' : '') + d.id;
+  if (s.mission && s.won) { m.campaign = m.campaign || {}; m.campaign[s.mission.id] = Math.max(m.campaign[s.mission.id] || 0, s.stars || 1); }
   const record = s.wave > (m.best[key] || 0);
   m.xp += earned;
   m.runs++;
