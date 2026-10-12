@@ -38,8 +38,10 @@ src/client/session.js# життєвий цикл забігу: startGame/newRun/
 src/client/loop.js   # фіксований крок 20 Гц, solo/host/guest, фоновий тікер
 src/client/protocol.js, netplay.js, roster.js  # валідація мережевих повідомлень, обробники, склад кімнати
 src/client/debug.js  # ?demo / ?select
-src/client/ui/*      # hud, popup, menu, talents, endscreen, banner, input, actions, feedback, overlay, icons, cursors, story, layout
-src/render.js        # Canvas-рендер + juice (частинки, числа шкоди, тряска)
+src/client/ui/*      # tutorial (навчання першої гри, ?tutorial), hud (+ прев'ю наступної хвилі), popup, menu, talents, endscreen, banner, input, actions, feedback, overlay, icons, cursors, story, layout
+src/render.js        # Canvas-рендер + juice (частинки, числа шкоди, тряска, підписи комбо)
+src/background.js    # статичний фон карти: земля за сезоном, вода, дороги з декором, печери
+vendor/peerjs.min.js # PeerJS 1.5.4 (локальна копія, без CDN)
 src/sprites.js       # піксель-арт кодом, бітмап-шрифт цифр
 src/audio.js         # 8-біт звуки
 src/net.js           # PeerJS-транспорт (кімната за 5-символьним кодом)
@@ -64,7 +66,8 @@ docs/                # architecture.md (контракт), net-protocol.md, code
 - Тижнева бійка (`mode: "brawl"`, `BRAWLS` у data.js): щотижня новий набір правил поверх класики/кола (`brawlOf(week)`), окрема таблиця лідерів за тиждень.
 - Режими: `classic` (дороги до замку, життя) і `circle` (кільце, вороги крутяться й швидшають з кожним колом; живих ≥ ліміту — поразка).
 - Мультиплеєр: у кожного гравця своє золото, таланти, здібності, комбо (`state.players[p]`, команди мають `p`). Золото — тому, хто добив. Таланти видаються на початку кожної хвилі й не ставлять кооп на паузу.
-- `?demo` або `?demo=circle` у URL — одразу старт з вежами (для скріншотів).
+- `?demo` або `?demo=circle` у URL — одразу старт з вежами (для скріншотів); `?tutorial` — нова гра з підказками навчання.
+- Баланс веж перевіряється тестом-манекеном у `tests/sim.html` (шкода на 100 золота: натовп / броня / бос; жодна еволюція не має домінувати над сусідньою). «Золотий реплей» там же падає, якщо симуляцію змінено без `VERSION++` — тоді онови `GOLDEN`.
 
 ## Правила коду
 - Симуляція (`src/sim`) не знає про DOM/рендер, без `Math.random`/`Date.now`. Клієнт лише шле команди (`place`, `upgrade`, `evolve`, `sell`, `move`, `aura`, `clear`, `barrel`, `collect`, `nextWave`, `meteor`, `nova`, `wall`, `goldrain`, `overdrive`, `quake`, `pick`, `continue`; кожна з `p` = індекс гравця; здібність діє лише якщо вона в loadout гравця) і малює стан + події `state.events`.

@@ -1,4 +1,5 @@
 // URL debug switches (for screenshots and manual checks):
+//   ?tutorial — fresh solo classic run with the first-run hints
 //   ?demo[=circle|circle2|circle4|boss|brawl|campaign][&season=winter][&week=N][&mission=N][&select=I]
 import { TOWER_ORDER, brawlWeek } from '../sim/data.js';
 import { canPlace, isRoad } from '../sim/sim.js';
@@ -11,6 +12,13 @@ export function runDemoIfRequested() {
   const q = new URLSearchParams(location.search);
   if (q.has('select')) {
     setTimeout(() => { const t = app.state.towers[+q.get('select') || 0]; if (t) ui.selected = 't' + t.id; }, 600);
+  }
+  // ?tutorial: a fresh solo classic run with the first-run hints (forgets that they were seen)
+  if (q.has('tutorial')) {
+    try { localStorage.removeItem('pixeltd-tutorial-done'); } catch { /* ignore */ }
+    app.mode = 'classic';
+    startGame(12345, Meta.gameOpts(meta, app.diff, 'classic', 1, q.get('season') || 'random'));
+    return true;
   }
   if (!q.has('demo')) return false;
   const dm = q.get('demo');

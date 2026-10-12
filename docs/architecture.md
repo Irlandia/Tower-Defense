@@ -18,7 +18,7 @@
                     │
    ┌────────────────┴──────────────────────────────────────────────┐
    │ UI-шар            src/client/ui/*                             │
-   │  hud, popup, menu, talents, endscreen, banner, input,         │
+   │  hud, popup, menu, talents, endscreen, banner, input, tutorial│
    │  actions, feedback, overlay, icons, cursors, story, layout    │
    └───────────────┬───────────────────────────────────────────────┘
                    │ викликає / підписується на bus
@@ -30,7 +30,7 @@
                    │
    ┌───────────────┴──────────────┐   ┌────────────────────────────┐
    │ Інфраструктура               │   │ Рендер (лише читає стан)   │
-   │  net.js (PeerJS-транспорт)   │   │  render.js, sprites.js,    │
+   │  net.js (PeerJS-транспорт)   │   │  render.js, background.js,│
    │  api.js (HTTP-клієнт)        │   │  critters.js, say.js,      │
    │  meta.js (localStorage)      │   │  audio.js                  │
    │  audio.js                    │   └────────────────────────────┘
@@ -96,6 +96,7 @@
 - `popup.js` — меню вежі/перешкоди на карті.
 - `menu.js` — лобі, режими, кампанія, дерево талантів, таблиця лідерів, нік, мережеві кнопки.
 - `src/treeui.js` — екран дерева талантів (DOM, викликається з `menu.js`).
+- `tutorial.js` — підказки першої соло-гри (localStorage `pixeltd-tutorial-done`), підсвічує клітинку через `ui.tutorTile`.
 - `talents.js`, `endscreen.js`, `banner.js`, `feedback.js`, `overlay.js` (курсори партнерів), `icons.js`, `cursors.js`, `story.js`, `layout.js`.
 
 ## 6. Мережа (кооп)
