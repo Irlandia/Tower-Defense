@@ -1,5 +1,5 @@
 // Pure read-only queries on the game state. Used by the simulation, the renderer and the client UI.
-import { TOWERS, CONFIG, OBSTACLES, ABILITIES, AURA, BRANCHES, ENEMIES, TICK_RATE as T, COLS, ROWS } from './data.js';
+import { TOWERS, CONFIG, OBSTACLES, ABILITIES, AURA, BRANCHES, ENEMIES, TICK_RATE as T, COLS, ROWS, DAY } from './data.js';
 import { key } from './mapgen.js';
 
 export function isFree(s, tx, ty) {
@@ -71,7 +71,7 @@ export function towerStats(s, t) {
   const aura = auraOf(s, t);
   const od = pl.overT > 0 ? 1 + ABILITIES.overdrive.bonus : 1; // Overdrive: the owner's towers fire faster
   return {
-    range: (def.range + lv * CONFIG.rangePerLevel) * m.range * (m.towerRange[family(t.kind)] || 1) * (s.mission && s.mission.night ? 0.7 : 1), // night: shorter sight
+    range: (def.range + lv * CONFIG.rangePerLevel) * m.range * (m.towerRange[family(t.kind)] || 1) * (s.mission && s.mission.night ? 0.7 : DAY.phases[dayPhase(s)].range || 1), // night: shorter sight (campaign night is harsher)
     dmg: def.dmg * (1 + 0.6 * lv) * (m.dmg[family(t.kind)] || 1) * (1 + aura.dmg),
     period: Math.max(1, Math.round(T / (def.rate * m.rate * (m.towerRate[family(t.kind)] || 1) * (1 + aura.rate) * od))),
     buff: aura.dmg + aura.rate,
@@ -134,4 +134,10 @@ export function stateHash(s) {
   for (const e of s.enemies) { mix(e.id); mix(e.hp); mix(e.dist); }
   for (const t of s.towers) { mix(t.id); mix(t.tx * 100 + t.ty); mix(t.level); }
   return h;
+}
+
+/** Current time of day (index into DAY.phases). Campaign night missions are always night. */
+export function dayPhase(s) {
+  if (s.mission && s.mission.night) return 2;
+  return ((s.dayStart || 0) + Math.floor(Math.max(0, s.wave - 1) / DAY.every)) % DAY.phases.length;
 }

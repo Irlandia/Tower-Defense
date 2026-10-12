@@ -558,3 +558,4 @@ details.camp-brief summary::-webkit-details-marker { display: none; }
 @keyframes epicGlow { 50% { box-shadow: inset -3px -3px 0 var(--ink), inset 3px 3px 0 #ef7d57, 0 0 0 2px #ffcd75, 0 0 30px rgba(255,205,117,.7); } }
 #reroll { margin-top: 10px; }
 #reroll:disabled { opacity: .45; }
+#waveInfo { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

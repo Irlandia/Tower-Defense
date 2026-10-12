@@ -1,7 +1,7 @@
 // Heads-up display around the canvas: build bar, ability buttons, wave/gold counters, info panel.
 // Every dynamic block is rebuilt only when its cache key changes.
-import { TOWERS, TOWER_ORDER, ABILITIES, CONFIG, MODES, ENEMIES, TICK_RATE, UNLOCKS } from '../../sim/data.js';
-import { placeCost, isLocked, abilityMax, hasWall } from '../../sim/sim.js';
+import { TOWERS, TOWER_ORDER, ABILITIES, CONFIG, MODES, ENEMIES, TICK_RATE, UNLOCKS, DAY } from '../../sim/data.js';
+import { placeCost, isLocked, abilityMax, hasWall, dayPhase } from '../../sim/sim.js';
 import { PLAYER_COLORS } from '../../render.js';
 import * as Meta from '../../meta.js';
 import { app, ui, sfx, music, me, P, bus } from '../app.js';
@@ -178,7 +178,9 @@ export function updateUI() {
   const n = pl.drafts.length;
   $('talent').classList.toggle('off', !n); // keep its slot so the panel never jumps
   $('talent').textContent = `✦ Талант${n > 1 ? ' x' + n : ''} [T]`;
-  $('waveInfo').textContent = `${s.mission ? '📜 Місія ' + s.mission.id : s.brawl ? s.brawl.icon + ' ' + s.brawl.name : MODES[s.mode].name} · Хвиля ${s.wave} / ${s.winWave}`;
+  const dp = DAY.phases[dayPhase(s)];
+  $("waveInfo").textContent = `${dp.icon} ${s.mission ? "Місія " + s.mission.id : s.brawl ? s.brawl.name : MODES[s.mode].name} · ${s.wave} / ${s.winWave}`;
+  $("waveInfo").title = dp.name + (dp.range ? ": вежі бачать на 10% ближче, +25% золота за вбивства" : "");
   $('waveBar').style.width = (100 * s.wave) / s.winWave + '%';
   const coop = s.players.length > 1;
   $('coopInfo').classList.toggle('hidden', !coop);

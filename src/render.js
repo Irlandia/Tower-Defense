@@ -1,6 +1,6 @@
 // Canvas renderer + visual juice. Reads sim state, never mutates it.
-import { TILE, COLS, ROWS, TICK_RATE, TOWERS, CONFIG, ABILITIES, BARREL, BOSSES, bossFor } from './sim/data.js';
-import { towerStats, canPlace, posAt, isRoad, canMove } from './sim/sim.js';
+import { TILE, COLS, ROWS, TICK_RATE, TOWERS, CONFIG, ABILITIES, BARREL, BOSSES, bossFor, DAY } from './sim/data.js';
+import { towerStats, canPlace, posAt, isRoad, canMove, dayPhase } from './sim/sim.js';
 import {
   C, SPRITES, FLASH, FROZEN, ENEMY_COLOR, drawTower, drawCastle, drawCave, drawNum, numWidth, drawIcon,
   drawObstacle, drawBarrel, drawCoin, drawChest, drawWall, ellipse, drawFarmHouse, drawField, bossSprites,
@@ -414,7 +414,7 @@ export class Renderer {
       drawNum(g, t.str, t.x - numWidth(t.str, t.scale) / 2, t.y, t.c, t.scale, C.ink);
       g.globalAlpha = 1;
     }
-    if (s.mission && s.mission.night) this.drawNight(s, ui);
+    this.drawDaylight(s, ui, dt);
     if (s.farmMax && s.map.farm) this.drawFarmBar(s);
     this.critters.drawFarmSay(g);
     this.drawSpeech(s, alpha);
@@ -427,13 +427,39 @@ export class Renderer {
   }
 
   // Night (campaign): darkness over the map with pools of light around towers, the castle, the farm and the cursor.
-  drawNight(s, ui) {
+  // Time of day (sim dayPhase): a colour wash + darkness with pools of light, faded smoothly between phases.
+  drawDaylight(s, ui, dt) {
+    const LOOK = { // dark = darkness strength, tint = rgba wash over everything
+      day: { dark: 0, tint: [0, 0, 0, 0] },
+      evening: { dark: 0.24, tint: [239, 125, 87, 0.24] },
+      night: { dark: s.mission && s.mission.night ? 0.62 : 0.5, tint: [59, 93, 201, 0.1] },
+      dawn: { dark: 0.12, tint: [244, 182, 210, 0.14] },
+    };
+    const target = LOOK[DAY.phases[dayPhase(s)].id];
+    const cur = this.daylight || (this.daylight = { dark: target.dark, tint: [...target.tint] });
+    if (this.dayMap !== s.map) { this.dayMap = s.map; cur.dark = target.dark; cur.tint = [...target.tint]; } // new run: no fade
+    const k = Math.min(1, (dt || 0) * 0.6); // ~3 s cross-fade
+    cur.dark += (target.dark - cur.dark) * k;
+    for (let i = 0; i < 4; i++) cur.tint[i] += (target.tint[i] - cur.tint[i]) * k;
+    const g = this.g;
+    if (cur.tint[3] > 0.01) {
+      g.fillStyle = `rgba(${cur.tint[0] | 0},${cur.tint[1] | 0},${cur.tint[2] | 0},${cur.tint[3].toFixed(3)})`;
+      g.fillRect(0, 0, COLS * TILE, ROWS * TILE);
+    }
+    if (cur.dark > 0.02) this.drawNight(s, ui, cur.dark);
+    // fireflies on warm nights
+    if (cur.dark > 0.35 && s.season !== 'winter' && Math.random() < 0.25) {
+      this.parts.push({ x: Math.random() * COLS * TILE, y: Math.random() * ROWS * TILE, vx: Math.random() * 10 - 5, vy: -4, life: 1.2, c: Math.random() < 0.5 ? '#c7f59a' : C.yellow });
+    }
+  }
+
+  drawNight(s, ui, dark = 0.62) {
     const w = COLS * TILE, h = ROWS * TILE;
     if (!this.nightCv) { this.nightCv = document.createElement("canvas"); this.nightCv.width = w; this.nightCv.height = h; }
     const n = this.nightCv.getContext("2d");
     n.globalCompositeOperation = "source-over";
     n.clearRect(0, 0, w, h);
-    n.fillStyle = "rgba(10,12,34,0.62)";
+    n.fillStyle = `rgba(10,12,34,${dark.toFixed(3)})`;
     n.fillRect(0, 0, w, h);
     n.globalCompositeOperation = "destination-out";
     const light = (x, y, r) => {

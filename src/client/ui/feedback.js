@@ -1,6 +1,7 @@
 // Presentation reactions to simulation events and run lifecycle events: sounds, banners, UI resets.
 // No game rules here — flow decisions are made in session.js / loop.js.
-import { BOSSES, SEASONS, bossFor } from '../../sim/data.js';
+import { BOSSES, SEASONS, bossFor, DAY } from '../../sim/data.js';
+import { dayPhase } from '../../sim/sim.js';
 import { app, bus, net, sfx, music, me } from '../app.js';
 import { $, hide } from '../dom.js';
 import { nickOf } from '../roster.js';
@@ -8,6 +9,7 @@ import { banner } from './banner.js';
 import { buildToolbar, buildAbilities, resetInfo } from './hud.js';
 import { resetPopup } from './popup.js';
 import { openTalent } from './talents.js';
+const DAY_TEXT = { day: 'Настав день', evening: 'Вечоріє', night: 'Настала ніч: вежі бачать ближче, золота більше', dawn: 'Світає' };
 
 bus.on('run:start', () => {
   const s = app.state;
@@ -58,7 +60,13 @@ bus.on('sim:events', (events) => {
       case 'lap': sfx.play('click'); break;
       case 'wave':
         sfx.play('wave');
-        banner(e.final ? 'ФІНАЛЬНА ХВИЛЯ!' : e.boss ? `Хвиля ${e.wave} — БОС!` : `Хвиля ${e.wave}`, e.boss ? 'boss' : '');
+        {
+          // a new time of day starts with this wave: say so under the wave title
+          const s = app.state, dp = DAY.phases[dayPhase(s)];
+          const turn = e.wave > 1 && (e.wave - 1) % DAY.every === 0 && !(s.mission && s.mission.night);
+          const sub = turn ? `${dp.icon} ${DAY_TEXT[dp.id]}` : '';
+          banner(e.final ? 'ФІНАЛЬНА ХВИЛЯ!' : e.boss ? `Хвиля ${e.wave} — БОС!` : `Хвиля ${e.wave}`, e.boss ? 'boss' : '', sub, sub ? 2400 : 1600);
+        }
         break;
       case 'bossSpawn': {
         const info = e.bk ? BOSSES[e.bk] : bossFor(e.wave);

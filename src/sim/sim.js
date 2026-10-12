@@ -66,6 +66,7 @@ export function createGame(seed, opts = {}) {
   if (B) o.brawlRules = B;
   const s = {
     rngState: seed >>> 0,
+    dayStart: (seed >>> 0) % 4, // time of day the run starts at (DAY.phases), moves on every DAY.every waves
     opts: o,
     mode: B ? B.map : o.mode,
     brawl: B,

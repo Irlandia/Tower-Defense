@@ -1,7 +1,7 @@
 // URL debug switches (for screenshots and manual checks):
 //   ?tutorial — fresh solo classic run with the first-run hints
 //   ?demo[=circle|circle2|circle4|boss|brawl|campaign][&season=winter][&week=N][&mission=N][&select=I]
-import { TOWER_ORDER, brawlWeek } from '../sim/data.js';
+import { TOWER_ORDER, brawlWeek, DAY } from '../sim/data.js';
 import { canPlace, isRoad } from '../sim/sim.js';
 import * as Meta from '../meta.js';
 import { app, ui, meta } from './app.js';
@@ -32,6 +32,7 @@ export function runDemoIfRequested() {
   const s = app.state;
   s.players[0].gold = 2000;
   s.opts.locked = []; s.opts.lockedBy = null;
+  if (q.has('time')) s.dayStart = Math.max(0, DAY.phases.findIndex((p) => p.id === q.get('time'))); // &time=day|evening|night|dawn
   // put each tower type on a free tile next to the road
   const spots = [];
   for (let ty = 0; ty < 14 && spots.length < 5; ty++) for (let tx = 2; tx < 24 && spots.length < 5; tx += 3) {

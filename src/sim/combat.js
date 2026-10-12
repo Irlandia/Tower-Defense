@@ -1,9 +1,9 @@
 // Combat primitives: spawning, damage, kills, burning, explosions, talent draws.
 // Everything here mutates the state passed in and draws randomness only from state.rngState.
-import { ENEMIES, BOSSES, MODES, CARDS, RARITY, DRAFT, COIN, TICK_RATE as T } from './data.js';
+import { ENEMIES, BOSSES, MODES, CARDS, RARITY, DRAFT, DAY, COIN, TICK_RATE as T } from './data.js';
 import { rand, randInt } from './rng.js';
 import { posAt } from './mapgen.js';
-import { player, isLocked, vsMult, family } from './queries.js';
+import { player, isLocked, vsMult, family, dayPhase } from './queries.js';
 
 
 // Weighted draw without repeats from the cards valid for this mode and not maxed out by this player.
@@ -88,7 +88,8 @@ export function kill(s, e, owner) {
   let pl = player(s, owner);
   if (pl.left) pl = s.players.find((q) => !q.left) || pl; // a disconnected player's towers earn for the team
   const killGold = s.brawl && s.brawl.killGold !== undefined ? s.brawl.killGold : 1;
-  const gold = Math.round(def.gold * pl.mods.gold * killGold) + (e.lap >= 1 ? pl.mods.hunter : 0);
+  const night = DAY.phases[dayPhase(s)].gold || 1; // night pays more
+  const gold = Math.round(def.gold * pl.mods.gold * killGold * night) + (e.lap >= 1 ? pl.mods.hunter : 0);
   pl.gold += gold;
   pl.kills++;
   s.kills++;

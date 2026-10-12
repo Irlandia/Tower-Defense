@@ -7,7 +7,8 @@ import { createGame, step, canPlace, canEvolve, isRoad, posAt, towerStats, vsMul
 import { TOWERS, TOWER_ORDER, BRANCHES, COLS, ROWS, CARDS, BRAWLS, brawlOf } from '../src/sim/data.js';
 import { ABILITIES } from '../src/sim/data.js';
 import * as Meta from '../src/meta.js';
-import { sellRatioOf, abilityMax, stateHash } from '../src/sim/sim.js';
+import { sellRatioOf, abilityMax, stateHash, dayPhase } from '../src/sim/sim.js';
+import { kill } from '../src/sim/combat.js';
 import { VERSION, BOSSES, BOSS_POOL } from '../src/sim/data.js';
 Meta.setPersist(false); // tests never write the player's real save
 
@@ -554,6 +555,21 @@ try {
   for (let i = 0; i < 400 && !firstShot; i++) { step(ml); if (ml.projs.length) firstShot = ml.projs.length; }
   check('Подвійний залп: one arrow shot targets two enemies', firstShot === 2, `projs=${firstShot}`);
 
+  // Time of day: start phase from the seed, moves every DAY.every waves; night = shorter sight, more gold
+  const starts = new Set([1, 2, 3, 4, 5, 6, 7, 8].map((sd) => dayPhase(createGame(sd))));
+  check('day: runs start at different times of day', starts.size >= 3, [...starts].join());
+  const dg = createGame(10);
+  const p0 = dayPhase(dg);
+  dg.wave = 5; const p5 = dayPhase(dg); dg.wave = 6; const p6 = dayPhase(dg);
+  check('day: phase changes after every 5 waves', p5 === p0 && p6 === (p0 + 1) % 4, `${p0} ${p5} ${p6}`);
+  const nightGame = (on) => { const g = createGame(10, { bonusGold: 500 }); const [x, y] = free(g, 1)[0]; step(g, [{ type: 'place', kind: 'arrow', tx: x, ty: y, p: 0 }]); g.wave = 1; g.dayStart = on ? 2 : 0; return g; };
+  const gd = nightGame(false), gn = nightGame(true);
+  check('day: night shortens tower sight by 10%', Math.abs(towerStats(gn, gn.towers[0]).range / towerStats(gd, gd.towers[0]).range - 0.9) < 1e-9);
+  const killGold = (g) => { const e = { type: 'knight', x: 0, y: 0, lap: 0, dead: false }; const before = g.players[0].gold; kill(g, e, 0); return g.players[0].gold - before; };
+  check('day: night pays more gold per kill', killGold(gn) > killGold(gd), `${killGold(gn)} vs ${killGold(gd)}`);
+  const cn = createGame(10, { mode: 'campaign', mission: 6 });
+  check('day: campaign night missions are always night', [1, 6, 11, 16].every((w) => { cn.wave = w; return dayPhase(cn) === 2; }));
+
   // Talents v2: three rarities, epic guaranteed late, rerolls, every card changes something
   check('talents: three rarities, each with cards', ['common', 'rare', 'epic'].every((r) => CARDS.some((c) => c.rarity === r)));
   const tl = createGame(8, { players: 1 });
@@ -640,7 +656,7 @@ try {
 
   // Golden replay: a fixed bot run must give the same fingerprint until VERSION is bumped.
   // When you change src/sim on purpose: VERSION++ and paste the new hash printed below.
-  const GOLDEN = { version: 43, hash: 2616498659 };
+  const GOLDEN = { version: 44, hash: 1302947161 };
   const gh = stateHash(runBot(4242, 6).s);
   if (VERSION === GOLDEN.version) check('golden replay: sim unchanged at this VERSION (else bump VERSION)', gh === GOLDEN.hash, `got ${gh}`);
   else log(`NOTE golden replay: VERSION ${VERSION} — set GOLDEN = { version: ${VERSION}, hash: ${gh} }`);

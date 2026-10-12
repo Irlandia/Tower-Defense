@@ -6,7 +6,7 @@ export const COLS = 26;
 export const ROWS = 14;
 export const TICK_RATE = 20;
 // Bump on every change to sim/data: co-op peers refuse to play with a different version.
-export const VERSION = 43;
+export const VERSION = 44;
 
 export const CONFIG = {
   startGold: 160,
@@ -330,3 +330,15 @@ export const CAMPAIGN = [
     rules: {}, farmHp: 60, bosses: { 4: 5, 7: 10, 10: 15, 12: 20 }, side: { type: 'farm', pct: 0.5, text: 'збережи половину врожаю' },
     story: { intro: [['Король Слизу', 'Ви висушили мій дім. Тепер я затоплю ваш!'], ['Дід Панас', 'Тарасе… тримай долину. А потім — відкриємо загату.']], outro: ['Король Слизу', '…Загата відкрита? Тоді… ми повернемось на болото. Миру вам, люди.'] } },
 ];
+
+// Time of day: every run starts at a phase picked from its seed and moves on every `every` waves.
+// range / gold: multipliers while that phase lasts (campaign night missions keep their own harsher night).
+export const DAY = {
+  every: 5,
+  phases: [
+    { id: 'day', name: 'День', icon: '☀' },
+    { id: 'evening', name: 'Вечір', icon: '🌇' },
+    { id: 'night', name: 'Ніч', icon: '🌙', range: 0.9, gold: 1.25 },
+    { id: 'dawn', name: 'Світанок', icon: '🌅' },
+  ],
+};
