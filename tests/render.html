@@ -9,6 +9,8 @@ import { createGame, step, canPlace } from '../src/sim/sim.js';
 import { TOWER_ORDER, COLS, ROWS } from '../src/sim/data.js';
 import { Renderer } from '../src/render.js';
 import { Critters } from '../src/critters.js';
+import * as Meta from '../src/meta.js';
+import { renderTreeView } from '../src/treeui.js';
 
 const out = [];
 let failed = 0;
@@ -44,6 +46,51 @@ for (const mode of ["classic", "circle"]) {
    }
   }
 }
+// abilities: four slots, the new targeted abilities with their previews, Overdrive sparks on towers
+try {
+  const s4 = createGame(42, { mode: 'classic', season: 'summer', perks: [{ abilities: ['meteor', 'goldrain', 'overdrive', 'quake'] }] });
+  const free4 = [];
+  for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) if (canPlace(s4, x, y)) free4.push([x, y]);
+  step(s4, [{ type: 'place', kind: 'arrow', tx: free4[0][0], ty: free4[0][1], p: 0 }, { type: 'nextWave', p: 0 }]);
+  step(s4, [{ type: 'overdrive', p: 0 }]);
+  for (let i = 0; i < 120; i++) step(s4);
+  r.onEvents([{ type: 'goldrain', x: 120, y: 120, r: 60, p: 0 }, { type: 'quake', x: 150, y: 110, r: 70, p: 0 }, { type: 'overdrive', p: 0 }]);
+  for (const ui of [
+    { me: 0, ability: 'goldrain', mouse: { x: 120, y: 120 }, hover: { tx: 5, ty: 5 } },
+    { me: 0, ability: 'quake', mouse: { x: 150, y: 110 }, hover: { tx: 6, ty: 4 } },
+    { me: 0, ability: 'overdrive', hover: { tx: 6, ty: 4 } },
+    { me: 0 },
+  ]) r.draw(s4, 0.5, ui, 0.016);
+  out.push('PASS abilities: goldrain / quake previews, overdrive sparks, 4 slots');
+} catch (e) { failed++; out.push('FAIL abilities ' + e.stack); }
+
+// talent tree screen (src/treeui.js): renders the tree as DOM, buying and refunding redraws it
+try {
+  Meta.setPersist(false);
+  const host = document.createElement('div');
+  document.body.append(host);
+  const m = Meta.newMeta();
+  m.xp = Meta.xpForLevel(5); // level 5 = 5 points
+  const redraw = () => renderTreeView(host, m, redraw);
+  redraw();
+  const nodes = host.querySelectorAll('.tv-node');
+  if (nodes.length !== Meta.TREE.length) throw new Error(`nodes ${nodes.length} != ${Meta.TREE.length}`);
+  if (host.querySelectorAll('.tv-build.locked').length !== 2) throw new Error('build tabs: 2 should be locked at level 5');
+  if (host.querySelectorAll('.tv-col').length !== 4) throw new Error('4 branch trunks expected');
+  if (host.querySelectorAll('.tv-tier.closed').length === 0) throw new Error('higher tiers should be closed at start');
+  host.querySelector('[data-id="a1"]').click();
+  if (Meta.rankOf(m, 'a1') !== 1) throw new Error('left click should buy a rank');
+  host.querySelector('[data-id="a1"]').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+  if (Meta.rankOf(m, 'a1') !== 0) throw new Error('right click should take the rank back');
+  for (let i = 0; i < 3; i++) host.querySelector('[data-id="a1"]').click();
+  host.querySelector('[data-id="a4"]').click();
+  if (Meta.rankOf(m, 'a4') !== 1) throw new Error('tier 2 should open after 3 points');
+  host.querySelector('.tv-slot').click();
+  if (!host.querySelector('.tv-pick')) throw new Error('slot picker should open');
+  host.querySelector('.tv-pick-item').click();
+  out.push('PASS talent tree: nodes, tiers, builds, buy / refund / slot picker');
+} catch (e) { failed++; out.push('FAIL talent tree ' + e.stack); }
+
 // fish: leap, click a fish in the air, click empty water, and draw it all
 try {
   const s = createGame(42, { mode: "classic", season: "summer" });

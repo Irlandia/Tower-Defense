@@ -5,6 +5,10 @@
 <script type="module">
 import { createGame, step, canPlace, canEvolve, isRoad, posAt, towerStats, vsMult, pickCards, placeCost, isLocked, missionStars } from '../src/sim/sim.js';
 import { TOWERS, TOWER_ORDER, BRANCHES, COLS, ROWS, CARDS, BRAWLS, brawlOf } from '../src/sim/data.js';
+import { ABILITIES } from '../src/sim/data.js';
+import * as Meta from '../src/meta.js';
+import { sellRatioOf, abilityMax } from '../src/sim/sim.js';
+Meta.setPersist(false); // tests never write the player's real save
 
 const lines = [];
 let failed = 0;
@@ -448,6 +452,106 @@ try {
   check("talents: boss draft contains a rare card", co.players.every((q) => q.drafts[0].some((id) => CARDS.find((c) => c.id === id).rarity === "rare")));
   step(co, [{ type: "pick", index: 0, p: 1 }]);
   check("co-op: picking a talent is personal", co.players[1].drafts.length === 0 && co.players[0].drafts.length === 1);
+
+  // ---------- talent tree (src/meta.js) ----------
+  const metaAt = (xp) => { const m = Meta.newMeta(); m.xp = xp; return m; };
+  check('levels: 10 XP = level 1, 23 = level 2, cap 25', Meta.levelOf(9) === 0 && Meta.levelOf(10) === 1 && Meta.levelOf(23) === 2 && Meta.levelOf(1e9) === 25);
+  check('levels: levelCost(n) = 10 + 3n', Meta.levelCost(0) === 10 && Meta.levelCost(1) === 13 && Meta.levelCost(2) === 16);
+  const tm = metaAt(Meta.xpForLevel(5));
+  check('points: one per level', Meta.points(tm) === 5);
+  for (let i = 0; i < 3; i++) Meta.buy(tm, 'a1');
+  check('tier gating: tier 2 opens after 3 points in tier 1', Meta.canBuy(tm, 'a4') && !Meta.canBuy(metaAt(Meta.xpForLevel(5)), 'a4'));
+  Meta.buy(tm, 'a4');
+  check('refund: a tier-1 rank that would close tier 2 is locked', !Meta.canRefund(tm, 'a1'));
+  check('refund: a free rank from the top tier comes back', Meta.refund(tm, 'a4') && Meta.rankOf(tm, 'a4') === 0 && Meta.points(tm) === 2);
+  Meta.resetBuild(tm);
+  check('reset: every point of the build comes back', Meta.points(tm) === 5);
+  const kt = metaAt(Meta.xpForLevel(25));
+  kt.builds[0].tree = { a1: 3, a2: 2, a3: 2, a4: 2, a5: 1, m1: 3, m2: 2, m3: 2, m4: 2, m5: 1 };
+  Meta.buy(kt, 'k_focus');
+  check('keystones: Фокус and Вільна рука are exclusive', !Meta.canBuy(kt, 'k_hand'));
+  check('keystones: at most 2 per build', !Meta.treeValid({ k_focus: 1, k_vortex: 1, k_forge: 1 }, 99));
+  check('keystones: a build cannot spend more than its level', !Meta.treeValid({ a1: 3, a2: 2, a3: 2, a4: 2, a5: 1, m1: 3, m2: 2, m3: 2, m4: 2, m5: 1, k_hand: 1 }, 20));
+  check('builds: 2nd opens at level 10, 3rd at level 20', Meta.buildsOpen(9) === 1 && Meta.buildsOpen(10) === 2 && Meta.buildsOpen(20) === 3);
+  const two = metaAt(Meta.xpForLevel(10));
+  check('builds: a closed build cannot be selected', !Meta.setActive(metaAt(Meta.xpForLevel(9)), 1));
+  Meta.setActive(two, 1);
+  check('builds: each build has its own points', Meta.points(two) === 10);
+  Meta.buy(two, 'a1');
+  Meta.setActive(two, 0);
+  check('builds: points spent in one build do not show in another', Meta.rankOf(two, 'a1') === 0);
+  check('unlocks: tesla from level 3, fire from level 6', Meta.perks(metaAt(Meta.xpForLevel(2))).locked.join() === 'tesla,fire' && Meta.perks(metaAt(Meta.xpForLevel(3))).locked.join() === 'fire' && Meta.perks(metaAt(Meta.xpForLevel(6))).locked.length === 0);
+  check('loadout: default meteor / nova / wall on Q / W / E', Meta.perks(metaAt(Meta.xpForLevel(5))).abilities.join() === 'meteor,nova,wall');
+  const ap = metaAt(Meta.xpForLevel(25));
+  ap.builds[0].tree = { a1: 3, a2: 2, a3: 2, a4: 2, a5: 1, k_focus: 1 };
+  check('Фокус: 2 slots and cooldowns x0.6', Meta.perks(ap).abilities.length === 2 && Math.abs(Meta.perks(ap).cdAll - 0.6) < 1e-9);
+  ap.builds[0].tree = { m1: 3, m2: 2, m3: 2, m4: 2, m5: 1, k_hand: 1, g1: 1 };
+  check('Вільна рука: 4 slots, R empty until something is put there', Meta.perks(ap).abilities.length === 4 && Meta.perks(ap).abilities[3] === null);
+  Meta.setSlot(ap, 3, 'goldrain');
+  check('an ability is only put in a slot if the tree unlocked it', Meta.perks(ap).abilities[3] === null);
+  ap.builds[0].tree = { m1: 3, m2: 2, m3: 2, m4: 2, m5: 1, k_hand: 1, g1: 1, g5: 1 };
+  Meta.setSlot(ap, 3, 'goldrain');
+  check('tree-unlocked ability goes into its slot', Meta.perks(ap).abilities[3] === 'goldrain');
+  Meta.setSlot(ap, 0, 'goldrain');
+  check('slot swap: the ability moves, the other one goes back', ap.builds[0].slots[0] === 'goldrain' && ap.builds[0].slots[3] === 'meteor');
+  const old = { xp: 50, tree: { a1: 2, t0: 1 }, best: {}, wins: {}, runs: 3 };
+  check('migration: spent tree XP is refunded (50 + 35 + 15 = 100 → level 5)', Meta.migrateLegacy(old).xp === 100 && Meta.levelOf(100) === 5);
+
+  // ---------- abilities: loadout gating, Overdrive, Gold Rain, Quake, Focus ----------
+  const ng = createGame(4, { perks: [{ abilities: ['meteor', 'nova', 'wall'] }] });
+  step(ng, [{ type: 'quake', x: 100, y: 100, p: 0 }]);
+  check('ability not in the loadout cannot be cast', !ng.events.some((e) => e.type === 'quake') && ng.players[0].cds.quake === 0);
+  const od = createGame(6, { perks: [{ abilities: ['overdrive'] }] });
+  const [odx, ody] = free(od, 1)[0];
+  step(od, [{ type: 'place', kind: 'arrow', tx: odx, ty: ody, p: 0 }]);
+  const odt = od.towers[0];
+  const period0 = towerStats(od, odt).period;
+  step(od, [{ type: 'overdrive', p: 0 }]);
+  check('overdrive: towers fire faster while it lasts', towerStats(od, odt).period < period0, `${period0} -> ${towerStats(od, odt).period}`);
+  step(od, [{ type: 'overdrive', p: 0 }]);
+  check('overdrive: cooldown blocks a second cast', od.events.filter((e) => e.type === 'overdrive').length === 0);
+  for (let i = 0; i < 6 * 20 + 2; i++) step(od);
+  check('overdrive: ends after 6 s', od.players[0].overT === 0 && towerStats(od, odt).period === period0);
+  const gr = createGame(8, { perks: [{ abilities: ['goldrain'] }] });
+  const coinsBefore = gr.coins.length, grGold0 = gr.players[0].gold;
+  step(gr, [{ type: 'goldrain', x: 200, y: 120, p: 0 }]);
+  const rained = gr.coins.slice(coinsBefore);
+  check('goldrain: 5 coins land inside the radius', rained.length === ABILITIES.goldrain.coins && rained.every((c) => Math.hypot(c.x - 200, c.y - 120) <= ABILITIES.goldrain.radius + 0.01));
+  step(gr, [{ type: 'collect', id: rained[0].id, p: 0 }]);
+  check('goldrain: a collected coin pays out', gr.players[0].gold === grGold0 + rained[0].value);
+  const qk = createGame(9, { perks: [{ abilities: ['quake'] }] });
+  step(qk, [{ type: 'nextWave', p: 0 }]);
+  for (let i = 0; i < 90; i++) step(qk);
+  const quakeTarget = qk.enemies.find((e) => !e.dead);
+  if (quakeTarget) {
+    const hp0 = quakeTarget.hp;
+    step(qk, [{ type: 'quake', x: quakeTarget.x, y: quakeTarget.y, p: 0 }]);
+    check('quake: damage and slow inside the area', quakeTarget.hp < hp0 && quakeTarget.slowF === ABILITIES.quake.slowF && quakeTarget.slowT > 0);
+  } else check('quake: damage and slow inside the area', false, 'no enemy to test on');
+  const fk = createGame(10, { perks: [{ abilities: ['meteor', 'nova'], cdAll: 0.6 }] });
+  check('Focus cooldowns: meteor 30 s x 0.6', abilityMax(fk, 'meteor', 0) === Math.round(30 * 0.6 * 20));
+
+  // ---------- tree effects reach the simulation ----------
+  const tfx = createGame(11, { perks: [{ discount: { all: 0.1 }, sell: 0.2, wage: 12, multi: { arrow: 1 }, steamR: 1.5, wetChain: 1, novaFreeze: 1, meteorDmg: 1.25, wallCd: 0.8, overSec: 2, dmgAll: 1.1 }] });
+  check('tree: discount on every tower (arrow 50 → 45)', placeCost(tfx, 0, 'arrow') === 45);
+  check('tree: sell ratio 0.9 for the owner', Math.abs(sellRatioOf(tfx, 0) - 0.9) < 1e-9);
+  const mm = tfx.players[0].mods;
+  check('tree: steam radius, wet chain, freeze, meteor, wall, overdrive, damage read by the sim', mm.steamR === 1.5 && mm.wetChain === 1 && mm.novaFreeze === 1 && mm.meteorDmg === 1.25 && mm.wallCd === 0.8 && mm.overSec === 2 && Math.abs(mm.dmg.arrow - 1.1) < 1e-9);
+  const wg = tfx.players[0].gold;
+  step(tfx, [{ type: 'nextWave', p: 0 }]);
+  check('tree: wage paid at each wave start', tfx.players[0].gold === wg + 12);
+  // Подвійний залп: one arrow shot targets two enemies at once
+  const ml = createGame(12, { perks: [{ multi: { arrow: 1 } }], bonusGold: 500 });
+  const mid = posAt(ml.map, 0, 60);
+  let spot = null;
+  for (let ty = 0; ty < ROWS && !spot; ty++) for (let tx = 0; tx < COLS && !spot; tx++) {
+    if (canPlace(ml, tx, ty) && Math.hypot(tx * 24 + 12 - mid.x, ty * 24 + 12 - mid.y) < 40) spot = [tx, ty];
+  }
+  step(ml, [{ type: 'place', kind: 'arrow', tx: spot[0], ty: spot[1], p: 0 }]);
+  ml.queue = [{ type: 'slime', lane: 0, at: ml.tick + 1, hpMul: 1 }, { type: 'slime', lane: 0, at: ml.tick + 1, hpMul: 1 }];
+  let firstShot = 0;
+  for (let i = 0; i < 400 && !firstShot; i++) { step(ml); if (ml.projs.length) firstShot = ml.projs.length; }
+  check('Подвійний залп: one arrow shot targets two enemies', firstShot === 2, `projs=${firstShot}`);
 
   log('');
   log('Balance bot (seed, wave reached, lanes, towers):');

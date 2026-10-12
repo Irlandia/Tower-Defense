@@ -2,7 +2,7 @@
 // All game rules live in ./sim; meta-progression in ./meta; networking in ./net; nick + leaderboard in ./api.
 import { TILE, TICK_RATE, TOWERS, TOWER_ORDER, BRANCHES, CARDS, CONFIG, ABILITIES, MODES, VERSION, BOSSES, bossFor, AURA, ENEMIES, RARITY, SEASONS, SEASON_ORDER, brawlWeek, brawlOf, CAMPAIGN } from './sim/data.js';
 import {
-  createGame, step, canPlace, family, towerAt, obstacleAt, barrelAt, towerStats, upgradeCost, canEvolve, sellValue, clearCost,
+  createGame, step, canPlace, family, towerAt, obstacleAt, barrelAt, towerStats, upgradeCost, canEvolve, sellValue, sellRatioOf, clearCost,
   enemyAt, abilityMax, isRoad, canMove, hasWall, auraCost, isLocked, placeCost,
 } from './sim/sim.js';
 import { Renderer, W, H, MX, MY, PLAYER_COLORS } from './render.js';
@@ -12,6 +12,7 @@ import { Net } from './net.js';
 import * as Meta from './meta.js';
 import * as Api from './api.js';
 import { say, SAY } from "./say.js";
+import { renderTreeView } from './treeui.js';
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('game');
@@ -29,10 +30,10 @@ let pending = [];
 let diff = 'normal';
 let mode = "classic";
 let season = "random";
-let treeBranch = "general";
 let selectedMission = 1;
 let menuTab = "play";
 let nick = '';
+const KEYS = ['Q', 'W', 'E', 'R']; // ability slots, left to right
 let myIdx = 0; // guest: player index assigned by the host at start
 const ui = { build: null, selected: null, hover: null, mouse: null, ability: null, hoverEnemy: null, partners: {}, me: 0, moving: null };
 let speed = 1;
@@ -47,6 +48,34 @@ let game = null; // { seed, opts }
 const me = () => (net.role === "guest" ? myIdx : 0);
 const P = () => state.players[me()] || state.players[0];
 
+// Pixel-art ability icons (11x11 maps, drawn at 2x with a dark outline by pixelIcon) instead of emoji.
+const AB_ICONS = {
+  meteor: {
+    c: { o: '#ef7d57', y: '#ffcd75', w: '#fff4d6', r: '#b13e53', k: '#1a1c2c' },
+    rows: ['.........w.w', '........ywy.', '.......yoy..', '...rrrr.y...', '..royyor....', '.royyyyor...', '.roykykor...', '.royyyyor...', '..royyor....', '...rrrr.....', '............'],
+  },
+  nova: {
+    c: { c: '#73eff7', b: '#41a6f6', w: '#f4f4f4' },
+    rows: ['.....w......', '...w.c.w....', '....ccc.....', '.w.c.b.c.w..', '..ccwwwcc...', 'wcbbwwwbbcw.', '..ccwwwcc...', '.w.c.b.c.w..', '....ccc.....', '...w.c.w....', '.....w......'],
+  },
+  wall: {
+    c: { B: '#c28569', b: '#8a6248', D: '#5a3e2c', s: '#94b0c2' },
+    rows: ['.B...B...B..', 'BbB.BbB.BbB.', 'BbB.BbB.BbB.', 'DDDDDDDDDDD.', 'BsB.BsB.BsB.', 'BbB.BbB.BbB.', 'DDDDDDDDDDD.', 'BbB.BbB.BbB.', 'BbB.BbB.BbB.', 'bbb.bbb.bbb.', '............'],
+  },
+  goldrain: { // a coin
+    c: { y: '#ffcd75', o: '#c28569', w: '#fff4d6' },
+    rows: ['....oooo....', '..oowyyyoo..', '.oyywyyyyo.', '.oyywyyyyo.', 'oyyywyyyyyo.', 'oyyyyyyyyyo.', 'oyyyyyyyyyo.', '.oyyyyyyyo..', '..oyyyyyo...', '....oooo....', '............'],
+  },
+  overdrive: { // a lightning bolt
+    c: { w: '#fff4d6', y: '#ffcd75', o: '#ef7d57' },
+    rows: ['.......ww...', '......wy....', '.....wyy....', '....wyyyyy..', '.....yyyyy..', '......yyo...', '.....yy.....', '....yy......', '...yy.......', '..yo........', '............'],
+  },
+  quake: { // a cracked ridge
+    c: { s: '#94b0c2', d: '#566c86', k: '#5a3e2c' },
+    rows: ['.....ss.....', '...sssss....', '.sssssssss..', 'ssssssssssss', 'sssskssssss.', 'dddkdddddddd', '.....kd.....', '....kk......', '...kk.......', '..kd........', '............'],
+  },
+};
+
 // ---------- game lifecycle ----------
 function startGame(seed, opts) {
   state = createGame(seed, opts);
@@ -60,6 +89,7 @@ function startGame(seed, opts) {
   net.inbox = [];
   collected.clear();
   ui.build = null; ui.selected = null; ui.ability = null; ui.me = me();
+  buildAbilities();
   paused = false; draftPause = false; speed = 1;
   $('speed').textContent = 'x1';
   $('pause').textContent = '❚❚';
@@ -292,11 +322,12 @@ canvas.addEventListener('mousedown', (ev) => {
     else if (!mt) ui.moving = null;
     return;
   }
-  if (ui.ability === 'meteor') { send({ type: 'meteor', x: m.x, y: m.y }); ui.ability = null; return; }
   if (ui.ability === 'wall') {
     if (isRoad(state, m.tx, m.ty)) { send({ type: 'wall', tx: m.tx, ty: m.ty }); ui.ability = null; }
     return;
   }
+  // every other targeted ability (meteor, goldrain, quake) hits the point under the cursor
+  if (ui.ability) { send({ type: ui.ability, x: m.x, y: m.y }); ui.ability = null; return; }
   const t = towerAt(state, m.tx, m.ty);
   if (t) { select('t' + t.id); ui.build = null; return; }
   const b = barrelAt(state, m.tx, m.ty);
@@ -336,10 +367,10 @@ function selectBuild(kind) {
 }
 function useAbility(id) {
   sfx.unlock();
-  if (P().cds[id] > 0 || !running) return;
+  if (!running || !id || !P().abilities.includes(id) || P().cds[id] > 0) return;
   if (id === "wall" && hasWall(state, me())) { banner("Барикада вже стоїть", "gold"); return; }
   ui.build = null;
-  if (id === 'nova') { send({ type: 'nova' }); return; }
+  if (id === 'nova' || id === 'overdrive') { send({ type: id }); return; } // no target: fires at once
   ui.ability = ui.ability === id ? null : id;
 }
 function nextWave() { sfx.unlock(); send({ type: 'nextWave' }); }
@@ -353,10 +384,9 @@ window.addEventListener('keydown', (ev) => {
   const k = ev.key.toLowerCase();
   if (talentOpen && ['1', '2', '3', '4'].includes(k)) { pickCard(+k - 1); return; }
   const idx = ['1', '2', '3', '4', '5', '6'].indexOf(k);
+  const slot = KEYS.indexOf(k.toUpperCase());
   if (idx >= 0) selectBuild(TOWER_ORDER[idx]);
-  else if (k === 'q') useAbility('meteor');
-  else if (k === 'w') useAbility('nova');
-  else if (k === 'e') useAbility('wall');
+  else if (slot >= 0) useAbility(P().abilities[slot]);
   else if (k === 't') openTalent();
   else if (k === ' ') { ev.preventDefault(); nextWave(); }
   else if (k === "m") startMove();
@@ -383,7 +413,7 @@ function buildToolbar() {
     const b = document.createElement('button');
     b.className = 'tower-btn' + (locked ? ' locked' : '');
     b.dataset.kind = kind;
-    b.title = locked ? 'Відкривається в магазині за кристали' : `${def.name} [${i + 1}] — ${def.desc}`;
+    b.title = locked ? (Meta.UNLOCK_LEVEL[kind] ? `Відкривається на рівні ${Meta.UNLOCK_LEVEL[kind]} (дерево талантів не потрібне)` : 'Недоступно в цьому режимі') : `${def.name} [${i + 1}] — ${def.desc}`;
     b.append(towerIcon(kind));
     const label = document.createElement('span');
     label.className = 'label';
@@ -397,16 +427,30 @@ function buildToolbar() {
     bar.append(b);
   });
 }
-for (const id of Object.keys(ABILITIES)) {
-  const a = ABILITIES[id];
-  const b = document.createElement('button');
-  b.className = 'ability';
-  b.id = 'ab-' + id;
-  b.title = a.desc;
-  b.dataset.ab = id;
-  b.innerHTML = `<span class="ab-icon">${{ meteor: "☄", nova: "❄", wall: "🧱" }[id]}</span><span class="ab-name">${a.name}</span><span class="key">${a.key}</span><span class="cd"></span>`;
-  b.addEventListener('click', () => useAbility(id));
-  $('abilities').append(b);
+// Ability bar: one button per slot of the running player's loadout (Q/W/E/R). Empty slots stay visible but inert.
+function buildAbilities() {
+  const bar = $('abilities');
+  bar.innerHTML = '';
+  bar.style.setProperty('--ab-n', (P().abilities || []).length || 3);
+  (P().abilities || []).forEach((id, i) => {
+    const b = document.createElement('button');
+    if (!id) {
+      b.className = 'ability empty';
+      b.disabled = true;
+      b.innerHTML = `<span class="ab-name">—</span><span class="key">${KEYS[i]}</span>`;
+      bar.append(b);
+      return;
+    }
+    const a = ABILITIES[id];
+    b.className = 'ability';
+    b.id = 'ab-' + i;
+    b.title = `${a.name} [${KEYS[i]}] — ${a.desc}`;
+    b.dataset.ab = id;
+    b.innerHTML = `<span class="ab-icon"></span><span class="ab-name">${a.name}</span><span class="key">${KEYS[i]}</span><span class="cd"></span>`;
+    b.querySelector('.ab-icon').append(pixelIcon(AB_ICONS[id]));
+    b.addEventListener('click', () => useAbility(id));
+    bar.append(b);
+  });
 }
 $('next').addEventListener('click', nextWave);
 $('talent').addEventListener('click', openTalent);
@@ -470,7 +514,7 @@ function updatePop() {
     const mine = t.owner === me();
     const up = upgradeCost(t);
     const evo = canEvolve(t);
-    key = `t${t.id}:${t.kind}:${t.level}:${Math.floor(gold / 5)}:${Math.round(st.dmg)}:${st.buff}:${Math.ceil((t.moveCd || 0) / TICK_RATE)}`;
+    key = `t${t.id}:${t.kind}:${t.level}:${Math.floor(gold / 5)}:${Math.round(st.dmg)}:${st.buff}:${Math.ceil((t.moveCd || 0) / TICK_RATE)}:${Math.round(sellValue(t, sellRatioOf(state, t.owner)))}`;
     // header: tower icon on a family-coloured tile, name, level badge
     html = `<div class="pop-title" style="--fam: var(--fam-${family(t.kind)})"><span class="pop-ico" data-icon="${t.kind}"></span>
         <b>${def.name}</b><span class="lvl-badge">${def.from ? '★ еволюція' : 'рів. ' + t.level}</span></div>
@@ -506,7 +550,7 @@ function updatePop() {
       const mcd = Math.ceil((t.moveCd || 0) / TICK_RATE);
       html += `<div class="pa-row">`
         + act('data-act="move"', "pa-move", "↔ Перемістити", mcd ? `зачекай ${mcd} с` : `до ${CONFIG.moveRange} клітинок · M`, "", mcd)
-        + act('data-act="sell"', "pa-sell", "Продати", "", `+${sellValue(t)}`, false)
+        + act('data-act="sell"', "pa-sell", "Продати", "", `+${sellValue(t, sellRatioOf(state, me()))}`, false)
         + `</div>`;
     }
   } else {
@@ -533,8 +577,8 @@ function updateUI() {
     b.classList.toggle('active', ui.build === b.dataset.kind);
     b.classList.toggle("poor", pl.gold < placeCost(state, me(), b.dataset.kind));
   }
-  for (const id of Object.keys(ABILITIES)) {
-    const b = $('ab-' + id);
+  for (const b of document.querySelectorAll('.ability[data-ab]')) {
+    const id = b.dataset.ab;
     b.classList.toggle('active', ui.ability === id);
     b.classList.toggle("cooling", pl.cds[id] > 0 || (id === "wall" && hasWall(state, me())));
     b.style.setProperty('--cd', (pl.cds[id] / abilityMax(state, id, me())).toFixed(3));
@@ -657,7 +701,7 @@ function showEnd(won) {
   if (net.role === "host") net.send({ t: "end", won });
   running = false;
   talentOpen = false;
-  const { earned, record } = Meta.finishRun(meta, state);
+  const { earned, record, level: lvl, levelUp } = Meta.finishRun(meta, state);
   const M = state.mission;
   const farmLost = state.farmMax && state.farmHp <= 0;
   const title = won ? "ПЕРЕМОГА!" : farmLost ? "Врожай витоптано" : state.endless ? "Нескінченність скінчилась" : state.mode === "circle" ? "Коло переповнене" : "Замок впав";
@@ -676,7 +720,8 @@ function showEnd(won) {
   }
   m.innerHTML = `<h2 class="${won ? 'win' : ''}">${M ? `Місія ${M.id}. ` : ''}${title}</h2>${camp}
     <p>Хвиля <b>${state.wave}</b>${state.endless ? " (нескінченний)" : " / " + state.winWave} · Вбито <b>${state.kills}</b>${state.players.length > 1 ? ` (ти: ${P().kills})` : ''}${record ? ' · <span class="rec">Новий рекорд!</span>' : ''}</p>
-    <p class="crys">+${earned} ✦ досвіду <span>(усього ${meta.xp})</span></p>
+    <p class="crys">+${earned} ✦ досвіду <span>(рівень ${lvl}${lvl < Meta.MAX_LEVEL ? '' : ' · макс.'})</span></p>
+    ${levelUp ? `<p class="rec">▲ Новий рівень ${lvl}! Ще одне очко таланту</p>` : ''}
     <p id="scoreMsg">${M ? '' : nick ? 'Надсилаємо результат…' : 'Введи нік у меню, щоб потрапити в таблицю лідерів'}</p>
     <div class="row">${canContinue ? '<button id="endless" class="big primary">Продовжити ∞</button>' : ""}${net.role === "guest" ? (won && state.mode === "circle" ? "<p>Хост вирішує: продовжити чи ні…</p>" : "<p>Чекаємо, поки хост почне нову гру…</p>") : '<button id="again" class="big">Ще раз</button>'}<button id="menuBtn" class="big">Меню</button></div>`;
   m.classList.remove('hidden');
@@ -739,7 +784,9 @@ function updatePlayButton() {
 }
 
 function renderMenu() {
-  $("crystals").textContent = meta.xp;
+  const L = Meta.level(meta);
+  $("lvl").textContent = L;
+  $("xpLine").textContent = L < Meta.MAX_LEVEL ? `${meta.xp - Meta.xpForLevel(L)} / ${Meta.levelCost(L)} до рівня ${L + 1}` : 'максимальний рівень';
   // tabs
   for (const t of document.querySelectorAll('.menu-tabs [data-tab]')) t.classList.toggle('active', t.dataset.tab === menuTab);
   for (const s of document.querySelectorAll('.menu-tab')) s.classList.toggle('hidden', s.dataset.tab !== menuTab);
@@ -814,37 +861,7 @@ function renderMenu() {
     o.textContent = ok ? `${d.name} — рекорд ${meta.best[k] || 0}/${CONFIG.winWave}${meta.wins[k] ? ' 🏆' + meta.wins[k] : ''}` : `🔒 ${d.name} (переможи на попередній)`;
     ds.append(o);
   }
-  // talent tree: branch tabs, then the branch's nodes top to bottom (each needs the previous one)
-  const shop = $('shop');
-  shop.innerHTML = '';
-  const tabs = document.createElement('div');
-  tabs.className = 'tree-tabs';
-  for (const br of Meta.BRANCHES) {
-    const t = document.createElement('button');
-    const got = Meta.TREE.filter((n) => n.branch === br.id && Meta.level(meta, n.id)).length;
-    t.className = 'tree-tab' + (treeBranch === br.id ? ' active' : '');
-    t.title = br.name;
-    t.innerHTML = `${br.icon}<small>${got}/${Meta.TREE.filter((n) => n.branch === br.id).length}</small>`;
-    t.addEventListener('click', () => { treeBranch = br.id; renderMenu(); });
-    tabs.append(t);
-  }
-  shop.append(tabs);
-  const title = document.createElement('div');
-  title.className = 'tree-title';
-  title.textContent = Meta.BRANCHES.find((b) => b.id === treeBranch).name;
-  shop.append(title);
-  for (const n of Meta.TREE.filter((k) => k.branch === treeBranch)) {
-    const lv = Meta.level(meta, n.id);
-    const max = lv >= n.cost.length;
-    const reqOk = !n.req || Meta.level(meta, n.req) > 0;
-    const b = document.createElement('button');
-    b.className = 'shop-item tree-node' + (max ? ' max' : '') + (lv ? ' owned' : '') + (reqOk ? '' : ' blocked');
-    b.disabled = max || !Meta.canBuy(meta, n);
-    const price = max ? 'ВИВЧЕНО' : reqOk ? `${n.cost[lv]} ✦` : `🔒 ${Meta.nodeOf(n.req).name}`;
-    b.innerHTML = `<b>${n.name}</b><span>${n.desc}</span><i>${price}${n.cost.length > 1 ? ` · ${lv}/${n.cost.length}` : ''}</i>`;
-    b.addEventListener('click', () => { if (Meta.buy(meta, n.id)) { sfx.unlock(); sfx.play('card'); renderMenu(); } });
-    shop.append(b);
-  }
+  renderTreeView($('shop'), meta, renderMenu);
   for (const b of document.querySelectorAll('[data-board]')) b.classList.toggle('active', b.dataset.board === boardMode);
 }
 
@@ -944,6 +961,9 @@ function handleEvents(events, quiet = false) {
       }
       case "bossRage": sfx.play("leak"); break;
       case 'nova': sfx.play('frost'); sfx.play('explode'); break;
+      case 'quake': sfx.play('rumble'); break;
+      case 'goldrain': if (mine(e)) sfx.play('sell'); break;
+      case 'overdrive': if (mine(e)) { sfx.play('card'); banner('ОВЕРДРАЙВ!', 'gold', 'твої вежі стріляють швидше', 1600); } break;
       case 'wallup': case 'wallbreak': sfx.play('cannon'); break;
       case 'bonus': if (mine(e)) banner(`+${e.gold} золота`, 'gold'); break;
       // co-op pranks
@@ -1107,6 +1127,7 @@ try {
 }
 
 buildToolbar();
+buildAbilities();
 fit();
 if (new URLSearchParams(location.search).has('demo')) {
   // debug: start immediately with a few towers to check rendering
@@ -1198,21 +1219,6 @@ setInterval(() => {
   if (side.type === 'coins' && !sideDone && state.stats.coins >= side.n) { sideDone = true; sfx.play('card'); banner('★ Ціль виконано!', 'gold', side.text, 1800); }
 }, 250);
 
-// Pixel-art ability icons (12x11 maps, drawn at 2x with a dark outline) instead of emoji.
-const AB_ICONS = {
-  meteor: {
-    c: { o: '#ef7d57', y: '#ffcd75', w: '#fff4d6', r: '#b13e53', k: '#1a1c2c' },
-    rows: ['.........w.w', '........ywy.', '.......yoy..', '...rrrr.y...', '..royyor....', '.royyyyor...', '.roykykor...', '.royyyyor...', '..royyor....', '...rrrr.....', '............'],
-  },
-  nova: {
-    c: { c: '#73eff7', b: '#41a6f6', w: '#f4f4f4' },
-    rows: ['.....w......', '...w.c.w....', '....ccc.....', '.w.c.b.c.w..', '..ccwwwcc...', 'wcbbwwwbbcw.', '..ccwwwcc...', '.w.c.b.c.w..', '....ccc.....', '...w.c.w....', '.....w......'],
-  },
-  wall: {
-    c: { B: '#c28569', b: '#8a6248', D: '#5a3e2c', s: '#94b0c2' },
-    rows: ['.B...B...B..', 'BbB.BbB.BbB.', 'BbB.BbB.BbB.', 'DDDDDDDDDDD.', 'BsB.BsB.BsB.', 'BbB.BbB.BbB.', 'DDDDDDDDDDD.', 'BbB.BbB.BbB.', 'BbB.BbB.BbB.', 'bbb.bbb.bbb.', '............'],
-  },
-};
 function pixelIcon({ rows, c }) {
   const S = 2, W2 = rows[0].length, H2 = rows.length;
   const cv = document.createElement('canvas');
@@ -1227,10 +1233,6 @@ function pixelIcon({ rows, c }) {
   }
   rows.forEach((row, y) => { for (let x = 0; x < W2; x++) if (c[row[x]]) { g.fillStyle = c[row[x]]; g.fillRect((x + 1) * S, (y + 1) * S, S, S); } });
   return cv;
-}
-for (const el of document.querySelectorAll('.ability .ab-icon')) {
-  const id = el.parentElement.dataset.ab;
-  if (AB_ICONS[id]) { el.textContent = ''; el.append(pixelIcon(AB_ICONS[id])); }
 }
 
 // menu tabs, difficulty dropdown, co-op start shortcut

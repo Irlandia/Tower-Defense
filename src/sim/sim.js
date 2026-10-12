@@ -9,6 +9,7 @@ import { rand, randInt } from './rng.js';
 
 const center = (tx, ty) => ({ x: tx * TILE + TILE / 2, y: ty * TILE + TILE / 2 });
 const key = (x, y) => x + ',' + y;
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
 // ---------- procedural map ----------
 
@@ -199,19 +200,28 @@ function newPlayer(opts, i = 0) {
   const dmg = { arrow: 1, cannon: 1, frost: 1, tesla: 1, fire: 1 };
   for (const f in k.dmg || {}) dmg[f] = (dmg[f] || 1) * k.dmg[f];
   const BR = opts.brawlRules || {};
-  if (BR.towerDmg) for (const f in dmg) dmg[f] *= BR.towerDmg;
+  const dmgAll = (k.dmgAll ?? 1) * (BR.towerDmg || 1);
+  for (const f in dmg) dmg[f] *= dmgAll;
   return {
     gold: (opts.brawlRules && opts.brawlRules.startGold) || CONFIG.startGold + (k.bonusGold ?? (i === 0 ? opts.bonusGold || 0 : 0)),
     mods: {
       dmg,
-      rate: 1, range: BR.towerRange || 1, chain: k.chain || 0, burn: k.burn || 1, wet: k.wet || 0, steam: k.steam || 1, gold: 1, interest: 0, crit: 0.1 + (k.crit || 0),
-      meteorCd: (k.meteorCd || opts.meteorCd || 1) * (BR.meteorCd || 1), wall: 1,
-      critMul: 2, aura: k.aura || 1, moveCd: k.moveCd || 1, novaCd: k.novaCd || 1, barrel: 1, lapDmg: 0, hunter: 0, thief: 0,
-      towerRate: { ...(k.rate || {}) }, towerRange: { ...(k.range || {}) }, splash: k.splash || 1, discount: { ...(k.discount || {}) },
+      rate: 1, range: BR.towerRange || 1, chain: k.chain || 0, wetChain: k.wetChain || 0, burn: k.burn || 1, wet: k.wet || 0,
+      steam: k.steam || 1, steamR: k.steamR || 1, gold: k.gold || 1, interest: 0, wage: k.wage || 0, sell: k.sell || 0,
+      crit: 0.1 + (k.crit || 0), critMul: 2 + (k.critMul || 0),
+      // cooldown multipliers: each ability reads its own, cdAll applies to all (keystone Focus, tree)
+      cdAll: k.cdAll ?? 1, meteorCd: (k.meteorCd || opts.meteorCd || 1) * (BR.meteorCd || 1), novaCd: k.novaCd || 1, wallCd: k.wallCd || 1,
+      goldrainCd: 1, overdriveCd: 1, quakeCd: 1,
+      wall: k.wall || 1, meteorDmg: k.meteorDmg || 1, novaFreeze: k.novaFreeze || 0, overSec: k.overSec || 0,
+      aura: k.aura || 1, moveCd: k.moveCd || 1, barrel: 1, lapDmg: 0, hunter: 0, thief: 0,
+      towerRate: { ...(k.rate || {}) }, towerRange: { ...(k.range || {}) }, multi: { ...(k.multi || {}) }, splash: k.splash || 1, discount: { ...(k.discount || {}) },
       cards: k.cards || opts.cards || 3,
     },
     picked: {}, // talent id -> times taken (cards have a max)
-    cds: { meteor: 0, nova: 0, wall: 0 },
+    // the loadout by slot (Q/W/E/R); null = empty slot. Casting is allowed only for abilities in it.
+    abilities: k.abilities || ['meteor', 'nova', 'wall'],
+    cds: { meteor: 0, nova: 0, wall: 0, goldrain: 0, overdrive: 0, quake: 0 },
+    overT: 0, // ticks left of Overdrive
     drafts: [], // pending talent choices (arrays of card ids); picking never pauses the game
     kills: 0,
   };
@@ -323,10 +333,13 @@ export function clearCost(o) {
   return OBSTACLES[o.kind];
 }
 export const hasWall = (s, p) => s.walls.some((w) => w.owner === p && w.hp > 0);
+const CD_KEY = { meteor: 'meteorCd', nova: 'novaCd', wall: 'wallCd', goldrain: 'goldrainCd', overdrive: 'overdriveCd', quake: 'quakeCd' };
 export function abilityMax(s, id, p = 0) {
   const m = player(s, p).mods;
-  return Math.round(ABILITIES[id].cd * (id === "meteor" ? m.meteorCd : id === "nova" ? m.novaCd : 1) * T);
+  return Math.round(ABILITIES[id].cd * (m[CD_KEY[id]] ?? 1) * m.cdAll * T);
 }
+// Only abilities in the player's loadout can be cast (talent tree decides the loadout).
+const hasAbility = (pl, id) => pl.abilities.includes(id);
 export function enemyAt(s, x, y, r = 14) {
   let best = null, bd = r;
   for (const e of s.enemies) {
@@ -354,14 +367,15 @@ export function auraCost(t, k) {
 
 export function towerStats(s, t) {
   const def = TOWERS[t.kind];
-  const m = player(s, t.owner).mods;
+  const pl = player(s, t.owner), m = pl.mods;
   if (def.support) return { range: def.range, dmg: 0, period: 0, buff: 0, aura: auraOf(s, t) };
   const lv = def.from ? 0 : t.level - 1;
   const aura = auraOf(s, t);
+  const od = pl.overT > 0 ? 1 + ABILITIES.overdrive.bonus : 1; // Overdrive: the owner's towers fire faster
   return {
     range: (def.range + lv * CONFIG.rangePerLevel) * m.range * (m.towerRange[family(t.kind)] || 1) * (s.mission && s.mission.night ? 0.7 : 1), // night: shorter sight
     dmg: def.dmg * (1 + 0.6 * lv) * (m.dmg[family(t.kind)] || 1) * (1 + aura.dmg),
-    period: Math.max(1, Math.round(T / (def.rate * m.rate * (m.towerRate[family(t.kind)] || 1) * (1 + aura.rate)))),
+    period: Math.max(1, Math.round(T / (def.rate * m.rate * (m.towerRate[family(t.kind)] || 1) * (1 + aura.rate) * od))),
     buff: aura.dmg + aura.rate,
     aura,
   };
@@ -374,7 +388,8 @@ export function isLocked(s, p, kind) {
 }
 // Build price for this player (talent tree discounts, e.g. cheaper totems).
 export function placeCost(s, p, kind) {
-  const d = (player(s, p).mods.discount || {})[kind] || 0;
+  const disc = player(s, p).mods.discount || {};
+  const d = Math.min(0.8, (disc[kind] || 0) + (disc.all || 0)); // "all" = every tower (tree: Дешева праця, Ковальня)
   return Math.round(TOWERS[kind].cost * (1 - d));
 }
 
@@ -391,8 +406,10 @@ export function canMove(s, t, tx, ty) {
   return !(t.moveCd > 0) && Math.hypot(tx - t.tx, ty - t.ty) <= CONFIG.moveRange && canPlace(s, tx, ty);
 }
 
-export function sellValue(t) {
-  return Math.floor(t.spent * CONFIG.sellRatio);
+// Share of the spent gold a player gets back when selling (tree: Торг, Ковальня).
+export const sellRatioOf = (s, p) => Math.min(1, CONFIG.sellRatio + player(s, p).mods.sell);
+export function sellValue(t, ratio = CONFIG.sellRatio) {
+  return Math.floor(t.spent * ratio);
 }
 
 // Campaign stars: 1 for the win, 1 for the mission's side objective, 1 for a brisk pace (early wave calls).
@@ -415,6 +432,7 @@ export function step(s, cmds = [], advance = true) {
   s.tick++;
   for (const pl of s.players) {
     for (const k in pl.cds) if (pl.cds[k] > 0) pl.cds[k]--;
+    if (pl.overT > 0) pl.overT--;
   }
 
   if (!s.queue.length && (s.wave < s.winWave || s.endless)) {
@@ -546,9 +564,10 @@ function applyCmd(s, c) {
       const i = s.towers.findIndex((k) => k.id === c.id && k.owner === pi);
       if (i < 0) return;
       const t = s.towers[i];
-      pl.gold += sellValue(t);
+      const gold = sellValue(t, sellRatioOf(s, pi));
+      pl.gold += gold;
       s.towers.splice(i, 1);
-      s.events.push({ type: 'sell', x: t.x, y: t.y, gold: sellValue(t), p: pi });
+      s.events.push({ type: 'sell', x: t.x, y: t.y, gold, p: pi });
       return;
     }
     case 'clear': {
@@ -601,9 +620,9 @@ function applyCmd(s, c) {
       return;
     }
     case 'meteor': {
-      if (pl.cds.meteor > 0) return;
+      if (!hasAbility(pl, 'meteor') || pl.cds.meteor > 0) return;
       pl.cds.meteor = abilityMax(s, 'meteor', pi);
-      const dmg = 40 + s.wave * 6;
+      const dmg = (40 + s.wave * 6) * pl.mods.meteorDmg;
       for (const e of s.enemies) {
         if (e.dead || Math.hypot(e.x - c.x, e.y - c.y) > ABILITIES.meteor.radius) continue;
         damage(s, e, dmg, pi, { pierce: true });
@@ -612,13 +631,47 @@ function applyCmd(s, c) {
       s.events.push({ type: 'meteor', x: c.x, y: c.y, r: ABILITIES.meteor.radius, p: pi });
       return;
     }
+    case 'goldrain': {
+      if (!hasAbility(pl, 'goldrain') || pl.cds.goldrain > 0) return;
+      pl.cds.goldrain = abilityMax(s, 'goldrain', pi);
+      const A = ABILITIES.goldrain;
+      for (let n = 0; n < A.coins; n++) {
+        const a = rand(s) * Math.PI * 2, r = rand(s) * A.radius;
+        s.coins.push({
+          id: s.nextId++, x: clamp(c.x + Math.cos(a) * r, 0, COLS * TILE - 1), y: clamp(c.y + Math.sin(a) * r, 0, ROWS * TILE - 1),
+          value: A.value + s.wave, life: COIN.life * T,
+        });
+      }
+      s.events.push({ type: 'goldrain', x: c.x, y: c.y, r: A.radius, p: pi });
+      return;
+    }
+    case 'overdrive': {
+      if (!hasAbility(pl, 'overdrive') || pl.cds.overdrive > 0) return;
+      pl.cds.overdrive = abilityMax(s, 'overdrive', pi);
+      pl.overT = Math.round((ABILITIES.overdrive.dur + pl.mods.overSec) * T);
+      s.events.push({ type: 'overdrive', p: pi });
+      return;
+    }
+    case 'quake': {
+      if (!hasAbility(pl, 'quake') || pl.cds.quake > 0) return;
+      pl.cds.quake = abilityMax(s, 'quake', pi);
+      const A = ABILITIES.quake, dmg = A.dmg + s.wave * A.dmgPerWave;
+      for (const e of s.enemies) {
+        if (e.dead || Math.hypot(e.x - c.x, e.y - c.y) > A.radius) continue;
+        damage(s, e, dmg, pi, { pierce: true });
+        e.slowT = Math.round(A.slow * T * (ENEMIES[e.type].lives ? 0.5 : 1));
+        e.slowF = A.slowF;
+      }
+      s.events.push({ type: 'quake', x: c.x, y: c.y, r: A.radius, p: pi });
+      return;
+    }
     case 'nova': {
-      if (pl.cds.nova > 0) return;
+      if (!hasAbility(pl, 'nova') || pl.cds.nova > 0) return;
       pl.cds.nova = abilityMax(s, 'nova', pi);
-      const a = ABILITIES.nova;
+      const a = ABILITIES.nova, freeze = a.freeze + pl.mods.novaFreeze;
       for (const e of s.enemies) {
         if (e.dead) continue;
-        e.slowT = Math.round(a.freeze * T * (ENEMIES[e.type].lives ? 0.5 : 1));
+        e.slowT = Math.round(freeze * T * (ENEMIES[e.type].lives ? 0.5 : 1));
         e.slowF = 0;
         e.wetT = Math.round(a.wet * T);
         e.burnT = 0;
@@ -627,7 +680,7 @@ function applyCmd(s, c) {
       return;
     }
     case 'wall': {
-      if (pl.cds.wall > 0 || !isRoad(s, c.tx, c.ty) || c.tx < 0) return;
+      if (!hasAbility(pl, 'wall') || pl.cds.wall > 0 || !isRoad(s, c.tx, c.ty) || c.tx < 0) return;
       if (hasWall(s, pi)) return; // one standing barricade per player
       if (s.walls.some((w) => w.tx === c.tx && w.ty === c.ty)) return;
       pl.cds.wall = abilityMax(s, 'wall', pi);
@@ -674,6 +727,7 @@ function startWave(s) {
       const gain = Math.min(25, Math.floor(pl.gold * pl.mods.interest));
       if (gain) { pl.gold += gain; s.events.push({ type: 'bonus', gold: gain, p: i }); }
     }
+    if (pl.mods.wage > 0) { pl.gold += pl.mods.wage; s.events.push({ type: 'bonus', gold: pl.mods.wage, p: i }); } // tree: Жалування
   }
   const lanes = s.plan;
   const over20 = Math.max(0, w - s.winWave);
@@ -869,7 +923,9 @@ function updateTower(s, t) {
 
   if (def.pulse) { pulse(s, t, def, st, targets); return; }
   if (def.chain !== undefined) { zap(s, t, target, st, def); return; }
-  for (const e of targets.slice(0, def.multi || 1)) {
+  // tree: extra targets per shot for a family (Подвійний залп)
+  const extra = player(s, t.owner).mods.multi[family(t.kind)] || 0;
+  for (const e of targets.slice(0, (def.multi || 1) + extra)) {
     s.projs.push({
       kind: def.proj, tower: t.kind, owner: t.owner, level: t.level, dmg: st.dmg, speed: def.speed,
       x: t.x, y: t.y - 14, px: t.x, py: t.y - 14, target: e.id, tx: e.x, ty: e.y, done: false,
@@ -899,7 +955,8 @@ function applyCold(e, def, m) {
 
 function zap(s, t, first, st, def) {
   const hit = [first];
-  let jumps = def.chain + player(s, t.owner).mods.chain + (first.wetT > 0 ? 1 : 0);
+  const om = player(s, t.owner).mods;
+  let jumps = def.chain + om.chain + (first.wetT > 0 ? 1 + om.wetChain : 0); // tree: Стихійний вир
   let cur = first;
   while (jumps-- > 0) {
     let next = null, nd = Infinity;
@@ -982,8 +1039,9 @@ function hit(s, p, target) {
         // Synergy: fire + wet = steam explosion.
         target.wetT = 0;
         const dmg = CONFIG.steamDmg * lvMul * m.steam;
+        const radius = CONFIG.steamRadius * m.steamR;
         for (const e of s.enemies) {
-          if (!e.dead && Math.hypot(e.x - target.x, e.y - target.y) <= CONFIG.steamRadius) damage(s, e, dmg, p.owner, { pierce: true, src });
+          if (!e.dead && Math.hypot(e.x - target.x, e.y - target.y) <= radius) damage(s, e, dmg, p.owner, { pierce: true, src });
         }
         s.events.push({ type: 'steam', x: target.x, y: target.y });
       } else {

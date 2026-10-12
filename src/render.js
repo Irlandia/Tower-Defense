@@ -9,6 +9,7 @@ import { say, SAY } from "./say.js";
 import { Critters } from './critters.js';
 
 export const PLAYER_COLORS = [C.yellow, C.cyan, C.lime, "#f4b6d2"];
+const ABILITY_COLOR = { meteor: C.orange, goldrain: C.yellow, quake: '#8a6248' };
 // where a spawn tile sits on the map edge: cave and "!" marker positions
 function edgeOf([x, y]) {
   if (x === 0) return "left";
@@ -174,6 +175,17 @@ export class Renderer {
           this.burst(e.x, e.y, 18, C.silver, 60, -30);
           this.text(e.x, e.y - 28, 'x2', C.cyan, 2);
           this.shake = Math.max(this.shake, 2.5);
+          break;
+        case 'goldrain':
+          // coins rain down over the circle, sparkling as they land
+          this.rings.push({ x: e.x, y: e.y, r: 4, max: e.r, c: C.yellow, life: 1 });
+          for (let i = 0; i < 12; i++) this.burst(e.x + Math.random() * e.r - e.r / 2, e.y + Math.random() * e.r / 2, 3, C.yellow, 30, -40);
+          break;
+        case 'quake':
+          this.rings.push({ x: e.x, y: e.y, r: 4, max: e.r, c: '#8a6248', life: 1 });
+          this.rings.push({ x: e.x, y: e.y, r: 2, max: e.r * 0.6, c: C.orange, life: 0.8 });
+          this.burst(e.x, e.y + 4, 30, '#8a6248', 70, -20);
+          this.shake = Math.max(this.shake, 5);
           break;
         case 'zap':
           this.zaps.push({ pts: e.pts, life: 0.18 });
@@ -350,7 +362,10 @@ export class Renderer {
       const ok = canPlace(s, tx, ty) && (s.players[ui.me || 0] || s.players[0]).gold >= TOWERS[ui.build].cost;
       this.rangeCircle(tx * TILE + 12, ty * TILE + 12, TOWERS[ui.build].range * (s.players[ui.me || 0] || s.players[0]).mods.range, ok);
     }
-    if (ui.ability === 'meteor' && ui.mouse) this.rangeCircle(ui.mouse.x, ui.mouse.y, ABILITIES.meteor.radius, true, C.orange);
+    // targeted abilities: the blast circle under the cursor (its colour says what it does)
+    if (ui.ability && ui.ability !== 'wall' && ui.mouse && ABILITIES[ui.ability].radius) {
+      this.rangeCircle(ui.mouse.x, ui.mouse.y, ABILITIES[ui.ability].radius, true, ABILITY_COLOR[ui.ability] || C.orange);
+    }
     if (ui.ability === 'wall' && ui.hover) {
       g.fillStyle = isRoad(s, ui.hover.tx, ui.hover.ty) ? 'rgba(255,205,117,0.35)' : 'rgba(177,62,83,0.4)';
       g.fillRect(ui.hover.tx * TILE, ui.hover.ty * TILE, TILE, TILE);
@@ -397,6 +412,7 @@ export class Renderer {
         const t = it.t;
         drawTower(g, t.kind, t.tx * TILE, t.ty * TILE, TOWERS[t.kind].support ? t.aura.dmg + t.aura.rate : TOWERS[t.kind].from ? 4 : t.level, t.aim, s.tick, s.tick - t.fired < 2);
         if (s.players.length > 1) this.ownerMark(t.tx * TILE, t.ty * TILE, t.owner);
+        if (s.players[t.owner] && s.players[t.owner].overT > 0 && !TOWERS[t.kind].support) this.buffMark(t.tx * TILE, t.ty * TILE, s.tick); // Overdrive sparks
         this.auraMarks(s, t);
         if (t.stunT > 0) this.stunMark(t, s.tick);
         if ('t' + t.id === ui.selected || hov(t.tx, t.ty)) this.outline(t.tx * TILE, t.ty * TILE);
