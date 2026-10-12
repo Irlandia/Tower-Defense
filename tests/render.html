@@ -14,7 +14,7 @@ const out = [];
 let failed = 0;
 const r = new Renderer(document.getElementById('c'));
 for (const mode of ["classic", "circle"]) {
-  for (const players of [1, 2]) {
+  for (const players of [1, 2, 4]) {
    for (const season of ["spring", "summer", "autumn", "winter"]) {
     for (let me = 0; me < players; me++) {
       const name = `${mode} players=${players} me=${me} ${season}`;

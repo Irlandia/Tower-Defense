@@ -1,21 +1,31 @@
 // Peer-to-peer co-op over WebRTC (PeerJS, free public signaling server — no own backend needed).
-// Host-authoritative lockstep: the host runs the clock and broadcasts each tick's command list;
-// the guest sends its commands to the host and replays the host's ticks with the same seed.
+// Star topology for up to 4 players: the host holds one connection per guest (slots 1..3), runs the clock
+// and broadcasts each tick's command list; guests send their commands to the host and replay its ticks.
 const PREFIX = 'pixeltd-v1-';
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+export const MAX_GUESTS = 3;
 
 export class Net {
   constructor() {
     this.role = 'solo'; // 'solo' | 'host' | 'guest'
     this.peer = null;
-    this.conn = null;
+    this.conn = null; // guest: connection to the host
+    this.slots = {}; // host: slot -> { conn, lastMsg }
     this.inbox = [];
-    this.onMessage = null;
+    this.onMessage = null; // (msg, slot) — slot is 0 for messages from the host
     this.onStatus = null;
+    this.onJoin = null; // host: (slot)
+    this.onLeave = null; // host: (slot) / guest: (0)
   }
 
   get online() { return this.role !== 'solo'; }
-  get connected() { return !!(this.conn && this.conn.open); }
+  get connected() {
+    if (this.role === 'host') return this.guestSlots().length > 0;
+    return !!(this.conn && this.conn.open);
+  }
+  guestSlots() {
+    return Object.keys(this.slots).map(Number).filter((s) => this.slots[s].conn.open).sort();
+  }
 
   status(text, kind = '') { if (this.onStatus) this.onStatus(text, kind); }
 
@@ -25,11 +35,16 @@ export class Net {
       const code = Array.from({ length: 5 }, () => ALPHABET[Math.floor(Math.random() * ALPHABET.length)]).join('');
       this.role = 'host';
       this.peer = new window.Peer(PREFIX + code);
-      this.peer.on('open', () => { this.status('Чекаємо друга…'); resolve(code); });
+      this.peer.on('open', () => { this.status('Чекаємо гравців…'); resolve(code); });
       this.peer.on('error', (e) => { this.status('Помилка: ' + e.type, 'bad'); reject(e); });
       this.peer.on('connection', (conn) => {
-        if (this.connected) { conn.close(); return; } // only one partner
-        this.attach(conn);
+        let slot = 0;
+        for (let s = 1; s <= MAX_GUESTS; s++) if (!this.slots[s]) { slot = s; break; }
+        if (!slot) { conn.on('open', () => { conn.send({ t: 'full' }); setTimeout(() => conn.close(), 300); }); return; }
+        this.slots[slot] = { conn, lastMsg: performance.now() };
+        conn.on('open', () => { if (this.onJoin) this.onJoin(slot); });
+        conn.on('data', (m) => { if (this.slots[slot]) this.slots[slot].lastMsg = performance.now(); if (this.onMessage) this.onMessage(m, slot); });
+        conn.on('close', () => this.drop(slot));
       });
     });
   }
@@ -45,25 +60,39 @@ export class Net {
       });
       this.peer.on('open', () => {
         const conn = this.peer.connect(PREFIX + code.trim().toUpperCase(), { reliable: true });
-        this.attach(conn);
-        conn.on('open', () => resolve());
+        this.conn = conn;
+        conn.on('open', () => { this.status('Підключено до кімнати', 'good'); resolve(); });
+        conn.on('data', (m) => { if (this.onMessage) this.onMessage(m, 0); });
+        conn.on('close', () => { if (this.onLeave) this.onLeave(0); });
       });
     });
   }
 
-  attach(conn) {
-    this.conn = conn;
-    conn.on('open', () => this.status('Друг підключився', 'good'));
-    conn.on('data', (m) => { if (this.onMessage) this.onMessage(m); });
-    conn.on('close', () => this.status('Друг відключився', 'bad'));
+  // host: forget a guest slot (closed, timed out or kicked)
+  drop(slot) {
+    const s = this.slots[slot];
+    if (!s) return;
+    delete this.slots[slot];
+    try { s.conn.close(); } catch { /* already closed */ }
+    if (this.onLeave) this.onLeave(slot);
   }
 
+  // host: to every guest; guest: to the host
   send(m) {
-    if (this.connected) this.conn.send(m);
+    if (this.role === 'host') { for (const s of this.guestSlots()) this.slots[s].conn.send(m); }
+    else if (this.conn && this.conn.open) this.conn.send(m);
+  }
+  sendTo(slot, m) {
+    const s = this.slots[slot];
+    if (s && s.conn.open) s.conn.send(m);
+  }
+  // host: to every guest except one (relaying)
+  sendExcept(slot, m) {
+    for (const s of this.guestSlots()) if (s !== slot) this.slots[s].conn.send(m);
   }
 
   leave() {
     if (this.peer) this.peer.destroy();
-    this.peer = null; this.conn = null; this.role = 'solo'; this.inbox = [];
+    this.peer = null; this.conn = null; this.slots = {}; this.role = 'solo'; this.inbox = [];
   }
 }

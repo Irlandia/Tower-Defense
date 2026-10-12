@@ -112,11 +112,12 @@ export function perks(m) {
   return p;
 }
 
-// partnerPerks: the guest's tree (sent in the co-op handshake); each player plays with their own tree.
-export function gameOpts(m, diffId, mode = 'classic', players = 1, season = 'random', partnerPerks = null) {
+// guestsPerks: the guests' trees (sent in the co-op handshake), in seat order; each player plays with their own tree.
+export function gameOpts(m, diffId, mode = "classic", players = 1, season = "random", guestsPerks = []) {
   const d = DIFFS.find((k) => k.id === diffId) || DIFFS[0];
   const mine = perks(m);
-  const all = players > 1 ? [mine, partnerPerks || perks(empty())] : [mine];
+  const all = [mine];
+  for (let i = 1; i < players; i++) all.push(guestsPerks[i - 1] || perks(empty()));
   return {
     hpMul: d.hpMul,
     perks: all,

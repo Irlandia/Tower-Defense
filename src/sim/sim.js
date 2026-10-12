@@ -102,41 +102,47 @@ function genClassic(s) {
   return { lanes: lanes.map((p) => buildLane(p)), tiles, water: genPonds(s, tiles), castle: [COLS - 1, yc], spawns };
 }
 
-// Circle: an entry road from the left joins a closed ring with random inward dents on top/bottom/right.
-// With two players a second entry comes from the right edge — one spawn next to each player.
-function genCircle(s, two = false) {
+// Circle: a closed ring with random inward dents; one entry road per player, each next to "their" side:
+// player 1 from the left, 2 from the right, 3 from the top, 4 from the bottom. Sides with an entry stay straight.
+function genCircle(s, players = 1) {
+  const n = Math.max(1, Math.min(4, players));
   const x0 = 3 + randInt(s, 2), x1 = COLS - 4 - randInt(s, 2);
   const y0 = 1 + randInt(s, 2), y1 = ROWS - 2 - randInt(s, 2);
   const ym = Math.floor((y0 + y1) / 2) + randInt(s, 3) - 1;
+  const ymR = Math.floor((y0 + y1) / 2) + randInt(s, 3) - 1;
+  const xt = Math.floor((x0 + x1) / 2) + randInt(s, 3) - 1;
+  const xb = Math.floor((x0 + x1) / 2) + randInt(s, 5) - 2;
   const dent = (a, b) => {
     // returns [from, to] inside (a, b) with room for corners, or null
     if (b - a < 9 || rand(s) < 0.35) return null;
     const p = a + 2 + randInt(s, Math.floor((b - a) / 2) - 2);
     return [p, Math.min(b - 2, p + 3 + randInt(s, 4))];
   };
+  const join = {}; // side -> index of its join vertex in the loop
   const loop = [[x0, ym], [x0, y0]];
-  const dTop = dent(x0, x1), depthT = 2 + randInt(s, 2);
-  if (dTop) loop.push([dTop[0], y0], [dTop[0], y0 + depthT], [dTop[1], y0 + depthT], [dTop[1], y0]);
+  if (n >= 3) { join.top = loop.length; loop.push([xt, y0]); } else {
+    const dTop = dent(x0, x1), depthT = 2 + randInt(s, 2);
+    if (dTop) loop.push([dTop[0], y0], [dTop[0], y0 + depthT], [dTop[1], y0 + depthT], [dTop[1], y0]);
+  }
   loop.push([x1, y0]);
-  // the right side keeps a straight stretch for the second entry
-  const ymR = Math.floor((y0 + y1) / 2) + randInt(s, 3) - 1;
-  const dRight = two ? null : dent(y0, y1), depthR = 2 + randInt(s, 3);
-  if (dRight) loop.push([x1, dRight[0]], [x1 - depthR, dRight[0]], [x1 - depthR, dRight[1]], [x1, dRight[1]]);
-  const joinR = loop.length;
-  if (two) loop.push([x1, ymR]);
+  if (n >= 2) { join.right = loop.length; loop.push([x1, ymR]); } else {
+    const dRight = dent(y0, y1), depthR = 2 + randInt(s, 3);
+    if (dRight) loop.push([x1, dRight[0]], [x1 - depthR, dRight[0]], [x1 - depthR, dRight[1]], [x1, dRight[1]]);
+  }
   loop.push([x1, y1]);
-  const dBot = dent(x0, x1), depthB = 2 + randInt(s, 2);
-  if (dBot) loop.push([dBot[1], y1], [dBot[1], y1 - depthB], [dBot[0], y1 - depthB], [dBot[0], y1]);
+  if (n >= 4) { join.bottom = loop.length; loop.push([xb, y1]); } else {
+    const dBot = dent(x0, x1), depthB = 2 + randInt(s, 2);
+    if (dBot) loop.push([dBot[1], y1], [dBot[1], y1 - depthB], [dBot[0], y1 - depthB], [dBot[0], y1]);
+  }
   loop.push([x0, y1], [x0, ym]);
+  const ring = loop.slice(0, -1);
+  // same ring, same direction, entered elsewhere: rotate the loop to start at that side's join point
+  const entry = (from, j) => buildLane([from, ...ring.slice(j), ...ring.slice(0, j), ring[j]], 1);
   const lanes = [buildLane([[-1, ym], ...loop], 1)];
   const spawns = [[0, ym]];
-  if (two) {
-    // same ring, same direction, entered from the right: rotate the loop to start at the join point
-    const ring = loop.slice(0, -1);
-    const rotated = [...ring.slice(joinR), ...ring.slice(0, joinR), [x1, ymR]];
-    lanes.push(buildLane([[COLS, ymR], ...rotated], 1));
-    spawns.push([COLS - 1, ymR]);
-  }
+  if (n >= 2) { lanes.push(entry([COLS, ymR], join.right)); spawns.push([COLS - 1, ymR]); }
+  if (n >= 3) { lanes.push(entry([xt, -1], join.top)); spawns.push([xt, 0]); }
+  if (n >= 4) { lanes.push(entry([xb, ROWS], join.bottom)); spawns.push([xb, ROWS - 1]); }
   const tiles = new Set();
   for (const L of lanes) addTiles(L.points, tiles);
   return { lanes, tiles, water: genPonds(s, tiles), castle: null, spawns, ring: [x0, y0, x1, y1] };
@@ -199,7 +205,7 @@ export function createGame(seed, opts = {}) {
     lapSpeedMul: 1,
     tick: 0,
     lives: CONFIG.startLives + (o.bonusLives || 0),
-    limit: o.mode === 'circle' ? MODES.circle.maxAlive + 5 * Math.round(((o.bonusLives || 0) / 3)) : 0,
+    limit: o.mode === 'circle' ? MODES.circle.maxAlive + 15 * (o.players - 1) + 5 * Math.round((o.bonusLives || 0) / 3) : 0, // more players, bigger waves, more room
     wave: 0,
     countdown: CONFIG.firstWaveDelay * T,
     map: null,
@@ -221,7 +227,7 @@ export function createGame(seed, opts = {}) {
   };
   // season: chosen in the menu, or random (from the seed, so co-op peers agree)
   s.season = SEASONS[o.season] ? o.season : SEASON_ORDER[randInt(s, SEASON_ORDER.length)];
-  s.map = o.mode === "circle" ? genCircle(s, o.players > 1) : genClassic(s);
+  s.map = o.mode === "circle" ? genCircle(s, o.players) : genClassic(s);
   s.plan = planLanes(s);
 
   const nearSpawn = (tx, ty) => s.map.spawns.some(([x, y]) => Math.abs(tx - x) <= 1 && Math.abs(ty - y) <= 1);
@@ -595,10 +601,10 @@ function startWave(s) {
   for (const b of s.barrels) b.ready = true;
   // co-op prank: pickpockets take a cut of their partner's gold at every wave start
   for (let i = 0; i < s.players.length; i++) {
-    const pl = s.players[i], other = s.players[1 - i];
+    const pl = s.players[i], other = s.players[(i + 1) % s.players.length]; // picks the next player's pocket
     if (!pl.mods.thief || !other) continue;
     const cut = Math.min(20, Math.floor(other.gold * pl.mods.thief));
-    if (cut > 0) { other.gold -= cut; pl.gold += cut; s.events.push({ type: "steal", p: i, from: 1 - i, gold: cut }); }
+    if (cut > 0) { other.gold -= cut; pl.gold += cut; s.events.push({ type: "steal", p: i, from: s.players.indexOf(other), gold: cut }); }
   }
   for (let i = 0; i < s.players.length; i++) {
     const pl = s.players[i];
@@ -612,7 +618,7 @@ function startWave(s) {
   const hpMul = (1 + 0.22 * (w - 1) + 0.017 * (w - 1) * (w - 1)) * s.opts.hpMul * MODES.circle.endlessHpGrowth ** over20;
   const pool = Object.keys(UNLOCKS).filter((k) => UNLOCKS[k] <= w);
   // co-op: a bit more enemies so two players still have to work
-  const budget = (8 + w * 6) * (s.players.length > 1 ? 1.5 : 1);
+  const budget = (8 + w * 6) * (1 + 0.5 * (s.players.length - 1)); // +50% per extra player
   // Every planned lane gets its own stream starting at the same moment (two entries = two
   // simultaneous attacks, not alternating packs); the wave budget is split between them.
   for (const lane of lanes) {

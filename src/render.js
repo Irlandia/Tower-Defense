@@ -7,7 +7,13 @@ import {
 } from './sprites.js';
 import { Critters } from './critters.js';
 
-export const PLAYER_COLORS = [C.yellow, C.cyan];
+export const PLAYER_COLORS = [C.yellow, C.cyan, C.lime, "#f4b6d2"];
+// where a spawn tile sits on the map edge: cave and "!" marker positions
+function edgeOf([x, y]) {
+  if (x === 0) return "left";
+  if (x === COLS - 1) return "right";
+  return y === 0 ? "top" : "bottom";
+}
 // Ground palettes per season.
 const GROUND = {
   spring: { base: "#5fcf6a", patch: "#4cbb5c", tuft: ["#3a9e58", "#c7f59a"], bloom: ["#f4b6d2", "#f4f4f4", "#ffcd75", "#c9a8ff"], flowers: 160, rim: "#d9b382" },
@@ -122,7 +128,13 @@ export class Renderer {
         for (let i = 0; i < 6; i++) { g.fillStyle = rnd() < 0.6 ? C.white : "#c9d6de"; g.fillRect(tx * TILE + Math.floor(rnd() * 22), ty * TILE + Math.floor(rnd() * 22), 2, 1); }
       }
     }
-    for (const [x, y] of map.spawns) drawCave(g, x === 0 ? 0 : COLS * TILE - 16, y * TILE);
+    for (const sp of map.spawns) {
+      const [x, y] = sp, e = edgeOf(sp);
+      if (e === "left") drawCave(g, 0, y * TILE);
+      else if (e === "right") drawCave(g, COLS * TILE - 16, y * TILE);
+      else if (e === "top") drawCave(g, x * TILE + 6, -12);
+      else drawCave(g, x * TILE + 6, ROWS * TILE - 10);
+    }
     return cv;
   }
 
@@ -486,8 +498,11 @@ export class Renderer {
           g.fillRect(Math.round(p.x - Math.cos(a) * k - Math.sin(a) * i), Math.round(p.y - Math.sin(a) * k + Math.cos(a) * i), 2, 2);
         }
       }
-      const [sx, sy] = s.map.spawns[lane] || s.map.spawns[0];
-      if ((s.tick >> 3) % 2) drawNum(g, "!", sx === 0 ? 16 : COLS * TILE - 26, sy * TILE + 2, C.yellow, 3, C.ink);
+      const sp = s.map.spawns[lane] || s.map.spawns[0];
+      const e = edgeOf(sp);
+      const mx = e === "left" ? 16 : e === "right" ? COLS * TILE - 26 : sp[0] * TILE + 26;
+      const my = e === "top" ? 4 : e === "bottom" ? ROWS * TILE - 20 : sp[1] * TILE + 2;
+      if ((s.tick >> 3) % 2) drawNum(g, "!", mx, my, C.yellow, 3, C.ink);
     }
   }
 

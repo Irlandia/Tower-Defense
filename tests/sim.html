@@ -352,6 +352,25 @@ try {
   check("tree: bonus gold per player", pk.players[0].gold === 160 + 100 - 50 && pk.players[1].gold === 110);
   check("tree: totem discount", placeCost(pk, 0, "totem") === 68 && placeCost(pk, 1, "totem") === 90);
 
+  // up to 4 players: circle gets an entry per player (left, right, top, bottom), all closed loops
+  let fourOk = true, fourMsg = "";
+  for (const np of [3, 4]) for (let seed = 1; seed <= 60; seed++) {
+    const c4 = createGame(seed, { mode: "circle", players: np });
+    if (c4.map.lanes.length !== np || c4.players.length !== np) { fourOk = false; fourMsg = `n=${np} seed ${seed}`; continue; }
+    for (let l = 0; l < np; l++) {
+      const L = c4.map.lanes[l];
+      const a = posAt(c4.map, l, L.loopStart + 3), b = posAt(c4.map, l, L.loopStart + L.loopLen + 3);
+      if (Math.abs(a.x - b.x) > 0.01 || Math.abs(a.y - b.y) > 0.01) { fourOk = false; fourMsg = `n=${np} seed ${seed} lane ${l}`; }
+    }
+  }
+  check("4 players: circle has one closed entry per player", fourOk, fourMsg);
+  const q4 = createGame(8, { mode: "circle", players: 4 });
+  step(q4, [{ type: "nextWave", p: 0 }]);
+  check("4 players: a wave comes from all four entries", new Set(q4.queue.map((q) => q.lane)).size === 4);
+  const f4 = free(q4, 4);
+  step(q4, f4.map(([tx, ty], i) => ({ type: "place", kind: "arrow", tx, ty, p: i })));
+  check("4 players: each builds from own gold", q4.towers.length === 4 && q4.players.every((q) => q.gold === 110) && new Set(q4.towers.map((t) => t.owner)).size === 4);
+
   // co-op: separate wallets, talents and ownership
   const co = createGame(9, { players: 2 });
   const [c1, c2] = free(co, 2);

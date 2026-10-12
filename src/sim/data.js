@@ -6,7 +6,7 @@ export const COLS = 26;
 export const ROWS = 14;
 export const TICK_RATE = 20;
 // Bump on every change to sim/data: co-op peers refuse to play with a different version.
-export const VERSION = 26;
+export const VERSION = 27;
 
 export const CONFIG = {
   startGold: 160,
@@ -153,8 +153,8 @@ export const CARDS = [
   { id: 'winter', name: 'Вічна зима', desc: 'Крижана нова: −30% перезарядки', rarity: 'rare', max: 2, apply: (s, p) => { p.mods.novaCd *= 0.7; } },
   { id: 'mason', name: 'Каменяр', desc: 'Твоя барикада вдвічі міцніша', rarity: 'rare', max: 1, apply: (s, p) => { p.mods.wall *= 2; } },
   // --- co-op only, just for fun ---
-  { id: "roulette", name: "Рулетка дружби", desc: "Монетка: 250 золота отримаєш або ти, або друг", rarity: "common", max: 2, coop: true,
-    apply: (s, p) => { const i = rand(s) < 0.5 ? s.players.indexOf(p) : s.players.findIndex((q) => q !== p); s.players[i].gold += 250; s.events.push({ type: "roulette", p: i, by: s.players.indexOf(p) }); } },
+  { id: "roulette", name: "Рулетка дружби", desc: "Рулетка: 250 золота отримає випадковий гравець — може, й ти", rarity: "common", max: 2, coop: true,
+    apply: (s, p) => { const i = Math.floor(rand(s) * s.players.length); s.players[i].gold += 250; s.events.push({ type: "roulette", p: i, by: s.players.indexOf(p) }); } },
   { id: "thief", name: "Кишеньковий злодій", desc: "Щохвилі тягнеш у друга 4% його золота (до 20). Хехе.", rarity: "rare", max: 1, coop: true,
     apply: (s, p) => { p.mods.thief += 0.04; } },
   // --- classic only: castle, lives, barrels ---

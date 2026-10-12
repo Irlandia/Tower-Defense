@@ -215,3 +215,5 @@ body.side #ui { align-self: center; }
 .tree-node.owned { background: #2f4d3a; }
 .tree-node.owned b { color: #a7f070; }
 .tree-node.blocked { opacity: .55; }
+
+#roster { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 15px; padding: 6px 8px; background: rgba(26,28,44,.5); }

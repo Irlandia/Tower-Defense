@@ -29,9 +29,8 @@ let mode = "classic";
 let season = "random";
 let treeBranch = "general";
 let nick = '';
-let partnerNick = '';
-let partnerPerks = null;
-const ui = { build: null, selected: null, hover: null, mouse: null, ability: null, hoverEnemy: null, partner: null, me: 0, moving: null };
+let myIdx = 0; // guest: player index assigned by the host at start
+const ui = { build: null, selected: null, hover: null, mouse: null, ability: null, hoverEnemy: null, partners: {}, me: 0, moving: null };
 let speed = 1;
 let paused = false;
 let draftPause = false; // solo only: the talent window pauses the game
@@ -41,7 +40,7 @@ const collected = new Set();
 let cmdLog = [];
 let game = null; // { seed, opts }
 
-const me = () => (net.role === 'guest' ? 1 : 0);
+const me = () => (net.role === "guest" ? myIdx : 0);
 const P = () => state.players[me()] || state.players[0];
 
 // ---------- game lifecycle ----------
@@ -68,13 +67,19 @@ function startGame(seed, opts) {
 
 function newRun() {
   const seed = (Math.random() * 2 ** 32) >>> 0;
-  const opts = Meta.gameOpts(meta, diff, mode, net.connected ? 2 : 1, season, partnerPerks);
-  if (net.role === 'host') net.send({ t: 'start', seed, opts, v: VERSION });
+  // seats: host = player 0, connected guests (by slot) = players 1..3; each plays with their own talent tree
+  const guests = net.role === "host" ? roster.filter((r) => r.slot > 0 && net.slots[r.slot]).sort((a, b) => a.slot - b.slot) : [];
+  for (const k in slotIdx) delete slotIdx[k];
+  guests.forEach((g, i) => { g.idx = i + 1; slotIdx[g.slot] = i + 1; });
+  const opts = Meta.gameOpts(meta, diff, mode, 1 + guests.length, season, guests.map((g) => g.perks));
+  for (const g of guests) net.sendTo(g.slot, { t: "start", seed, opts, v: VERSION, idx: g.idx });
+  if (net.role === "host") broadcastRoster();
   startGame(seed, opts);
 }
 
 // Guest replays the host's whole command log to catch up after (re)connecting.
 function resync(m) {
+  myIdx = m.idx ?? myIdx;
   startGame(m.seed, m.opts);
   for (const [tick, adv, cmds] of m.log) {
     while (state.tick < tick) step(state);
@@ -89,72 +94,116 @@ function send(cmd) {
   else pending.push({ ...cmd, p: 0 });
 }
 
-// ---------- network ----------
+// ---------- network (star: host + up to 3 guests) ----------
+// roster: who is in the room. Host keeps it per guest slot and broadcasts it; player index is assigned at start.
 let lastMsgAt = 0;
-let partnerAlive = false;
+let hostAlive = false;
+let roster = []; // [{ slot, nick, perks, idx }] — slot 0 is the host
+const slotIdx = {}; // host: guest slot -> player index in the running game
+const nickOf = (idx) => (roster.find((r) => r.idx === idx) || {}).nick || (idx === me() ? nick : 'Гравець ' + (idx + 1));
+const others = () => roster.filter((r) => r.idx !== me()).map((r) => r.nick || 'Гравець').join(', ');
+
 function netStatus(text, kind = '') {
   $('netStatus').textContent = text;
   $('netStatus').className = kind;
   $('lobbyStatus').textContent = text;
 }
-// Different code on the two machines would silently desync, so refuse to play.
+// Different code on two machines would silently desync, so refuse to play.
 function mismatch(v) {
-  netStatus(`Різні версії гри (у тебе ${VERSION}, у друга ${v === undefined ? 'стара' : v}). Обом оновити сторінку: Ctrl+F5`, 'bad');
-  if (net.role === 'guest') net.leave();
-  if (running && net.role === 'guest') openMenu();
+  netStatus(`Різні версії гри (у тебе ${VERSION}, у іншого ${v === undefined ? 'стара' : v}). Оновіть сторінку: Ctrl+F5`, 'bad');
+  if (net.role === 'guest') { net.leave(); if (running) openMenu(); }
 }
-// Partner gone (closed tab, lost network): guest goes back to the lobby, host keeps playing with the room open.
-function partnerLost() {
-  if (!partnerAlive) return;
-  partnerAlive = false;
-  ui.partner = null;
-  if (net.role === 'guest') {
+function myEntry() { return { slot: 0, nick, perks: Meta.perks(meta), idx: 0 }; }
+function broadcastRoster() {
+  if (net.role !== 'host') return;
+  roster = [myEntry(), ...roster.filter((r) => r.slot > 0)];
+  net.send({ t: 'roster', list: roster.map(({ slot, nick: n, idx }) => ({ slot, nick: n, idx })) });
+  renderRoster();
+}
+function renderRoster() {
+  const el = $('roster');
+  if (!el) return;
+  el.classList.toggle('hidden', !net.online);
+  el.innerHTML = roster.map((r) => `<span style="color:${PLAYER_COLORS[r.idx ?? r.slot] || '#fff'}">■ ${esc(r.nick || 'Гравець')}${r.slot === 0 ? ' (хост)' : ''}</span>`).join('');
+}
+
+// host: a guest connected — greet it, wait for its hello (nick, version, talent tree)
+net.onJoin = (slot) => {
+  net.sendTo(slot, { t: 'welcome', slot, v: VERSION });
+  netStatus(`Гравець підключився (${net.guestSlots().length + 1}/4)`, 'good');
+};
+// host: a guest left / guest: the host left
+net.onLeave = (slot) => {
+  if (net.role === 'guest' || slot === 0) {
+    hostAlive = false;
+    const wasRunning = running;
     net.leave();
-    if (running) openMenu();
+    roster = [];
+    if (wasRunning) openMenu();
     netStatus('Хост відключився — гру завершено', 'bad');
-  } else if (net.role === 'host') {
-    if (net.conn) { net.conn.close(); net.conn = null; } // free the slot so the partner can reconnect
-    netStatus('Друг відключився. Кімната відкрита — він може повернутися', 'bad');
-    if (running) banner('Друг відключився', 'boss');
+    return;
   }
-}
+  const r = roster.find((k) => k.slot === slot);
+  roster = roster.filter((k) => k.slot !== slot);
+  if (r && r.idx !== undefined) delete ui.partners[r.idx];
+  netStatus(`${(r && r.nick) || 'Гравець'} відключився. Кімната відкрита`, 'bad');
+  if (running && r) banner(`${r.nick || 'Гравець'} відключився`, 'boss'); // their towers keep shooting
+  broadcastRoster();
+};
 net.onStatus = (text, kind) => {
   netStatus(text, kind);
-  if (kind === 'good') { partnerAlive = true; lastMsgAt = performance.now(); net.send({ t: "hello", nick, v: VERSION, perks: Meta.perks(meta) }); }
-  if (kind === 'bad' && net.conn) partnerLost();
+  if (kind === 'good' && net.role === 'guest') { hostAlive = true; lastMsgAt = performance.now(); net.send({ t: 'hello', nick, v: VERSION, perks: Meta.perks(meta) }); }
 };
-net.onMessage = (m) => {
-  lastMsgAt = performance.now();
-  partnerAlive = true;
+net.onMessage = (m, slot) => {
+  if (net.role === 'guest') { lastMsgAt = performance.now(); hostAlive = true; }
   switch (m.t) {
-    case 'cmd': if (net.role === 'host') pending.push({ ...m.cmd, p: 1 }); break;
-    case 'start': if (m.v === VERSION) startGame(m.seed, m.opts); else mismatch(m.v); break;
+    // ---- host side ----
+    case 'hello': {
+      if (net.role !== 'host') break;
+      if (m.v !== VERSION) { net.sendTo(slot, { t: 'mismatch', v: VERSION }); setTimeout(() => net.drop(slot), 300); break; }
+      const prev = roster.find((r) => r.slot === slot);
+      const entry = { slot, nick: m.nick || 'Гравець', perks: m.perks || null, idx: prev ? prev.idx : undefined };
+      roster = [...roster.filter((r) => r.slot !== slot), entry];
+      // a returning player gets their old seat back in the running game
+      if (running && !state.over && slotIdx[slot] !== undefined && slotIdx[slot] < state.players.length) {
+        entry.idx = slotIdx[slot];
+        net.sendTo(slot, { t: 'resync', ...game, log: cmdLog, tick: state.tick, v: VERSION, idx: entry.idx });
+        netStatus(`${entry.nick} повернувся`, 'good');
+      }
+      broadcastRoster();
+      break;
+    }
+    case 'cmd': if (net.role === 'host' && slotIdx[slot] !== undefined) pending.push({ ...m.cmd, p: slotIdx[slot] }); break;
+    // ---- both ----
+    case 'cursor':
+      if (net.role === 'host') {
+        const idx = slotIdx[slot];
+        if (idx === undefined) break;
+        ui.partners[idx] = { x: m.x, y: m.y, at: performance.now() };
+        net.sendExcept(slot, { t: 'cursor', idx, x: m.x, y: m.y });
+      } else if (m.idx !== me()) ui.partners[m.idx] = { x: m.x, y: m.y, at: performance.now() };
+      break;
+    // ---- guest side ----
+    case 'welcome': if (m.v !== VERSION) mismatch(m.v); break;
+    case 'mismatch': mismatch(m.v); break;
+    case 'full': netStatus('Кімната заповнена (4/4)', 'bad'); net.leave(); break;
+    case 'roster': roster = m.list; renderRoster(); break;
+    case 'start': if (m.v === VERSION) { myIdx = m.idx; startGame(m.seed, m.opts); } else mismatch(m.v); break;
     case 'resync': if (m.v === VERSION) resync(m); else mismatch(m.v); break;
     case 'tick': case 'cmds': net.inbox.push(m); break;
-    case 'cursor': ui.partner = { x: m.x, y: m.y, at: performance.now() }; break;
-    case "lobby": if (net.role === "guest") { openMenu(true); netStatus("Хост у меню — чекаємо нову гру", "good"); } break;
-    // explicit end-of-game from the host: the guest must see it even if its replay lagged or missed the event
-    case "end": if (net.role === "guest" && !endShown) showEnd(m.won); break;
-    case "hello":
-      partnerNick = m.nick || "Друг";
-      partnerPerks = m.perks || null; // the partner plays with their own talent tree
-      if (m.v !== VERSION) { mismatch(m.v); break; }
-      if (net.role === 'host') {
-        // partner joined: start together, or bring a reconnecting partner up to date without restarting
-        if (running && state.players.length > 1 && !state.over) {
-          net.send({ t: 'resync', ...game, log: cmdLog, tick: state.tick, v: VERSION });
-          netStatus('Друг повернувся', 'good');
-        } else newRun();
-      }
-      break;
+    case 'lobby': if (net.role === 'guest') { openMenu(true); netStatus('Хост у меню — чекаємо нову гру', 'good'); } break;
+    // explicit end-of-game from the host: guests must see it even if their replay lagged or missed the event
+    case 'end': if (net.role === 'guest' && !endShown) showEnd(m.won); break;
   }
 };
-// heartbeat both ways + timeout (PeerJS 'close' is not always fired, e.g. when a tab is killed).
+// heartbeat + timeouts (PeerJS 'close' is not always fired, e.g. when a tab is killed).
 // Driven by the background ticker (once a second) so it keeps beating in hidden tabs.
 function heartbeat() {
-  if (!net.online || !net.conn) return;
+  if (!net.online) return;
   net.send({ t: 'ping' });
-  if (partnerAlive && performance.now() - lastMsgAt > 5000) partnerLost();
+  const now = performance.now();
+  if (net.role === 'guest' && hostAlive && now - lastMsgAt > 5000) net.onLeave(0);
+  if (net.role === 'host') for (const s of net.guestSlots()) if (now - net.slots[s].lastMsg > 5000) net.drop(s);
 }
 
 // ---------- layout: as big as the window allows ----------
@@ -217,7 +266,7 @@ canvas.addEventListener('mousemove', (ev) => {
   }
   if (net.connected && performance.now() - lastCursor > 80) {
     lastCursor = performance.now();
-    net.send({ t: 'cursor', x: Math.round(m.x), y: Math.round(m.y) });
+    net.send({ t: "cursor", idx: me(), x: Math.round(m.x), y: Math.round(m.y) });
   }
 });
 canvas.addEventListener('mouseleave', () => { ui.hover = null; ui.mouse = null; });
@@ -407,7 +456,7 @@ function updatePop() {
         : `<div class="pop-stats"><span>⚔ ${Math.round(st.dmg)}</span><span>◎ ${Math.round(st.range)}</span><span>⏱ ${(TICK_RATE / st.period).toFixed(1)}/с</span>${st.buff ? `<span class="buff">⚡+${Math.round(st.buff * 100)}%</span>` : ''}</div>`}`;
     if (def.support) key += `:${t.aura.dmg}${t.aura.rate}`;
     if (!mine) {
-      html += `<div class="pop-stats"><span style="color:${PLAYER_COLORS[t.owner]}">Вежа гравця ${partnerNick || 'союзника'}</span></div>`;
+      html += `<div class="pop-stats"><span style="color:${PLAYER_COLORS[t.owner]}">Вежа гравця ${nickOf(t.owner)}</span></div>`;
     } else {
       if (up) html += `<button data-act="upgrade" ${gold < up ? 'disabled' : ''}>▲ Покращити <i>● ${up}</i></button>`;
       if (def.support) {
@@ -473,8 +522,7 @@ function updateUI() {
   const coop = state.players.length > 1;
   $('coopInfo').classList.toggle('hidden', !coop);
   if (coop) {
-    const other = state.players[1 - me()];
-    $('coopInfo').innerHTML = `<span style="color:${PLAYER_COLORS[me()]}">■ ${nick || 'Ти'}: ${pl.gold}●</span> <span style="color:${PLAYER_COLORS[1 - me()]}">■ ${partnerNick || 'Друг'}: ${other.gold}●</span>`;
+    $("coopInfo").innerHTML = state.players.map((q, i) => `<span style="color:${PLAYER_COLORS[i]}">■ ${esc(i === me() ? nick || "Ти" : nickOf(i))}: ${q.gold}●</span>`).join(" ");
   }
 
   let key, html;
@@ -583,7 +631,7 @@ function showEnd(won) {
   if ($("endless")) $("endless").addEventListener("click", () => send({ type: "continue" }));
   $('menuBtn').addEventListener('click', openMenu);
   if (nick) {
-    Api.addScore({ mode: state.mode, diff: state.opts.diff, wave: state.wave, kills: state.kills, won, coop: state.players.length > 1, partner: partnerNick })
+    Api.addScore({ mode: state.mode, diff: state.opts.diff, wave: state.wave, kills: state.kills, won, coop: state.players.length > 1, partner: others() })
       .then((r) => { $('scoreMsg').textContent = `Результат у таблиці лідерів: ${r.score} очок`; })
       .catch((e) => { $('scoreMsg').textContent = 'Таблиця лідерів недоступна: ' + e.message; });
   }
@@ -631,7 +679,7 @@ function resumeGame() {
 function updatePlayButton() {
   $("resume").classList.toggle("hidden", !canResume());
   const b = $("playSolo");
-  if (net.role === "host" && net.connected) { b.textContent = "▶ Почати разом"; b.disabled = false; }
+  if (net.role === "host" && net.connected) { b.textContent = `▶ Почати (${net.guestSlots().length + 1} гравці)`; b.disabled = false; }
   else if (net.role === "guest" && net.connected) { b.textContent = "Чекаємо, поки хост почне…"; b.disabled = true; }
   else { b.textContent = "▶ Грати соло"; b.disabled = false; }
 }
@@ -646,15 +694,6 @@ function renderMenu() {
     b.innerHTML = `<b>${md.name}</b><span>${md.desc}</span>`;
     b.addEventListener('click', () => { mode = id; renderMenu(); });
     ml.append(b);
-  }
-  const sl = $("seasons");
-  sl.innerHTML = "";
-  for (const id of ["random", ...SEASON_ORDER]) {
-    const b = document.createElement("button");
-    b.className = "diff" + (season === id ? " active" : "");
-    b.innerHTML = `<b>${id === "random" ? "🎲 Випадковий" : { spring: "🌸 ", summer: "☀ ", autumn: "🍂 ", winter: "❄ " }[id] + SEASONS[id].name}</b>`;
-    b.addEventListener("click", () => { season = id; renderMenu(); });
-    sl.append(b);
   }
   const dl = $('diffs');
   dl.innerHTML = '';
@@ -751,8 +790,10 @@ $('hostBtn').addEventListener('click', async () => {
   $('lobbyStatus').textContent = 'Створюємо кімнату…';
   try {
     const code = await net.host();
-    $('roomCode').textContent = code;
-    $('roomBox').classList.remove('hidden');
+    $("roomCode").textContent = code;
+    $("roomBox").classList.remove("hidden");
+    roster = [myEntry()];
+    renderRoster();
   } catch (e) { $('lobbyStatus').textContent = e.message || 'Не вдалося створити кімнату'; }
 });
 $('joinBtn').addEventListener('click', async () => {
@@ -802,11 +843,11 @@ function handleEvents(events, quiet = false) {
       case 'roulette': {
         const lucky = e.p === me();
         sfx.play(lucky ? 'card' : 'leak');
-        banner(lucky ? 'РУЛЕТКА: +250 ТОБІ!' : `Рулетка: ${partnerNick || 'друг'} виграв 250`, 'gold', e.by === me() ? 'ти крутив' : `крутив ${partnerNick || 'друг'}`, 2200);
+        banner(lucky ? 'РУЛЕТКА: +250 ТОБІ!' : `Рулетка: ${nickOf(e.p)} виграв 250`, "gold", e.by === me() ? "ти крутив" : `крутив ${nickOf(e.by)}`, 2200);
         break;
       }
       case 'steal':
-        if (e.from === me()) { sfx.play('leak'); banner(`${partnerNick || 'Друг'} поцупив у тебе ${e.gold}!`, 'gold', 'кишеньковий злодій', 1800); }
+        if (e.from === me()) { sfx.play('leak'); banner(`${nickOf(e.p)} поцупив у тебе ${e.gold}!`, 'gold', 'кишеньковий злодій', 1800); }
         else if (e.p === me()) banner(`Поцупив у друга +${e.gold} 😏`, 'gold', '', 1500);
         break;
       case 'draft':
@@ -825,28 +866,30 @@ function handleEvents(events, quiet = false) {
   }
 }
 
-// Partner's cursor: a pixel arrow in their colour with their nick.
+// Other players' cursors: a pixel arrow in each player's colour with their nick.
 function drawPartnerCursor() {
-  const p = ui.partner;
-  if (!p || !net.connected || performance.now() - p.at > 3000) return;
+  if (!net.online || !running) return;
   const g = canvas.getContext('2d');
-  const x = Math.round(p.x) + MX, y = Math.round(p.y) + MY;
   const arrow = ['1', '11', '121', '1221', '12221', '122221', '1222221', '1221111', '11 121', '1  121', '    11'];
-  const col = PLAYER_COLORS[1 - me()];
-  arrow.forEach((row, j) => {
-    for (let i = 0; i < row.length; i++) {
-      if (row[i] === ' ') continue;
-      g.fillStyle = row[i] === '1' ? C.ink : col;
-      g.fillRect(x + i, y + j, 1, 1);
-    }
-  });
-  const name = partnerNick || 'Друг';
-  g.font = '8px "Pixelify Sans", monospace';
-  const w = Math.ceil(g.measureText(name).width) + 4;
-  g.fillStyle = 'rgba(26,28,44,0.85)';
-  g.fillRect(x + 8, y + 9, w, 10);
-  g.fillStyle = col;
-  g.fillText(name, x + 10, y + 17);
+  for (const [idx, p] of Object.entries(ui.partners)) {
+    if (+idx === me() || performance.now() - p.at > 3000) continue;
+    const x = Math.round(p.x) + MX, y = Math.round(p.y) + MY;
+    const col = PLAYER_COLORS[idx] || C.white;
+    arrow.forEach((row, j) => {
+      for (let i = 0; i < row.length; i++) {
+        if (row[i] === ' ') continue;
+        g.fillStyle = row[i] === '1' ? C.ink : col;
+        g.fillRect(x + i, y + j, 1, 1);
+      }
+    });
+    const name = nickOf(+idx);
+    g.font = '8px "Pixelify Sans", monospace';
+    const w = Math.ceil(g.measureText(name).width) + 4;
+    g.fillStyle = 'rgba(26,28,44,0.85)';
+    g.fillRect(x + 8, y + 9, w, 10);
+    g.fillStyle = col;
+    g.fillText(name, x + 10, y + 17);
+  }
 }
 
 // ---------- main loop ----------
@@ -945,7 +988,7 @@ if (new URLSearchParams(location.search).has('demo')) {
   const dm = new URLSearchParams(location.search).get('demo');
   season = new URLSearchParams(location.search).get('season') || 'random';
   mode = dm && dm.startsWith('circle') ? 'circle' : 'classic';
-  startGame(12345, Meta.gameOpts(meta, diff, mode, dm === 'circle2' ? 2 : 1, season));
+  startGame(12345, Meta.gameOpts(meta, diff, mode, dm === 'circle2' ? 2 : dm === 'circle4' ? 4 : 1, season));
   state.players[0].gold = 2000;
   state.opts.locked = []; state.opts.lockedBy = null;
   // put each tower type on a free tile next to the road
