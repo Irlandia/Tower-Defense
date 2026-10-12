@@ -1,10 +1,11 @@
-# Uploads the game to InfinityFree over FTP on every push to main (or manually from the Actions tab).
+# Runs the headless browser tests, then uploads the game to InfinityFree over FTP (push to main or manually).
 # Required repo secrets: FTP_SERVER, FTP_USERNAME, FTP_PASSWORD.
-name: Deploy to FTP
+name: Test and deploy
 
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
 concurrency:
@@ -12,7 +13,33 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Serve the repo
+        run: |
+          python3 -m http.server 8080 >/dev/null 2>&1 &
+          sleep 1
+
+      - name: Run sim / render / client tests (headless Chrome)
+        run: |
+          fail=0
+          for t in sim render client; do
+            out=$(google-chrome --headless=new --no-sandbox --disable-gpu --virtual-time-budget=300000 \
+              --dump-dom "http://localhost:8080/tests/$t.html" 2>/dev/null)
+            if echo "$out" | grep -q "ALL PASSED</pre>"; then
+              echo "✔ $t"
+            else
+              echo "✘ $t"; echo "$out" | grep -E "^(FAIL|ERROR)" | head -20; fail=1
+            fi
+          done
+          exit $fail
+
   deploy:
+    needs: test
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,6 +59,8 @@ jobs:
             **/.git*/**
             .github/**
             .claude/**
+            .codegraph/**
+            .idea/**
             docs/**
             tests/**
             CLAUDE.md

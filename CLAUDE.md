@@ -17,24 +17,40 @@
 - Детермінована симуляція: тік 20 Гц, seeded RNG у `state.rngState`.
 - Кооп онлайн: WebRTC peer-to-peer через PeerJS (публічний signaling-сервер, свого бекенду немає). Хост веде годинник і розсилає команди кожного тіку (lockstep), гість програє ті самі тіки з тим самим seed. Versus — наступний етап.
 
+## Архітектура (обов'язково прочитати перед змінами: `docs/architecture.md`)
+Шари з односпрямованими залежностями: `sim` (чиста симуляція) ← `client` (життєвий цикл, цикл, мережа) ← `client/ui` (DOM). Спільний стан клієнта — `app` у `src/client/app.js`, зв'язок UI ↔ логіка — шина `bus` (каталог подій у architecture.md §4). Нові команди/повідомлення — за чекслістами в `docs/architecture.md` §3 і `docs/net-protocol.md`. Знайдені проблеми й відкладені рекомендації — `docs/code-review.md`.
+
 ## Структура
 ```
 index.html, style.css
-src/sim/data.js    # увесь баланс: вежі, вороги, картки, конфіг
-src/sim/sim.js     # симуляція: createGame, step(state, cmds), canPlace, towerStats...
-src/sim/rng.js     # seeded RNG
-src/render.js      # Canvas-рендер + juice (частинки, числа шкоди, тряска)
-src/sprites.js     # піксель-арт кодом, бітмап-шрифт цифр
-src/audio.js       # 8-біт звуки
-src/main.js        # меню/лобі, цикл (solo/host/guest), інпут, меню вежі на карті
-src/net.js         # PeerJS-кооп (кімната за 5-символьним кодом)
-src/meta.js        # досвід, дерево талантів (TREE → perks для кожного гравця), складності, рекорди (localStorage)
-src/critters.js    # декоративні тварини (корови, олені, жаби): тільки рендер, не впливають на гру
-src/api.js         # клієнт api/api.php: нік за IP + таблиця лідерів
-api/api.php        # PHP: ніки (за хешем IP) і результати ігор у api/data/*.json (закрито .htaccess)
-tests/sim.html     # тести детермінізму + баланс-бот
-tests/render.html  # смоук-тест рендеру: усі режими / 1-2 гравці / стани UI (помилка в рендері = зависання гри)
-docs/              # ідеї, рішення
+src/main.js          # лише бутстрап: імпорт модулів, fit(), demo, startLoop()
+src/sim/data.js      # увесь баланс: вежі, вороги, картки, конфіг, VERSION
+src/sim/rng.js       # seeded RNG
+src/sim/mapgen.js    # генерація карти (лінії, ставки, ферма), posAt
+src/sim/queries.js   # чисті запити: canPlace, towerStats, placeCost, ...
+src/sim/combat.js    # damage, kill, ignite, explode, spawn, pickCards
+src/sim/waves.js     # planLanes, startWave
+src/sim/commands.js  # таблиця обробників команд (з валідацією), applyCmd
+src/sim/sim.js       # createGame, step, оновлення сутностей; фасад (ре-експорт публічного API)
+src/sim/types.js     # JSDoc-типи: Command, GameState, Player
+src/client/app.js    # спільний контекст `app`, `ui`, `bus`, синглтони (renderer, net, sfx, meta)
+src/client/session.js# життєвий цикл забігу: startGame/newRun/resync/finishRun/send
+src/client/loop.js   # фіксований крок 20 Гц, solo/host/guest, фоновий тікер
+src/client/protocol.js, netplay.js, roster.js  # валідація мережевих повідомлень, обробники, склад кімнати
+src/client/debug.js  # ?demo / ?select
+src/client/ui/*      # hud, popup, menu, talents, endscreen, banner, input, actions, feedback, overlay, icons, cursors, story, layout
+src/render.js        # Canvas-рендер + juice (частинки, числа шкоди, тряска)
+src/sprites.js       # піксель-арт кодом, бітмап-шрифт цифр
+src/audio.js         # 8-біт звуки
+src/net.js           # PeerJS-транспорт (кімната за 5-символьним кодом)
+src/meta.js          # досвід, дерево талантів (TREE → perks для кожного гравця), складності, рекорди (localStorage)
+src/critters.js      # декоративні тварини: тільки рендер, не впливають на гру
+src/api.js           # клієнт api/api.php: нік за IP + таблиця лідерів
+api/api.php          # PHP: ніки (за хешем IP) і результати ігор у api/data/*.json (закрито .htaccess)
+tests/sim.html       # тести детермінізму + баланс-бот
+tests/render.html    # смоук-тест рендеру: усі режими / 1-2 гравці / стани UI
+tests/client.html    # валідатор мережі, таблиця команд, завантаження реальної гри в iframe
+docs/                # architecture.md (контракт), net-protocol.md, code-review.md, ideas, рішення
 ```
 
 ## Ціль і реіграбельність
@@ -54,7 +70,7 @@ docs/              # ідеї, рішення
 - **Після будь-якої зміни в `src/sim` збільшуй `VERSION` у `data.js`** — інакше гравці кооп-гри з різним кодом тихо розсинхронізуються (перевірка версії при підключенні).
 - Баланс (вежі, вороги, хвилі) — у даних, не в коді.
 - Кожна нова механіка — з перевіркою в `tests/sim.html`.
-- Тести headless: `chrome --headless=new --virtual-time-budget=300000 --dump-dom http://td.local/tests/sim.html` і `.../tests/render.html` (обидва мають вивести ALL PASSED).
+- Тести headless: `chrome --headless=new --virtual-time-budget=300000 --dump-dom http://td.local/tests/sim.html`, `.../tests/render.html`, `.../tests/client.html` (усі мають вивести ALL PASSED; ті самі виконує CI перед деплоєм).
 - Вставляючи JS через perl/sed, памʼятай: `${...}` у шаблонних рядках зʼїдається як змінна — для таких правок краще Edit.
 
 ## Команда агентів (.claude/agents)

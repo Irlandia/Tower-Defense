@@ -8,20 +8,24 @@ const DATA_DIR = __DIR__ . '/data';
 const MAX_SCORES = 500;
 
 function client_ip(): string {
+    // Behind Cloudflare the CF header is trustworthy (a client cannot set it); X-Forwarded-For is client-controlled
+    // and only used as a fallback for hosts that put an honest proxy in front.
+    $cf = $_SERVER['HTTP_CF_CONNECTING_IP'] ?? '';
     $fwd = $_SERVER['HTTP_X_FORWARDED_FOR'] ?? '';
-    $ip = $fwd !== '' ? trim(explode(',', $fwd)[0]) : ($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0');
+    $ip = $cf !== '' ? trim($cf) : ($fwd !== '' ? trim(explode(',', $fwd)[0]) : ($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0'));
     return filter_var($ip, FILTER_VALIDATE_IP) ? $ip : '0.0.0.0';
 }
 
 // Read-modify-write a JSON file atomically; $fn gets the decoded data by reference.
-function with_json(string $name, callable $fn) {
+function with_json(string $name, callable $fn, bool $write = true) {
     if (!is_dir(DATA_DIR)) mkdir(DATA_DIR, 0755, true);
     $fh = fopen(DATA_DIR . "/$name.json", 'c+');
     if (!$fh) fail('storage unavailable', 500);
-    flock($fh, LOCK_EX);
+    flock($fh, $write ? LOCK_EX : LOCK_SH);
     $raw = stream_get_contents($fh);
     $data = json_decode($raw ?: '[]', true) ?: [];
     $result = $fn($data);
+    if (!$write) { flock($fh, LOCK_UN); fclose($fh); return $result; } // read-only: no rewrite, shared lock
     ftruncate($fh, 0);
     rewind($fh);
     fwrite($fh, json_encode($data, JSON_UNESCAPED_UNICODE));
@@ -49,7 +53,7 @@ $ipKey = hash('sha256', $ip); // never store raw IPs
 
 switch ($action) {
     case 'nick':
-        $nicks = with_json('nicks', fn(&$d) => $d);
+        $nicks = with_json('nicks', fn(&$d) => $d, false);
         echo json_encode(['nick' => $nicks[$ipKey]['nick'] ?? '']);
         break;
 
@@ -63,7 +67,7 @@ switch ($action) {
     case 'scores':
         $mode = $_GET['mode'] ?? 'classic';
         $week = (int)($_GET['week'] ?? 0);
-        $all = with_json('scores', fn(&$d) => $d);
+        $all = with_json('scores', fn(&$d) => $d, false);
         // brawl results only count for the current week's ruleset
         $list = array_values(array_filter($all, fn($r) => ($r['mode'] ?? 'classic') === $mode
             && ($mode !== 'brawl' || (int)($r['week'] ?? -1) === $week)));
@@ -74,7 +78,7 @@ switch ($action) {
 
     case 'add_score':
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') fail('POST only', 405);
-        $nicks = with_json('nicks', fn(&$d) => $d);
+        $nicks = with_json('nicks', fn(&$d) => $d, false);
         $nick = $nicks[$ipKey]['nick'] ?? '';
         if ($nick === '') fail('Спершу введи нік');
         $diffs = ['normal' => 1, 'hard' => 1.4, 'nightmare' => 1.9];

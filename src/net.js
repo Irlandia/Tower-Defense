@@ -5,6 +5,13 @@ const PREFIX = 'pixeltd-v1-';
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 export const MAX_GUESTS = 3;
 
+// 5 symbols from a 32-letter alphabet, unpredictable (crypto RNG) so rooms cannot be guessed by a script.
+// Rejection sampling is unnecessary: 256 is a multiple of 32, so the modulo is unbiased.
+function roomCode() {
+  const bytes = crypto.getRandomValues(new Uint8Array(5));
+  return Array.from(bytes, (b) => ALPHABET[b % ALPHABET.length]).join('');
+}
+
 export class Net {
   constructor() {
     this.role = 'solo'; // 'solo' | 'host' | 'guest'
@@ -32,7 +39,7 @@ export class Net {
   host() {
     return new Promise((resolve, reject) => {
       if (!window.Peer) return reject(new Error('PeerJS не завантажився (немає інтернету?)'));
-      const code = Array.from({ length: 5 }, () => ALPHABET[Math.floor(Math.random() * ALPHABET.length)]).join('');
+      const code = roomCode();
       this.role = 'host';
       this.peer = new window.Peer(PREFIX + code);
       this.peer.on('open', () => { this.status('Чекаємо гравців…'); resolve(code); });
