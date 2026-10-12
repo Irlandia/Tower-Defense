@@ -5,6 +5,7 @@ import {
   C, SPRITES, FLASH, FROZEN, ENEMY_COLOR, drawTower, drawCastle, drawCave, drawNum, numWidth, drawIcon,
   drawObstacle, drawBarrel, drawCoin, drawChest, drawWall, ellipse, drawFarmHouse, drawField,
 } from './sprites.js';
+import { say, SAY } from "./say.js";
 import { Critters } from './critters.js';
 
 export const PLAYER_COLORS = [C.yellow, C.cyan, C.lime, "#f4b6d2"];
@@ -310,6 +311,7 @@ export class Renderer {
 
   // ---------- draw ----------
   draw(s, alpha, ui, dt) {
+    SAY.length = 0; // HTML labels are re-queued every frame
     const g = this.g;
     if (this.mapRef !== s.map) { this.mapRef = s.map; this.bg = this.makeBackground(s.map, s.season); this.critters.reset(s.map, s.season); this.season = s.season; this.weather = s.brawl && s.brawl.weather; }
     this.critters.update(Math.min(dt, 0.1), s.enemies);
@@ -478,7 +480,7 @@ export class Renderer {
     this.g.drawImage(this.nightCv, 0, 0);
   }
 
-  // Campaign: the farm's health over the house.
+  // Campaign: the farm's harvest over the field (enemies passing by trample it).
   drawFarmBar(s) {
     const g = this.g, f = s.map.farm;
     const x = f.x * TILE + 4, y = f.y * TILE - 6, w = f.w * TILE - 8;
@@ -486,27 +488,16 @@ export class Renderer {
     g.fillStyle = C.ink; g.fillRect(x - 1, y - 1, w + 2, 5);
     g.fillStyle = C.plum; g.fillRect(x, y, w, 3);
     g.fillStyle = k > 0.5 ? C.lime : k > 0.25 ? C.yellow : C.red; g.fillRect(x, y, Math.round(w * k), 3);
-    drawIcon(g, "heart", x - 9, y - 2);
+    // wheat-ear icon: this bar is the harvest, not anyone's health
+    g.fillStyle = C.yellow; g.fillRect(x - 6, y - 3, 1, 6); g.fillRect(x - 8, y - 2, 2, 1); g.fillRect(x - 5, y - 2, 2, 1); g.fillRect(x - 8, y, 2, 1); g.fillRect(x - 5, y, 2, 1);
   }
 
   // Comic-style bubbles above talking bosses.
   drawSpeech(s, alpha) {
-    const g = this.g;
-    g.font = "8px \"Pixelify Sans\", monospace";
     for (const b of this.speech) {
       const e = s.enemies.find((k) => k.id === b.id);
       if (!e) { b.life = 0; continue; }
-      const x = Math.round(e.px + (e.x - e.px) * alpha), y = Math.round(e.py + (e.y - e.py) * alpha) - 40;
-      const w = Math.ceil(g.measureText(b.text).width) + 10;
-      const bx = Math.max(2, Math.min(COLS * TILE - w - 2, x - w / 2)), by = Math.max(2, y - 14);
-      const pop = Math.min(1, (b.max - b.life) * 8);
-      g.globalAlpha = Math.min(1, b.life * 2) * pop;
-      g.fillStyle = C.ink; g.fillRect(bx - 1, by - 1, w + 2, 15);
-      g.fillStyle = C.white; g.fillRect(bx, by, w, 13);
-      g.fillStyle = C.ink;
-      for (let i = 0; i < 4; i++) g.fillRect(x - 2 + i, by + 13 + i, 4 - i, 1);
-      g.fillStyle = C.ink; g.fillText(b.text, bx + 5, by + 10);
-      g.globalAlpha = 1;
+      say(e.px + (e.x - e.px) * alpha, e.py + (e.y - e.py) * alpha - 38, b.text, "boss");
     }
   }
 
@@ -519,9 +510,7 @@ export class Renderer {
     g.fillStyle = C.ink; g.fillRect(x - 2, y - 2, w + 4, 18);
     g.fillStyle = C.plum; g.fillRect(x, y + 10, w, 4);
     g.fillStyle = C.red; g.fillRect(x, y + 10, Math.round(w * Math.max(0, e.hp) / e.maxHp), 4);
-    g.font = "8px \"Pixelify Sans\", monospace";
-    g.fillStyle = C.yellow;
-    g.fillText(`${info.name} — ${info.title} · ${info.skill.name}`, x + 2, y + 7);
+    say(x + w / 2, y + 9, `${info.name} — ${info.title} · ${info.skill.name}`, "bar");
   }
 
   drawWater(s) {

@@ -11,6 +11,7 @@ import { Sfx, Music } from "./audio.js";
 import { Net } from './net.js';
 import * as Meta from './meta.js';
 import * as Api from './api.js';
+import { say, SAY } from "./say.js";
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('game');
@@ -574,13 +575,13 @@ function updateUI() {
       : '<b>Порада</b><br>Крига робить ворогів <span class="wet">мокрими</span>: Тесла бʼє їх x2, а Вогонь викликає вибух пари.';
     if (state.mission) {
       const M = state.mission, mine = state.towers.filter((t) => t.owner === me()).length;
-      html = `<b>Місія ${M.id}: ${esc(M.title)}</b><br>★ ${esc(M.side.text)}`
+      html = `<b>Місія ${M.id}: ${esc(M.title)}</b><br>★ Ціль: ${esc(M.side.text)}`
         + (M.maxTowers ? `<br>Веж: ${mine} / ${M.maxTowers}` : "")
-        + (state.farmMax ? `<br>Ферма: ${Math.ceil(state.farmHp)} / ${state.farmMax}` : "")
+        + (state.farmMax ? `<br>🌾 Врожай: ${Math.ceil(state.farmHp)} / ${state.farmMax}<br><span class="hint">Вороги, що проходять повз поле, топчуть посіви. Врожай знищено — поразка.</span>` : "")
         + (M.night ? "<br>Ніч: вежі бачать на 30% ближче" : "");
       key += ":" + mine + ":" + Math.ceil(state.farmHp);
     } else if (state.brawl) html = `<b>${state.brawl.icon} Бійка: ${state.brawl.name}</b><br>${state.brawl.desc}`;
-    html += state.mode === "circle"
+    if (!state.mission) html += state.mode === "circle"
       ? "<br><span class=\"hint\">🌳 дерева — скарби · монети — наводь мишку. Удвох: кожен тримає свій вхід (печери зліва і справа).</span>"
       : "<br><span class=\"hint\">🛢 бочки — вибух · 🌳 дерева — скарби · монети — наводь мишку · стрілки показують, звідки піде хвиля.</span>";
   }
@@ -646,7 +647,7 @@ function showEnd(won) {
   const { earned, record } = Meta.finishRun(meta, state);
   const M = state.mission;
   const farmLost = state.farmMax && state.farmHp <= 0;
-  const title = won ? "ПЕРЕМОГА!" : farmLost ? "Ферму потоптали" : state.endless ? "Нескінченність скінчилась" : state.mode === "circle" ? "Коло переповнене" : "Замок впав";
+  const title = won ? "ПЕРЕМОГА!" : farmLost ? "Врожай витоптано" : state.endless ? "Нескінченність скінчилась" : state.mode === "circle" ? "Коло переповнене" : "Замок впав";
   const canContinue = won && state.mode === "circle" && !M && net.role !== "guest";
   const m = $('modal');
   // campaign: stars, the story's closing line and the way on
@@ -663,7 +664,7 @@ function showEnd(won) {
   m.innerHTML = `<h2 class="${won ? 'win' : ''}">${M ? `Місія ${M.id}. ` : ''}${title}</h2>${camp}
     <p>Хвиля <b>${state.wave}</b>${state.endless ? " (нескінченний)" : " / " + state.winWave} · Вбито <b>${state.kills}</b>${state.players.length > 1 ? ` (ти: ${P().kills})` : ''}${record ? ' · <span class="rec">Новий рекорд!</span>' : ''}</p>
     <p class="crys">+${earned} ✦ досвіду <span>(усього ${meta.xp})</span></p>
-    <p id="scoreMsg">${nick ? 'Надсилаємо результат…' : 'Введи нік у меню, щоб потрапити в таблицю лідерів'}</p>
+    <p id="scoreMsg">${M ? '' : nick ? 'Надсилаємо результат…' : 'Введи нік у меню, щоб потрапити в таблицю лідерів'}</p>
     <div class="row">${canContinue ? '<button id="endless" class="big primary">Продовжити ∞</button>' : ""}${net.role === "guest" ? (won && state.mode === "circle" ? "<p>Хост вирішує: продовжити чи ні…</p>" : "<p>Чекаємо, поки хост почне нову гру…</p>") : '<button id="again" class="big">Ще раз</button>'}<button id="menuBtn" class="big">Меню</button></div>`;
   m.classList.remove('hidden');
   if ($("again")) $("again").addEventListener("click", newRun);
@@ -768,7 +769,7 @@ function renderMenu() {
     const M = CAMPAIGN.find((x) => x.id === selectedMission);
     const rules = [`${M.waves} хвиль`, M.map === 'circle' ? 'Коло' : 'Класика'];
     if (M.rules.towers) rules.push('вежі: ' + M.rules.towers.map((k) => TOWERS[k].name).join(', '));
-    if (M.farmHp) rules.push('захисти ферму');
+    if (M.farmHp) rules.push('бережи врожай: вороги топчуть поле');
     if (M.maxTowers) rules.push(`не більше ${M.maxTowers} веж`);
     if (M.night) rules.push('ніч: вежі бачать ближче');
     if (M.goblins) rules.push('гобліни щохвилі');
@@ -969,14 +970,31 @@ function drawPartnerCursor() {
         g.fillRect(x + i, y + j, 1, 1);
       }
     });
-    const name = nickOf(+idx);
-    g.font = '8px "Pixelify Sans", monospace';
-    const w = Math.ceil(g.measureText(name).width) + 4;
-    g.fillStyle = 'rgba(26,28,44,0.85)';
-    g.fillRect(x + 8, y + 9, w, 10);
-    g.fillStyle = col;
-    g.fillText(name, x + 10, y + 17);
+    say(p.x + 24, p.y + 22, nickOf(+idx), 'nick', col);
   }
+}
+
+// Lay out the queued HTML labels (speech bubbles, nicks, boss bar title) over the canvas.
+// Elements are pooled and reused frame to frame.
+const sayLayer = document.createElement('div');
+sayLayer.id = 'sayLayer';
+$('stage').append(sayLayer);
+const sayPool = [];
+function syncSay() {
+  const scale = canvas.clientWidth / W;
+  for (let i = 0; i < SAY.length; i++) {
+    const s = SAY[i];
+    let el = sayPool[i];
+    if (!el) { el = document.createElement('div'); sayLayer.append(el); sayPool.push(el); }
+    if (el.textContent !== s.text) el.textContent = s.text;
+    const cls = 'say' + (s.cls ? ' ' + s.cls : '');
+    if (el.className !== cls) el.className = cls;
+    el.style.color = s.color || '';
+    el.style.left = (MX + s.x) * scale + 'px';
+    el.style.top = (MY + s.y) * scale + 'px';
+    el.style.display = '';
+  }
+  for (let i = SAY.length; i < sayPool.length; i++) sayPool[i].style.display = 'none';
 }
 
 // ---------- main loop ----------
@@ -1046,6 +1064,7 @@ function loop(now) {
   renderer.draw(state, alpha, ui, real / 1000);
   drawPartnerCursor();
   drawPulledCursor();
+  syncSay();
   if (running) updateUI();
 }
 

@@ -1,6 +1,7 @@
 // Neutral wildlife: pure decoration living in the renderer (not in the sim, so never synced or blocking).
 // Cows graze and moo, deer wander and bolt from monsters, frogs sit by the ponds and hop.
 import { TILE, COLS, ROWS } from './sim/data.js';
+import { say } from "./say.js";
 
 const COLORS = {
   B: '#a8805e', H: '#8a6248', L: '#5a3e2c', b: '#5a3e2c', w: '#f4f4f4', n: '#1a1c2c',
@@ -252,14 +253,7 @@ export class Critters {
       g.scale(j.dir, 1);
       g.drawImage(FISH[j.gold ? 1 : 0], -6, -4);
       g.restore();
-      if (j.say && j.t < 1.2) {
-        g.font = '8px "Pixelify Sans", monospace';
-        const w = Math.ceil(g.measureText(j.say).width);
-        g.fillStyle = '#1a1c2c';
-        g.fillText(j.say, Math.round(x - w / 2) + 1, Math.round(y - 9));
-        g.fillStyle = j.gold ? '#ffcd75' : '#f4f4f4';
-        g.fillText(j.say, Math.round(x - w / 2), Math.round(y - 10));
-      }
+      if (j.say && j.t < 1.2) say(x, y - 8, j.say, j.gold ? "gold" : "");
     }
     for (const p of this.sparks) {
       g.fillStyle = p.c;
@@ -315,12 +309,7 @@ export class Critters {
         g.fillStyle = "#f4f4f4";
         for (let i = -3; i <= 3; i++) g.fillRect(Math.round(f.x + i * 1.5), Math.round(f.y + ((i * 5) % 3) - 1), 1, 1);
       }
-      if (f.sayT > 0 && f.say) {
-        g.font = "8px \"Pixelify Sans\", monospace";
-        const w = Math.ceil(g.measureText(f.say).width);
-        g.fillStyle = "#1a1c2c"; g.fillText(f.say, Math.round(f.x - w / 2) + 1, Math.round(f.y - 7));
-        g.fillStyle = f.gold ? "#ffcd75" : "#29366f"; g.fillText(f.say, Math.round(f.x - w / 2), Math.round(f.y - 8));
-      }
+      if (f.sayT > 0 && f.say) say(f.x, f.y - 6, f.say, f.gold ? "gold" : "");
     }
   }
 
@@ -385,14 +374,7 @@ export class Critters {
       g.fillStyle = "#29366f";
       g.fillRect(x + spr.width + 1, y - 3 - k, 3, 1); g.fillRect(x + spr.width + 2, y - 2 - k, 1, 1); g.fillRect(x + spr.width + 1, y - 1 - k, 3, 1);
     }
-    if (c.sayT > 0 && c.say) {
-      g.font = '8px "Pixelify Sans", monospace';
-      const w = Math.ceil(g.measureText(c.say).width);
-      g.fillStyle = '#1a1c2c';
-      g.fillText(c.say, Math.round(c.x - w / 2) + 1, y - 2);
-      g.fillStyle = '#f4f4f4';
-      g.fillText(c.say, Math.round(c.x - w / 2), y - 3);
-    }
+    if (c.sayT > 0 && c.say) say(c.x, y - 2, c.say);
   }
 }
 
@@ -543,11 +525,7 @@ Object.assign(Critters.prototype, {
     if (!F) return;
     for (const k of [F.farmer, F.dog]) {
       if (!(k.sayT > 0) || !k.say || !k.sayAt) continue;
-      g.font = "8px \"Pixelify Sans\", monospace";
-      const w = Math.ceil(g.measureText(k.say).width);
-      const x = Math.max(2, Math.min(COLS * TILE - w - 2, Math.round(k.sayAt[0] - w / 2))), y = k.sayAt[1];
-      g.fillStyle = "rgba(26,28,44,0.8)"; g.fillRect(x - 2, y - 8, w + 4, 11);
-      g.fillStyle = "#f4f4f4"; g.fillText(k.say, x, y);
+      say(k.sayAt[0], k.sayAt[1], k.say);
     }
   },
 
@@ -564,7 +542,7 @@ Object.assign(Critters.prototype, {
     if (!F) return;
     const say = (k, x, y) => {
       if (!(k.sayT > 0) || !k.say) return;
-      g.font = '8px "Pixelify Sans", monospace';
+      g.font = '600 8px Rubik, system-ui, sans-serif';
       const w = Math.ceil(g.measureText(k.say).width);
       g.fillStyle = '#1a1c2c'; g.fillText(k.say, Math.round(x - w / 2) + 1, y + 1);
       g.fillStyle = '#f4f4f4'; g.fillText(k.say, Math.round(x - w / 2), y);
