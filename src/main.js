@@ -31,6 +31,7 @@ let mode = "classic";
 let season = "random";
 let treeBranch = "general";
 let selectedMission = 1;
+let menuTab = "play";
 let nick = '';
 let myIdx = 0; // guest: player index assigned by the host at start
 const ui = { build: null, selected: null, hover: null, mouse: null, ability: null, hoverEnemy: null, partners: {}, me: 0, moving: null };
@@ -731,35 +732,37 @@ function updatePlayButton() {
 
 function renderMenu() {
   $("crystals").textContent = meta.xp;
+  // tabs
+  for (const t of document.querySelectorAll('.menu-tabs [data-tab]')) t.classList.toggle('active', t.dataset.tab === menuTab);
+  for (const s of document.querySelectorAll('.menu-tab')) s.classList.toggle('hidden', s.dataset.tab !== menuTab);
+
+  // mode tiles: one row, details below
+  const wk = brawlWeek(Date.now()), br = brawlOf(wk);
+  const msLeft = Date.UTC(2024, 0, 1) + (wk + 1) * 7 * 86400000 - Date.now();
+  const left = msLeft > 86400000 ? `${Math.ceil(msLeft / 86400000)} дн.` : `${Math.ceil(msLeft / 3600000)} год.`;
+  const stars = CAMPAIGN.reduce((a, x) => a + Meta.missionStars(meta, x.id), 0);
+  const TILES = [
+    { id: 'classic', icon: '🏰', name: 'Класика', sub: 'до замку' },
+    { id: 'circle', icon: '⭕', name: 'Коло', sub: 'кружляють' },
+    { id: 'brawl', icon: br.icon, name: 'Бійка', sub: br.name },
+    { id: 'campaign', icon: '📜', name: 'Кампанія', sub: `★ ${stars}/${CAMPAIGN.length * 3}` },
+  ];
   const ml = $('modes');
   ml.innerHTML = '';
-  for (const [id, md] of Object.entries(MODES)) {
+  for (const t of TILES) {
     const b = document.createElement('button');
-    b.className = 'diff' + (mode === id ? ' active' : '');
-    b.innerHTML = `<b>${md.name}</b><span>${md.desc}</span>`;
-    b.addEventListener('click', () => { mode = id; renderMenu(); });
+    b.className = `mode-tile mode-${t.id}` + (mode === t.id ? ' active' : '');
+    b.innerHTML = `<span class="mt-ico">${t.icon}</span><b>${t.name}</b><small>${esc(t.sub)}</small>`;
+    b.addEventListener('click', () => { mode = t.id; renderMenu(); });
     ml.append(b);
   }
-  // Weekly Brawl: this week's special ruleset, rotates every Monday
-  {
-    const wk = brawlWeek(Date.now()), br = brawlOf(wk);
-    const msLeft = Date.UTC(2024, 0, 1) + (wk + 1) * 7 * 86400000 - Date.now();
-    const left = msLeft > 86400000 ? `${Math.ceil(msLeft / 86400000)} дн.` : `${Math.ceil(msLeft / 3600000)} год.`;
-    const b = document.createElement('button');
-    b.className = 'diff brawl' + (mode === 'brawl' ? ' active' : '');
-    b.innerHTML = `<b>${br.icon} Тижнева бійка: ${br.name}</b><span>${br.desc}</span><small>${br.map === 'circle' ? 'Коло' : 'Класика'} · нова бійка через ${left}</small>`;
-    b.addEventListener('click', () => { mode = 'brawl'; renderMenu(); });
-    ml.append(b);
-  }
-  // Campaign: a road of 10 missions; each opens after winning the previous one
-  {
-    const total = CAMPAIGN.reduce((a, x) => a + Meta.missionStars(meta, x.id), 0);
-    const b = document.createElement('button');
-    b.className = 'diff campaign' + (mode === 'campaign' ? ' active' : '');
-    b.innerHTML = `<b>📜 Кампанія «Останній прилив»</b><span>10 місій крізь рік: від першого лучника до битви з Королем Слизу.</span><small>★ ${total} / ${CAMPAIGN.length * 3}</small>`;
-    b.addEventListener('click', () => { mode = 'campaign'; renderMenu(); });
-    ml.append(b);
-  }
+  const info = $('modeInfo');
+  info.className = `mode-info mode-${mode}`;
+  if (mode === 'brawl') info.innerHTML = `<b>${br.icon} Тижнева бійка: ${esc(br.name)}</b><span>${esc(br.desc)}</span><small>${br.map === 'circle' ? 'Коло' : 'Класика'} · нова бійка через ${left}</small>`;
+  else if (mode === 'campaign') info.innerHTML = `<b>📜 Кампанія «Останній прилив»</b><span>10 місій крізь рік. Обери відкриту місію нижче.</span>`;
+  else info.innerHTML = `<b>${MODES[mode].name}</b><span>${esc(MODES[mode].desc)}</span>`;
+
+  // campaign road + briefing (only in campaign mode)
   const cw = $('campaign');
   cw.classList.toggle('hidden', mode !== 'campaign');
   if (mode === 'campaign') {
@@ -767,37 +770,40 @@ function renderMenu() {
     const SEA = { spring: '🌸', summer: '☀', autumn: '🍂', winter: '❄' };
     cw.innerHTML = '<div class="camp-road">' + CAMPAIGN.map((x) => {
       const open = Meta.missionOpen(meta, x.id), st = Meta.missionStars(meta, x.id);
-      return `<button class="camp-node${x.id === selectedMission ? ' active' : ''}${st ? ' done' : ''}" data-mission="${x.id}" ${open ? '' : 'disabled'}>
+      return `<button class="camp-node${x.id === selectedMission ? ' active' : ''}${st ? ' done' : ''}" data-mission="${x.id}" ${open ? '' : 'disabled'} title="${esc(x.title)}">
         <b>${open ? x.id : '🔒'}</b><small>${SEA[x.season]}</small><i>${'★'.repeat(st)}${'☆'.repeat(open ? 3 - st : 0)}</i></button>`;
     }).join('') + '</div>';
     const M = CAMPAIGN.find((x) => x.id === selectedMission);
     const rules = [`${M.waves} хвиль`, M.map === 'circle' ? 'Коло' : 'Класика'];
     if (M.rules.towers) rules.push('вежі: ' + M.rules.towers.map((k) => TOWERS[k].name).join(', '));
-    if (M.farmHp) rules.push('бережи врожай: вороги топчуть поле');
-    if (M.maxTowers) rules.push(`не більше ${M.maxTowers} веж`);
-    if (M.night) rules.push('ніч: вежі бачать ближче');
-    if (M.goblins) rules.push('гобліни щохвилі');
+    if (M.farmHp) rules.push('бережи врожай');
+    if (M.maxTowers) rules.push(`до ${M.maxTowers} веж`);
+    if (M.night) rules.push('ніч');
+    if (M.goblins) rules.push('гобліни');
     if (M.rules.alwaysWet) rules.push('злива');
-    if (M.bosses) rules.push('генерали: ' + Object.entries(M.bosses).map(([w, k]) => `${BOSSES[k].name} (хв. ${w})`).join(', '));
-    const brief = document.createElement('div');
+    if (M.bosses) rules.push('генерали: ' + Object.values(M.bosses).map((k) => BOSSES[k].name).join(', '));
+    const brief = document.createElement('details');
     brief.className = 'camp-brief';
-    brief.innerHTML = `<b>Місія ${M.id}. ${esc(M.title)}</b><span class="hint">${rules.join(' · ')}</span>
+    brief.open = true;
+    brief.innerHTML = `<summary><b>Місія ${M.id}. ${esc(M.title)}</b> <span class="hint">${rules.join(' · ')}</span></summary>
       ${M.story.intro.map(([who, t]) => `<p><i>${esc(who)}:</i> «${esc(t)}»</p>`).join('')}
-      <span class="hint">Перемога — вистояти всі хвилі. Зірки: ★ за перемогу · ★ ${esc(M.side.text)} · ★ ранній виклик хвиль ×${M.early}</span>`;
+      <span class="hint">Перемога — вистояти всі хвилі. ★ ${esc(M.side.text)} · ★ ранній виклик хвиль ×${M.early}</span>`;
     cw.append(brief);
     for (const n of cw.querySelectorAll('[data-mission]')) n.addEventListener('click', () => { selectedMission = +n.dataset.mission; renderMenu(); });
   }
-  const dl = $('diffs');
-  dl.innerHTML = '';
+
+  // difficulty dropdown (locked ones stay visible but disabled)
+  const ds = $('diffSel');
+  ds.innerHTML = '';
   for (const d of Meta.DIFFS) {
     const ok = Meta.unlockedDiff(meta, d);
     const k = Meta.bestKey(mode, d.id);
-    const b = document.createElement('button');
-    b.className = 'diff' + (diff === d.id ? ' active' : '');
-    b.disabled = !ok;
-    b.innerHTML = `<b>${ok ? '' : '🔒 '}${d.name}</b><span>${ok ? `рекорд: ${meta.best[k] || 0}/${CONFIG.winWave}${meta.wins[k] ? ' · 🏆' + meta.wins[k] : ''}` : 'Переможи на попередній'}</span>`;
-    b.addEventListener('click', () => { diff = d.id; renderMenu(); });
-    dl.append(b);
+    const o = document.createElement('option');
+    o.value = d.id;
+    o.disabled = !ok;
+    o.selected = diff === d.id;
+    o.textContent = ok ? `${d.name} — рекорд ${meta.best[k] || 0}/${CONFIG.winWave}${meta.wins[k] ? ' 🏆' + meta.wins[k] : ''}` : `🔒 ${d.name} (переможи на попередній)`;
+    ds.append(o);
   }
   // talent tree: branch tabs, then the branch's nodes top to bottom (each needs the previous one)
   const shop = $('shop');
@@ -1217,3 +1223,13 @@ for (const el of document.querySelectorAll('.ability .ab-icon')) {
   const id = el.parentElement.dataset.ab;
   if (AB_ICONS[id]) { el.textContent = ''; el.append(pixelIcon(AB_ICONS[id])); }
 }
+
+// menu tabs, difficulty dropdown, co-op start shortcut
+for (const t of document.querySelectorAll('.menu-tabs [data-tab]')) t.addEventListener('click', () => { menuTab = t.dataset.tab; sfx.unlock(); sfx.play('click'); renderMenu(); });
+$('diffSel').addEventListener('change', (e) => { diff = e.target.value; renderMenu(); });
+$('coopStart').addEventListener('click', () => $('playSolo').click());
+setInterval(() => {
+  const host = net.role === 'host' && net.connected;
+  $('coopStart').classList.toggle('hidden', !host);
+  if (host) $('coopStart').textContent = $('playSolo').textContent;
+}, 300);

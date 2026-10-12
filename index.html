@@ -19,43 +19,76 @@
 
       <div id="menu" class="hidden">
         <div class="menu-inner">
-          <h1>PIXEL<span>TD</span></h1>
-          <p class="tag">Вистій 20 хвиль. Здобувай досвід. Прокачуй дерево талантів. Грай з другом.</p>
-          <div class="menu-cols">
-            <section>
-              <h3>Твій нік</h3>
-              <div class="row left">
-                <input id="nick" maxlength="16" placeholder="Нік" autocomplete="off">
-                <button id="nickSave">Зберегти</button>
-                <small id="nickMsg" class="hint"></small>
+          <!-- header: logo, nick, experience -->
+          <header class="menu-head">
+            <h1>PIXEL<span>TD</span></h1>
+            <div class="head-right">
+              <div class="nickbox">
+                <span class="nick-ico">👤</span>
+                <input id="nick" maxlength="16" placeholder="Твій нік" autocomplete="off">
+                <button id="nickSave" title="Зберегти нік">✓</button>
               </div>
-              <h3>Режим</h3>
-              <div id="modes"></div>
-              <div id="campaign" class="hidden"></div>
-              <h3>Складність</h3>
-              <div id="diffs"></div>
-              <button id="resume" class="big primary hidden">▶ Повернутися до гри</button>
+              <small id="nickMsg" class="hint"></small>
+              <div class="xp-badge">✦ <b id="crystals">0</b> <span>досвіду</span></div>
+            </div>
+          </header>
+
+          <nav class="menu-tabs">
+            <button data-tab="play" class="active">🎮 Грати</button>
+            <button data-tab="coop">👥 Кооп</button>
+            <button data-tab="tree">✦ Таланти</button>
+            <button data-tab="board">🏆 Лідери</button>
+          </nav>
+
+          <!-- PLAY: mode tiles, details of the chosen mode, difficulty dropdown, start -->
+          <section class="menu-tab" data-tab="play">
+            <div id="modes" class="mode-tiles"></div>
+            <div id="modeInfo" class="mode-info"></div>
+            <div id="campaign" class="hidden"></div>
+            <div class="play-row">
+              <label class="select-wrap">Складність
+                <select id="diffSel"></select>
+              </label>
+              <button id="resume" class="big primary hidden">▶ Повернутися</button>
               <button id="playSolo" class="big primary">▶ Грати соло</button>
-              <h3>Кооп онлайн</h3>
-              <div class="row">
+            </div>
+          </section>
+
+          <!-- CO-OP: host a room or join one -->
+          <section class="menu-tab hidden" data-tab="coop">
+            <div class="coop-cols">
+              <div class="coop-card">
+                <h3>Створити кімнату</h3>
+                <p class="hint">Ти — хост: обираєш режим і стартуєш гру. До 3 друзів.</p>
                 <button id="hostBtn">Створити кімнату</button>
+                <div id="roomBox" class="hidden">Код: <b id="roomCode">-----</b> <button id="copyCode" title="Копіювати">⧉</button></div>
               </div>
-              <div id="roomBox" class="hidden">Код кімнати: <b id="roomCode">-----</b> <button id="copyCode" title="Копіювати">⧉</button><br><small>Надішли код друзям (до 3). Коли всі зайдуть — тисни «Почати».</small></div>
-              <div id="roster" class="hidden"></div>
-              <div class="row">
-                <input id="joinCode" maxlength="5" placeholder="КОД" autocomplete="off">
-                <button id="joinBtn">Приєднатися</button>
+              <div class="coop-card">
+                <h3>Приєднатися</h3>
+                <p class="hint">Введи код кімнати від друга.</p>
+                <div class="row left">
+                  <input id="joinCode" maxlength="5" placeholder="КОД" autocomplete="off">
+                  <button id="joinBtn">Увійти</button>
+                </div>
               </div>
-              <p id="lobbyStatus"></p>
-            </section>
-            <section>
-              <h3>Дерево талантів <span class="crys-badge">✦ <b id="crystals">0</b> досвіду</span></h3>
-              <div id="shop"></div>
-              <small class="hint">Досвід дають за кожну гру — навіть програну. Перемога дає +15. Кожна гілка: спершу верхній вузол.</small>
-              <h3>Лідери <span class="tabs"><button data-board="classic">Класика</button><button data-board="circle">Коло</button><button data-board="brawl">Бійка</button></span></h3>
-              <div id="board"></div>
-            </section>
-          </div>
+            </div>
+            <div id="roster" class="hidden"></div>
+            <p id="lobbyStatus"></p>
+            <button id="coopStart" class="big primary hidden">▶ Почати разом</button>
+            <p class="hint">Режим і складність обираються на вкладці «Грати».</p>
+          </section>
+
+          <!-- TALENT TREE -->
+          <section class="menu-tab hidden" data-tab="tree">
+            <div id="shop"></div>
+            <small class="hint">Досвід дають за кожну гру — навіть програну. Перемога дає +15. Кожна гілка: спершу верхній вузол.</small>
+          </section>
+
+          <!-- LEADERBOARD -->
+          <section class="menu-tab hidden" data-tab="board">
+            <div class="tabs board-tabs"><button data-board="classic">Класика</button><button data-board="circle">Коло</button><button data-board="brawl">Бійка тижня</button></div>
+            <div id="board"></div>
+          </section>
         </div>
       </div>
     </div>

@@ -348,3 +348,58 @@ button, .tower-btn canvas, .tower-btn .cost, .tower-btn .key, .ability .key, .ab
 
 .ability .ab-icon canvas { width: 28px; height: 26px; image-rendering: pixelated; display: block; }
 .ability .ab-icon { height: 26px; }
+
+/* ===================== lobby menu: header + tabs ===================== */
+#menu { justify-content: flex-start; padding: 18px 0; }
+.menu-inner { width: min(860px, 96%); display: flex; flex-direction: column; gap: 12px; text-align: left; }
+.menu-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+#menu .menu-head h1 { font-size: 48px; }
+.head-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.nickbox { display: flex; align-items: center; background: #1f2438; box-shadow: inset -3px -3px 0 #333c57, inset 3px 3px 0 #000; }
+.nickbox .nick-ico { padding: 0 6px 0 10px; font-size: 14px; }
+.nickbox input { width: 150px; background: transparent; box-shadow: none; padding: 8px 6px; font-size: 16px; color: var(--yellow); }
+.nickbox button { padding: 6px 12px; background: #38b764; box-shadow: inset -3px -3px 0 #257179, inset 3px 3px 0 #a7f070; }
+.xp-badge { background: #1f2438; padding: 7px 12px; color: var(--cyan); font-weight: 800; box-shadow: inset -3px -3px 0 #333c57, inset 3px 3px 0 #000; }
+.xp-badge span { color: var(--silver); font-weight: 600; font-size: 14px; }
+
+.menu-tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.menu-tabs button { font-size: 16px; padding: 10px 6px; background: #2a3150; }
+.menu-tabs button.active { background: #566c86; color: var(--yellow); box-shadow: inset -3px -3px 0 #333c57, inset 3px 3px 0 #94b0c2; }
+.menu-tab { background: rgba(51,60,87,.55); padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+
+/* play: mode tiles + details */
+.mode-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.mode-tile { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 12px 6px 10px; background: #2a3150; }
+.mode-tile .mt-ico { font-size: 28px; line-height: 1.1; }
+.mode-tile b { font-size: 17px; }
+.mode-tile small { font-size: 12px; color: var(--silver); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.mode-tile.active { background: #333c57; box-shadow: inset -3px -3px 0 #1a1c2c, inset 3px 3px 0 var(--tile, #ffcd75), 0 0 0 2px var(--tile, #ffcd75); }
+.mode-tile.mode-classic { --tile: #ef7d57; } .mode-tile.mode-circle { --tile: #73eff7; }
+.mode-tile.mode-brawl { --tile: #b97ae0; } .mode-tile.mode-campaign { --tile: #a7f070; }
+.mode-info { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; background: #1f2438; border-left: 4px solid var(--tile, #ffcd75); font-size: 14px; }
+.mode-info.mode-classic { --tile: #ef7d57; } .mode-info.mode-circle { --tile: #73eff7; }
+.mode-info.mode-brawl { --tile: #b97ae0; } .mode-info.mode-campaign { --tile: #a7f070; }
+.mode-info b { font-size: 16px; color: var(--yellow); }
+.mode-info small { color: #d9a8ff; }
+details.camp-brief summary { cursor: pointer; list-style: none; display: flex; flex-direction: column; gap: 2px; }
+details.camp-brief summary::-webkit-details-marker { display: none; }
+
+.play-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: end; }
+.play-row #playSolo, .play-row #resume { margin: 0; }
+.play-row #resume:not(.hidden) ~ #playSolo { grid-column: 1 / -1; }
+.select-wrap { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--silver); font-weight: 700; }
+.select-wrap select {
+  appearance: none; font: inherit; font-size: 15px; font-weight: 700; color: var(--white); padding: 10px 34px 10px 12px; cursor: pointer;
+  background: #333c57 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' shape-rendering='crispEdges'%3E%3Cpath fill='%23ffcd75' d='M0 0h12v2H10v2H8v2H4V4H2V2H0z'/%3E%3C/svg%3E") no-repeat right 12px center;
+  border: 0; box-shadow: inset -3px -3px 0 #1a1c2c, inset 3px 3px 0 #566c86; outline: none;
+}
+.select-wrap select option { background: #1f2438; }
+
+/* co-op tab */
+.coop-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.coop-card { background: #1f2438; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.coop-card h3 { margin: 0; }
+.coop-card p { margin: 0; }
+#coopStart { margin: 0; }
+.board-tabs { display: flex; gap: 6px; }
+@media (max-width: 760px) { .mode-tiles { grid-template-columns: repeat(2, 1fr); } .coop-cols, .play-row { grid-template-columns: 1fr; } }
