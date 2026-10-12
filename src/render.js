@@ -3,7 +3,7 @@ import { TILE, COLS, ROWS, TICK_RATE, TOWERS, CONFIG, ABILITIES, BARREL, BOSSES,
 import { towerStats, canPlace, posAt, isRoad, canMove } from './sim/sim.js';
 import {
   C, SPRITES, FLASH, FROZEN, ENEMY_COLOR, drawTower, drawCastle, drawCave, drawNum, numWidth, drawIcon,
-  drawObstacle, drawBarrel, drawCoin, drawChest, drawWall, ellipse,
+  drawObstacle, drawBarrel, drawCoin, drawChest, drawWall, ellipse, drawFarmHouse, drawField,
 } from './sprites.js';
 import { Critters } from './critters.js';
 
@@ -127,6 +127,13 @@ export class Renderer {
         if (tx < 0 || tx >= COLS) continue;
         for (let i = 0; i < 6; i++) { g.fillStyle = rnd() < 0.6 ? C.white : "#c9d6de"; g.fillRect(tx * TILE + Math.floor(rnd() * 22), ty * TILE + Math.floor(rnd() * 22), 2, 1); }
       }
+    }
+    if (map.farm) {
+      // farm yard: trodden earth under the house, the field with its fence
+      const f = map.farm;
+      g.fillStyle = season === "winter" ? "#d3e2ec" : "#a8805e";
+      g.fillRect(f.x * TILE + 2, f.y * TILE + 2, 2 * TILE - 4, f.h * TILE - 4);
+      drawField(g, f.field[0], f.field[1], f.field[2], f.field[3], season, TILE);
     }
     for (const sp of map.spawns) {
       const [x, y] = sp, e = edgeOf(sp);
@@ -362,6 +369,8 @@ export class Renderer {
     for (const w of s.walls) items.push({ y: w.y, w });
     for (const e of s.enemies) items.push({ y: e.py + (e.y - e.py) * alpha, e });
     if (s.map.castle) items.push({ y: s.map.castle[1] * TILE + 12, castle: true });
+    if (s.map.farm) items.push({ y: (s.map.farm.house[1] + 2) * TILE - 4, house: true });
+    for (const k of this.critters.farmItems()) items.push(k);
     for (const c of this.critters.list) items.push({ y: c.y, critter: c });
     items.sort((a, b) => a.y - b.y);
     const hov = (tx, ty) => ui.hover && ui.hover.tx === tx && ui.hover.ty === ty;
@@ -376,6 +385,10 @@ export class Renderer {
         drawWall(g, it.w, s.tick);
       } else if (it.critter) {
         this.critters.draw(g, it.critter);
+      } else if (it.house) {
+        drawFarmHouse(g, s.map.farm.house[0] * TILE, s.map.farm.house[1] * TILE, s.season, s.tick);
+      } else if (it.farmer || it.dog || it.bowl) {
+        this.critters.drawFarm(g, it);
       } else if (it.castle) {
         drawCastle(g, s.map.castle[0] * TILE, s.map.castle[1] * TILE);
       } else if (it.t) {

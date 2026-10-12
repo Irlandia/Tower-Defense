@@ -105,6 +105,7 @@ export class Critters {
   reset(map, season = "summer") {
     this.map = map;
     this.season = season;
+    this.initFarm(map);
     this.iceFish = [];
     this.list = [];
     this.jumps = [];
@@ -141,6 +142,7 @@ export class Critters {
 
   update(dt, enemies) {
     this.updateFish(dt);
+    this.updateFarm(dt);
     for (const c of this.list) {
       const K = KIND[c.kind];
       c.t -= dt;
@@ -355,6 +357,7 @@ export class Critters {
 
   // Click reaction; returns true if a critter was hit.
   poke(x, y) {
+    if (this.pokeFarm(x, y)) return true;
     if (this.pokeFish(x, y)) return true;
     const c = this.list.find((k) => Math.hypot(k.x - x, k.y - 4 - y) < 10);
     if (!c) return false;
@@ -392,3 +395,208 @@ export class Critters {
     }
   }
 }
+
+// ---------- the farm: a farmer working the field by season, and his dog ----------
+const FARM_COL = { Y: '#ffcd75', y: '#e8b04a', s: '#f2c6a0', r: '#b13e53', b: '#3b5dc9', k: '#1a1c2c', d: '#a8805e', D: '#8a6248', n: '#1a1c2c', w: '#f4f4f4' };
+const FARMER = {
+  stand: ['..YYY..', '.yYYYy.', '..sss..', '..sks..', '.rrrrr.', 'rrbbbrr', 's.bbb.s', '..bbb..', '..b.b..', '..b.b..', '.kk.kk.'],
+  walk: ['..YYY..', '.yYYYy.', '..sss..', '..sks..', '.rrrrr.', 'rrbbbrr', 's.bbb.s', '..bbb..', '..b.b..', '.b...b.', 'kk...kk'],
+  work: ['.......', '..YYY..', '.yYYYy.', '..sss..', '..sks..', '.rrrrrs', 'rrbbbr.', '..bbb..', '..bbb..', '..b.b..', '.kk.kk.'],
+};
+const DOG = {
+  stand: ['......dd.', '.....dDdn', 'd.dddddd.', '.ddddddd.', '.d.d..d.d'],
+  run: ['......dd.', '.....dDdn', 'd.dddddd.', '.ddddddd.', 'd.d....dd'],
+  eat: ['.........', '.........', 'd.dddddd.', '.dddddDdd', '.d.d..dnd'],
+};
+function farmSprite(rows, flip) {
+  const cv = document.createElement('canvas');
+  cv.width = rows[0].length; cv.height = rows.length;
+  const g = cv.getContext('2d');
+  rows.forEach((row, y) => {
+    for (let x = 0; x < row.length; x++) {
+      const c = FARM_COL[row[x]];
+      if (!c) continue;
+      g.fillStyle = c;
+      g.fillRect(flip ? row.length - 1 - x : x, y, 1, 1);
+    }
+  });
+  return cv;
+}
+const FARM_SPR = {};
+for (const [k, rows] of Object.entries(FARMER)) FARM_SPR['f_' + k] = [farmSprite(rows, false), farmSprite(rows, true)];
+for (const [k, rows] of Object.entries(DOG)) FARM_SPR['d_' + k] = [farmSprite(rows, false), farmSprite(rows, true)];
+
+const FARM_LINES = {
+  spring: ['Посіємо — пожнемо!', 'Гарна весна видалась'],
+  summer: ['Ох і спека…', 'Пий, капустонько!'],
+  autumn: ['Ну й гарбуз!', 'Врожай — на славу'],
+  winter: ['Знову намело…', 'Де моя лопата?'],
+};
+const FEED = ['Смачного, Бровко!', 'Хто тут хороший пес?', 'Тримай, друже!'];
+
+Object.assign(Critters.prototype, {
+  initFarm(map) {
+    const f = map.farm;
+    if (!f) { this.farm = null; return; }
+    const T = TILE;
+    const [fx, fy, fw, fh] = f.field;
+    // work spots: along the field rows (in winter: in front of the house, shovelling)
+    const spots = [];
+    if (this.season === 'winter') for (let i = 0; i < 4; i++) spots.push({ x: f.house[0] * T + 8 + i * 10, y: (f.house[1] + 2) * T + 6 });
+    else for (let r = 0; r < 3; r++) for (let i = 0; i < 3; i++) spots.push({ x: fx * T + 10 + i * ((fw * T - 20) / 2), y: fy * T + 12 + r * ((fh * T - 20) / 2) });
+    const home = { x: f.house[0] * T + 24, y: (f.house[1] + 2) * T + 4 };
+    this.farm = {
+      spots, home, sparks: [],
+      farmer: { x: home.x, y: home.y, tx: home.x, ty: home.y, state: 'idle', t: rnd(1, 3), dir: 1, say: null, sayT: 0 },
+      dog: { x: home.x + 10, y: home.y + 2, state: 'follow', t: 0, dir: 1, say: null, sayT: 0, jump: 0 },
+      bowl: null,
+    };
+  },
+
+  updateFarm(dt) {
+    const F = this.farm;
+    if (!F) return;
+    const fm = F.farmer, dog = F.dog;
+    for (const k of [fm, dog]) if (k.sayT > 0) k.sayT -= dt;
+    for (const p of F.sparks) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += (p.heart ? -10 : 50) * dt; p.life -= dt; }
+    F.sparks = F.sparks.filter((p) => p.life > 0);
+    // farmer: walk to a spot, work there, repeat (sometimes a break at home)
+    fm.t -= dt;
+    if (fm.state === 'walk') {
+      const dx = fm.tx - fm.x, dy = fm.ty - fm.y, d = Math.hypot(dx, dy);
+      if (d < 1) { fm.state = fm.toHome ? 'idle' : 'work'; fm.t = rnd(2.5, 4.5); }
+      else { fm.x += (dx / d) * 10 * dt; fm.y += (dy / d) * 10 * dt; fm.dir = dx >= 0 ? 1 : -1; }
+    } else if (fm.state === 'work') {
+      this.workFx(fm, dt);
+      if (fm.t <= 0) this.nextSpot(fm);
+    } else if (fm.t <= 0) this.nextSpot(fm);
+    // dog: eats at the bowl, else trots after the farmer, sometimes sits and sniffs
+    if (dog.jump > 0) dog.jump -= dt;
+    if (F.bowl) {
+      const dx = F.bowl.x - 6 - dog.x, dy = F.bowl.y - dog.y, d = Math.hypot(dx, dy);
+      if (d > 2) { dog.state = 'run'; dog.x += (dx / d) * 45 * dt; dog.y += (dy / d) * 45 * dt; dog.dir = dx >= 0 ? 1 : -1; }
+      else {
+        dog.state = 'eat';
+        dog.dir = 1;
+        F.bowl.t -= dt;
+        if (Math.random() < dt * 4) F.sparks.push({ x: dog.x + 2, y: dog.y - 8, vx: rnd(-6, 6), vy: -12, life: 0.9, heart: true });
+        if (F.bowl.t <= 0) { F.bowl = null; dog.say = 'Гав-гав!'; dog.sayT = 1.5; dog.jump = 0.4; dog.state = 'follow'; }
+      }
+    } else {
+      const tx = F.farmer.x - F.farmer.dir * 12, ty = F.farmer.y + 3;
+      const dx = tx - dog.x, dy = ty - dog.y, d = Math.hypot(dx, dy);
+      dog.t -= dt;
+      if (d > 14) { dog.state = 'run'; dog.x += (dx / d) * 30 * dt; dog.y += (dy / d) * 30 * dt; dog.dir = dx >= 0 ? 1 : -1; }
+      else if (dog.t <= 0 || dog.state === 'run') {
+        dog.state = Math.random() < 0.5 ? 'stand' : 'sniff';
+        dog.t = rnd(1, 3);
+        if (Math.random() < 0.15) { dog.say = 'Гав!'; dog.sayT = 1; }
+      }
+    }
+  },
+
+  nextSpot(fm) {
+    const F = this.farm;
+    const home = Math.random() < 0.15;
+    const p = home ? F.home : F.spots[Math.floor(Math.random() * F.spots.length)];
+    Object.assign(fm, { state: 'walk', tx: p.x, ty: p.y, toHome: home });
+    if (Math.random() < 0.2) {
+      const l = FARM_LINES[this.season] || FARM_LINES.summer;
+      fm.say = l[Math.floor(Math.random() * l.length)];
+      fm.sayT = 2;
+    }
+  },
+
+  // little particles for the season's job: seeds, water, chaff, snow
+  workFx(fm, dt) {
+    const F = this.farm, s = this.season;
+    if (Math.random() > dt * 8) return;
+    const hx = fm.x + fm.dir * 5, hy = fm.y - 6;
+    if (s === 'spring') F.sparks.push({ x: hx, y: hy, vx: fm.dir * rnd(8, 20), vy: rnd(-20, -5), life: 0.6, c: '#ffcd75' });
+    if (s === 'summer') F.sparks.push({ x: hx + fm.dir * 3, y: hy + 2, vx: fm.dir * rnd(2, 6), vy: rnd(0, 10), life: 0.5, c: '#41a6f6' });
+    if (s === 'autumn') F.sparks.push({ x: hx, y: fm.y, vx: rnd(-6, 6), vy: rnd(-15, -5), life: 0.5, c: Math.random() < 0.5 ? '#e8b04a' : '#ef7d57' });
+    if (s === 'winter') F.sparks.push({ x: hx + fm.dir * 4, y: fm.y - 2, vx: fm.dir * rnd(15, 30), vy: rnd(-30, -15), life: 0.6, c: '#f4f4f4' });
+  },
+
+  // click: the farmer feeds the dog / the dog barks
+  pokeFarm(x, y) {
+    const F = this.farm;
+    if (!F) return false;
+    const fm = F.farmer, dog = F.dog;
+    if (Math.hypot(fm.x - x, fm.y - 6 - y) < 9) {
+      if (!F.bowl) {
+        F.bowl = { x: fm.x + fm.dir * 8, y: fm.y + 2, t: 3 };
+        fm.state = 'idle';
+        fm.t = 3.5;
+      }
+      fm.say = FEED[Math.floor(Math.random() * FEED.length)];
+      fm.sayT = 2;
+      return true;
+    }
+    if (Math.hypot(dog.x - x, dog.y - 3 - y) < 7) { dog.say = 'Гав!'; dog.sayT = 1; dog.jump = 0.4; return true; }
+    return false;
+  },
+
+  farmItems() {
+    const F = this.farm;
+    if (!F) return [];
+    const out = [{ y: F.farmer.y, farmer: true }, { y: F.dog.y, dog: true }];
+    if (F.bowl) out.push({ y: F.bowl.y - 1, bowl: true });
+    return out;
+  },
+
+  drawFarm(g, it) {
+    const F = this.farm;
+    if (!F) return;
+    const say = (k, x, y) => {
+      if (!(k.sayT > 0) || !k.say) return;
+      g.font = '8px "Pixelify Sans", monospace';
+      const w = Math.ceil(g.measureText(k.say).width);
+      g.fillStyle = '#1a1c2c'; g.fillText(k.say, Math.round(x - w / 2) + 1, y + 1);
+      g.fillStyle = '#f4f4f4'; g.fillText(k.say, Math.round(x - w / 2), y);
+    };
+    if (it.bowl) {
+      const b = F.bowl;
+      g.fillStyle = '#566c86'; g.fillRect(Math.round(b.x) - 3, Math.round(b.y) - 2, 7, 3);
+      g.fillStyle = '#8a6248'; g.fillRect(Math.round(b.x) - 2, Math.round(b.y) - 3, 5, 1);
+      return;
+    }
+    if (it.farmer) {
+      const fm = F.farmer;
+      const walking = fm.state === 'walk';
+      const key = fm.state === 'work' ? 'f_work' : walking && Math.floor(performance.now() / 200) % 2 ? 'f_walk' : 'f_stand';
+      const spr = FARM_SPR[key][fm.dir > 0 ? 0 : 1];
+      const x = Math.round(fm.x - 3), y = Math.round(fm.y - spr.height);
+      g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(x, Math.round(fm.y), 7, 2);
+      g.drawImage(spr, x, y);
+      // the season's tool in hand
+      const hx = fm.dir > 0 ? x + 7 : x - 3, hy = y + 6;
+      const s = this.season;
+      if (s === 'spring') { g.fillStyle = '#c28569'; g.fillRect(hx, hy, 3, 3); }
+      if (s === 'summer') { g.fillStyle = '#41a6f6'; g.fillRect(hx, hy, 4, 3); g.fillRect(hx + (fm.dir > 0 ? 4 : -1), hy - 1, 1, 1); }
+      if (s === 'autumn') { g.fillStyle = '#8a6248'; g.fillRect(hx - 1, hy + 1, 5, 3); g.fillStyle = '#ef7d57'; g.fillRect(hx, hy, 3, 1); }
+      if (s === 'winter') { g.fillStyle = '#94b0c2'; g.fillRect(hx, hy - 4, 1, 8); g.fillRect(hx - 1, hy + 4, 3, 2); }
+      say(fm, fm.x, y - 3);
+      for (const p of F.sparks) {
+        const px = Math.round(p.x), py = Math.round(p.y);
+        if (p.heart) {
+          g.fillStyle = '#b13e53';
+          g.fillRect(px, py, 2, 1); g.fillRect(px + 3, py, 2, 1); g.fillRect(px, py + 1, 5, 1); g.fillRect(px + 1, py + 2, 3, 1); g.fillRect(px + 2, py + 3, 1, 1);
+        } else { g.fillStyle = p.c; g.fillRect(px, py, 1, 1); }
+      }
+      return;
+    }
+    if (it.dog) {
+      const d = F.dog;
+      const key = d.state === 'eat' ? 'd_eat' : d.state === 'run' && Math.floor(performance.now() / 120) % 2 ? 'd_run' : 'd_stand';
+      const spr = FARM_SPR[key][d.dir > 0 ? 0 : 1];
+      const lift = d.jump > 0 ? Math.round(Math.sin((d.jump / 0.4) * Math.PI) * 5) : 0;
+      const x = Math.round(d.x - 4), y = Math.round(d.y - spr.height - lift);
+      g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(x + 1, Math.round(d.y), 7, 1);
+      g.drawImage(spr, x, y);
+      // wagging tail
+      if (d.state !== 'run' && Math.floor(performance.now() / 150) % 2) { g.fillStyle = '#a8805e'; g.fillRect(d.dir > 0 ? x - 1 : x + 9, y + 1, 1, 1); }
+      say(d, d.x, y - 2);
+    }
+  },
+});

@@ -467,3 +467,61 @@ export function drawIcon(g, name, x, y) {
     }
   }
 }
+
+// Farm house on a 2x2 tile area (x, y = top-left of that area). Plank walls, gable roof
+// (snow-covered in winter), lit window, door and a chimney.
+export function drawFarmHouse(g, x, y, season, tick) {
+  const bx = x + 4, base = y + 44, w = 40;
+  ellipse(g, bx + w / 2 + 2, base, w / 2 + 4, 4, 'rgba(0,0,0,0.3)');
+  box(g, bx, base, w, 18, 6, ['#c28569', '#8a6248', '#5a3e2c']);
+  for (let i = 0; i < 4; i++) R(g, bx, base - 4 - i * 4, w - 2, 1, '#5a3e2c'); // planks
+  // gable roof
+  const roof = season === 'winter' ? [C.white, '#dfeef5', C.silver] : [C.orange, C.red, C.plum];
+  for (let i = 0; i < 14; i++) {
+    const half = Math.round((w / 2 + 3) * (i + 1) / 14);
+    R(g, bx + w / 2 - half, base - 24 - 14 + i, half, 1, roof[0]);
+    R(g, bx + w / 2, base - 24 - 14 + i, half, 1, roof[1]);
+  }
+  R(g, bx - 3, base - 25, w + 6, 2, roof[2]);
+  // chimney + smoke when it is cold
+  R(g, bx + w - 10, base - 40, 5, 10, C.dark); R(g, bx + w - 10, base - 40, 5, 1, C.slate);
+  if (season === 'autumn' || season === 'winter') {
+    for (let i = 0; i < 4; i++) {
+      const k = ((tick * 0.6 + i * 12) % 48);
+      g.globalAlpha = 0.6 * (1 - k / 48);
+      ellipse(g, bx + w - 8 + Math.sin((tick + i * 20) * 0.05) * 3, base - 42 - k * 0.5, 2 + k / 16, 2 + k / 16, '#dfeef5');
+      g.globalAlpha = 1;
+    }
+  }
+  // door and a warm window
+  R(g, bx + 8, base - 13, 8, 13, '#5a3e2c'); R(g, bx + 14, base - 7, 1, 1, C.yellow);
+  R(g, bx + 24, base - 13, 9, 7, C.ink); R(g, bx + 25, base - 12, 7, 5, (tick >> 5) % 7 ? C.yellow : C.orange);
+  R(g, bx + 28, base - 12, 1, 5, C.ink); R(g, bx + 25, base - 10, 7, 1, C.ink);
+}
+
+// Field soil and crops for one season, drawn into the static background. fx, fy, fw, fh in tiles.
+export function drawField(g, fx, fy, fw, fh, season, TILE) {
+  const x0 = fx * TILE, y0 = fy * TILE, W = fw * TILE, H = fh * TILE;
+  R(g, x0 + 2, y0 + 2, W - 4, H - 4, season === 'winter' ? '#e8f1f6' : '#6b4a36');
+  for (let r = 0; r < 6; r++) {
+    const ry = y0 + 6 + r * 11;
+    if (ry > y0 + H - 6) break;
+    if (season === 'winter') { R(g, x0 + 5, ry, W - 10, 2, '#c9d6de'); for (let i = 0; i < W - 12; i += 6) R(g, x0 + 7 + i, ry - 2, 1, 2, '#8a6248'); continue; }
+    R(g, x0 + 5, ry, W - 10, 3, '#4a3324'); // furrow
+    for (let i = 0; i < W - 12; i += 6) {
+      const px = x0 + 7 + i;
+      if (season === 'spring') { R(g, px, ry - 2, 1, 2, C.lime); R(g, px + 1, ry - 3, 1, 1, C.lime); }
+      if (season === 'summer') { R(g, px, ry - 6, 1, 6, C.green); R(g, px - 1, ry - 4, 3, 1, C.lime); R(g, px - 1, ry - 7, 3, 2, C.green); }
+      if (season === 'autumn') {
+        if ((i / 6 + r) % 4 === 0) { ellipse(g, px + 1, ry - 2, 3, 2, C.orange); R(g, px + 1, ry - 5, 1, 2, C.green); }
+        else { R(g, px, ry - 7, 1, 7, C.yellow); R(g, px - 1, ry - 8, 3, 2, '#e8b04a'); }
+      }
+    }
+  }
+  // fence around the field
+  const post = (px, py) => { R(g, px, py - 6, 2, 7, '#8a6248'); R(g, px, py - 6, 2, 1, '#c28569'); };
+  for (let i = 0; i <= W; i += 8) { post(x0 + Math.min(i, W - 2), y0 + 4); post(x0 + Math.min(i, W - 2), y0 + H); }
+  for (let j = 8; j < H; j += 8) { post(x0, y0 + 4 + j); post(x0 + W - 2, y0 + 4 + j); }
+  R(g, x0, y0, W, 1, '#c28569'); R(g, x0, y0 + H - 4, W, 1, '#c28569');
+  if (season === 'winter') for (let i = 0; i < W; i += 3) R(g, x0 + i, y0 - 1, 2, 1, C.white);
+}

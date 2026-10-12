@@ -371,6 +371,21 @@ try {
   step(q4, f4.map(([tx, ty], i) => ({ type: "place", kind: "arrow", tx, ty, p: i })));
   check("4 players: each builds from own gold", q4.towers.length === 4 && q4.players.every((q) => q.gold === 110) && new Set(q4.towers.map((t) => t.owner)).size === 4);
 
+  // farm: near the centre, never on road or water, no building on it
+  let farmOk = true, farms = 0, farmMsg = "";
+  for (const md of ["classic", "circle"]) for (let seed = 1; seed <= 60; seed++) {
+    const fg = createGame(seed, { mode: md });
+    const f = fg.map.farm;
+    if (!f) continue;
+    farms++;
+    for (const k of f.tiles) {
+      const [x, y] = k.split(",").map(Number);
+      if (fg.map.tiles.has(k) || fg.map.water.has(k) || canPlace(fg, x, y)) { farmOk = false; farmMsg = `${md} seed ${seed}`; }
+    }
+    if (fg.obstacles.some((o) => f.tiles.has(o.tx + "," + o.ty)) || fg.barrels.some((b) => f.tiles.has(b.tx + "," + b.ty))) { farmOk = false; farmMsg = `objects on farm ${md} ${seed}`; }
+  }
+  check("farm: placed on most maps, off road/water, unbuildable", farmOk && farms >= 90, `${farms}/120 ${farmMsg}`);
+
   // co-op: separate wallets, talents and ownership
   const co = createGame(9, { players: 2 });
   const [c1, c2] = free(co, 2);
