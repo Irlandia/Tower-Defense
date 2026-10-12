@@ -5,6 +5,7 @@ import { TICK_RATE } from '../sim/data.js';
 import { app, bus, net, renderer, ui } from './app.js';
 import { finishRun, resumeEndless } from './session.js';
 import { heartbeat } from './netplay.js';
+import { collect } from './summary.js';
 
 const DT = 1000 / TICK_RATE;
 // events that change the game flow even during a fast silent catch-up
@@ -18,6 +19,7 @@ let bgBeats = 0;
 
 /** Run flow reacts to sim events here; presentation (sound, banners) is done by subscribers of `sim:events`. */
 function dispatch(events, quiet) {
+  collect(events); // the run summary counts every tick, even a silent catch-up
   // fast catch-up: skip effects and sounds, but never the events that change the game flow
   if (quiet) events = events.filter((e) => FLOW_EVENTS.includes(e.type));
   if (!quiet) renderer.onEvents(events, app.state);

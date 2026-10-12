@@ -68,7 +68,8 @@ bus.on('sim:events', (events) => {
           banner(e.final ? 'ФІНАЛЬНА ХВИЛЯ!' : e.boss ? `Хвиля ${e.wave} — БОС!` : `Хвиля ${e.wave}`, e.boss ? 'boss' : '', sub, sub ? 2400 : 1600);
         }
         break;
-      case 'bossSpawn': {
+      case 'bossSpawn': case 'bossReveal': {
+        if (e.hidden) break; // Перевертень: no intro until he drops the mask
         const info = e.bk ? BOSSES[e.bk] : bossFor(e.wave);
         sfx.play('rumble');
         banner(info.name.toUpperCase(), 'boss intro', info.title, 2600);

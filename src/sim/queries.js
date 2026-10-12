@@ -1,5 +1,5 @@
 // Pure read-only queries on the game state. Used by the simulation, the renderer and the client UI.
-import { TOWERS, CONFIG, OBSTACLES, ABILITIES, AURA, BRANCHES, ENEMIES, TICK_RATE as T, COLS, ROWS, DAY } from './data.js';
+import { TOWERS, CONFIG, OBSTACLES, ABILITIES, AURA, BRANCHES, ENEMIES, BOSSES, TICK_RATE as T, COLS, ROWS, DAY } from './data.js';
 import { key } from './mapgen.js';
 
 export function isFree(s, tx, ty) {
@@ -63,6 +63,16 @@ export function auraCost(t, k) {
   return lv >= AURA[k].cost.length ? 0 : AURA[k].cost[lv];
 }
 
+// Range multiplier at this time of day. Нічна Мара's night is darker, but fire towers light up themselves and their neighbours.
+export function nightSight(s, t) {
+  if (s.mission && s.mission.night) return 0.7;
+  if (s.dark) return litByFire(s, t) ? 1 : BOSSES.mara.skill.sight;
+  return DAY.phases[dayPhase(s)].range || 1;
+}
+export function litByFire(s, t) {
+  return s.towers.some((o) => family(o.kind) === 'fire' && Math.abs(o.tx - t.tx) <= 1 && Math.abs(o.ty - t.ty) <= 1);
+}
+
 export function towerStats(s, t) {
   const def = TOWERS[t.kind];
   const pl = player(s, t.owner), m = pl.mods;
@@ -71,7 +81,7 @@ export function towerStats(s, t) {
   const aura = auraOf(s, t);
   const od = pl.overT > 0 ? 1 + ABILITIES.overdrive.bonus : 1; // Overdrive: the owner's towers fire faster
   return {
-    range: (def.range + lv * CONFIG.rangePerLevel) * m.range * (m.towerRange[family(t.kind)] || 1) * (s.mission && s.mission.night ? 0.7 : DAY.phases[dayPhase(s)].range || 1), // night: shorter sight (campaign night is harsher)
+    range: (def.range + lv * CONFIG.rangePerLevel) * m.range * (m.towerRange[family(t.kind)] || 1) * nightSight(s, t), // night: shorter sight (campaign night is harsher)
     dmg: def.dmg * (1 + 0.6 * lv) * (m.dmg[family(t.kind)] || 1) * (1 + aura.dmg),
     period: Math.max(1, Math.round(T / (def.rate * m.rate * (m.towerRate[family(t.kind)] || 1) * (1 + aura.rate) * od))),
     buff: aura.dmg + aura.rate,
@@ -138,6 +148,6 @@ export function stateHash(s) {
 
 /** Current time of day (index into DAY.phases). Campaign night missions are always night. */
 export function dayPhase(s) {
-  if (s.mission && s.mission.night) return 2;
+  if ((s.mission && s.mission.night) || s.dark) return 2; // Нічна Мара: night while she lives
   return ((s.dayStart || 0) + Math.floor(Math.max(0, s.wave - 1) / DAY.every)) % DAY.phases.length;
 }

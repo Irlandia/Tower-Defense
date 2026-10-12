@@ -569,3 +569,9 @@ export function bossSprites(key, def) {
   }
   return BOSS_SPR[key];
 }
+
+// Bestiary portrait: the boss's own map, or the classic boss / King look. mono = silhouette colour (boss not met yet).
+export function bossPortrait(key, def, scale = 6, mono = null) {
+  const map = (def && def.map) || (String(key) === '20' ? MAPS.king : MAPS.boss);
+  return makeSprite(map, scale, mono);
+}

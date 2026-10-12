@@ -7,8 +7,8 @@ import { createGame, step, canPlace, canEvolve, isRoad, posAt, towerStats, vsMul
 import { TOWERS, TOWER_ORDER, BRANCHES, COLS, ROWS, CARDS, BRAWLS, brawlOf } from '../src/sim/data.js';
 import { ABILITIES } from '../src/sim/data.js';
 import * as Meta from '../src/meta.js';
-import { sellRatioOf, abilityMax, stateHash, dayPhase } from '../src/sim/sim.js';
-import { kill } from '../src/sim/combat.js';
+import { sellRatioOf, abilityMax, stateHash, dayPhase, nightSight } from '../src/sim/sim.js';
+import { kill, spawn, damage } from '../src/sim/combat.js';
 import { VERSION, BOSSES, BOSS_POOL } from '../src/sim/data.js';
 Meta.setPersist(false); // tests never write the player's real save
 
@@ -278,6 +278,85 @@ try {
     let first = -1, count = 0;
     for (let i = 0; i < 200; i++) { step(bs); for (const e of bs.events) if (e.type === "bossSpawn") { count++; if (first < 0) first = i; } }
     check(`bosses: ${md} with ${np} player(s) -> ${np} boss(es) within 5 s`, count === np && first >= 0 && first < 100, `count=${count} first=${first}`);
+  }
+
+  // run summary / bestiary: a boss death names the boss (bk) and the killing tower family (by)
+  {
+    const bs = createGame(77, { mode: "classic", players: 1 });
+    bs.wave = 4;
+    step(bs, [{ type: "nextWave", p: 0 }]);
+    let boss = null;
+    for (let i = 0; i < 200 && !boss; i++) { step(bs); boss = bs.enemies.find((e) => e.bk !== undefined); }
+    bs.events = [];
+    if (boss) kill(bs, boss, 0, "arrow");
+    const d = bs.events.find((e) => e.type === "death");
+    check("bestiary: boss death event carries bk and by", !!d && d.bk === boss.bk && BOSSES[d.bk] && d.by === "arrow", JSON.stringify(d && { bk: d.bk, by: d.by }));
+    const m = Meta.newMeta();
+    const r1 = Meta.recordBosses(m, { bossesSeen: ["kvak", "rat"], bossesKilled: ["kvak"] }, "normal");
+    const r2 = Meta.recordBosses(m, { bossesSeen: ["kvak"], bossesKilled: ["kvak"] }, "nightmare");
+    const k = Meta.bossEntry(m, "kvak");
+    // every boss has a bestiary blurb
+    check("bestiary: every boss has an about text", Object.values(BOSSES).every((b) => typeof b.about === "string" && b.about.length > 20));
+    check("bestiary: seen / killed / medal recorded", r1.seen.length === 2 && r1.killed[0] === "kvak" && !r2.killed.length && r2.medal[0] === "kvak" && k.seen === 2 && k.kills === 2 && k.best === 2 && Meta.bossEntry(m, "rat").kills === 0, JSON.stringify({ r1, r2, k }));
+  }
+
+  // new bosses: Нічна Мара, Пан Равлик, Вихор, Перевертень
+  {
+    const withBoss = (bk, mode = "classic") => {
+      const g = createGame(5, { mode, players: 1 });
+      g.wave = 5;
+      g.queue.push({ type: "boss", bk, lane: 0, at: g.tick + 1, hpMul: 1 });
+      step(g); step(g);
+      return { g, b: g.enemies.find((e) => e.bk === bk) };
+    };
+    // Нічна Мара: night while she lives; fire towers light themselves and their neighbours
+    {
+      const { g, b } = withBoss("mara");
+      const far = { kind: "arrow", tx: 0, ty: 0 }, near = { kind: "arrow", tx: 10, ty: 5 };
+      g.towers.push({ kind: "fire", tx: 11, ty: 5 });
+      const ok = !!b && g.dark && dayPhase(g) === 2 && nightSight(g, far) === BOSSES.mara.skill.sight && nightSight(g, near) === 1;
+      kill(g, b, 0); step(g);
+      check("boss mara: night while alive, fire lights neighbours, day back after death", ok && !g.dark, `dark=${g.dark}`);
+    }
+    // Пан Равлик: enemies on the slime road behind him speed up, the ones ahead do not
+    {
+      const { g, b } = withBoss("ravlyk");
+      for (let i = 0; i < 200 && b.dist < 90; i++) step(g);
+      const behind = spawn(g, "slime", b.lane, b.dist - 40, 1), ahead = spawn(g, "slime", b.lane, b.dist + 40, 1);
+      for (let i = 0; i < 6; i++) step(g);
+      check("boss ravlyk: slime trail hastes the enemies behind him", behind.hasteT > 0 && behind.hasteF === BOSSES.ravlyk.skill.mult && !(ahead.hasteT > 0), `behind=${behind.hasteT}/${behind.hasteF} ahead=${ahead.hasteT}`);
+    }
+    // Вихор: circle only; turns the ring back, and forward again when he dies
+    {
+      const g = createGame(1, { mode: "classic", players: 1 });
+      const drawn = [];
+      for (let i = 0; i < 25; i++) { g.wave = 4; g.queue = []; step(g, [{ type: "nextWave", p: 0 }]); drawn.push(...g.queue.filter((q) => q.bk !== undefined).map((q) => q.bk)); }
+      check("boss vyhor: never drawn outside the circle", drawn.length >= 20 && !drawn.includes("vyhor"), drawn.join(","));
+      const { g: c, b } = withBoss("vyhor", "circle");
+      const L = c.map.lanes[b.lane];
+      const sl = spawn(c, "slime", b.lane, L.loopStart + 60, 1);
+      b.abT = 1; step(c);
+      const d0 = sl.dist; step(c); step(c);
+      const back = c.ringRev && sl.dist < d0;
+      kill(c, b, 0); step(c);
+      const d1 = sl.dist; step(c);
+      check("boss vyhor: ring walks backwards, forward again after his death", back && !c.ringRev && sl.dist > d1, `rev=${c.ringRev} ${d0}->${sl.dist}`);
+    }
+    // Перевертень: walks in as a slime inside a slime pack, unmasks on the first hit
+    {
+      const g = createGame(5, { mode: "classic", players: 1 });
+      g.wave = 5;
+      g.queue.push({ type: "boss", bk: "pere", lane: 0, at: g.tick + 1, hpMul: 1 });
+      step(g);
+      const sp = g.events.find((e) => e.type === "bossSpawn");
+      const b = g.enemies.find((e) => e.bk === "pere");
+      const pack = g.enemies.filter((e) => e.type === "slime").length;
+      const slowSpeed = b.speedMul;
+      g.events = [];
+      damage(g, b, 1, 0, { src: "arrow" });
+      const rv = g.events.find((e) => e.type === "bossReveal");
+      check("boss pere: hidden in a slime pack, unmasked by the first hit", sp && sp.hidden && pack === BOSSES.pere.skill.pack && !b.disguised && !!rv && rv.bk === "pere" && b.speedMul < slowSpeed && Math.abs(b.speedMul - BOSSES.pere.skill.speed) < 1e-9, JSON.stringify({ hidden: sp && sp.hidden, pack, rv: !!rv }));
+    }
   }
 
   // multi-lane waves: every entry starts its own stream at once (not alternating packs)
@@ -613,8 +692,18 @@ try {
     step(bg, [{ type: 'place', kind: 'arrow', tx: bx, ty: by, p: 0 }]);
     bg.queue = [{ type: 'boss', bk: k, lane: 0, at: bg.tick + 1, hpMul: 3 }, { type: 'slime', lane: 0, at: bg.tick + 1, hpMul: 3 }, { type: 'slime', lane: 0, at: bg.tick + 30, hpMul: 3 }];
     let used = 0, err = '';
-    try { for (let i = 0; i < 20 * 20 && !bg.over; i++) { step(bg); used += bg.events.filter((ev) => ev.type === 'bossSkill').length; } } catch (e) { err = e.message; }
-    check(`boss ${k} (${d.name}): skill "${d.skill.type}" fires without errors`, !err && used > 0, err || `used=${used}`);
+    let unmasked = 0;
+    try {
+      for (let i = 0; i < 20 * 20 && !bg.over; i++) {
+        step(bg);
+        used += bg.events.filter((ev) => ev.type === 'bossSkill').length;
+        unmasked += bg.events.filter((ev) => ev.type === 'bossReveal').length;
+        const me = i === 10 && bg.enemies.find((e) => e.bk === k && e.disguised);
+        if (me) { damage(bg, me, 1, 0, { src: 'arrow' }); unmasked += bg.events.filter((ev) => ev.type === 'bossReveal').length; } // no timed skill: a hit unmasks him
+      }
+    } catch (e) { err = e.message; }
+    const ok = d.skill.type === 'disguise' ? unmasked === 1 : used > 0;
+    check(`boss ${k} (${d.name}): skill "${d.skill.type}" fires without errors`, !err && ok, err || `used=${used}`);
   }
   // random draw: a run meets different bosses, no repeats until the pool is exhausted, the King is wave 20
   const rb = createGame(5, { bonusGold: 99999 });
@@ -656,7 +745,7 @@ try {
 
   // Golden replay: a fixed bot run must give the same fingerprint until VERSION is bumped.
   // When you change src/sim on purpose: VERSION++ and paste the new hash printed below.
-  const GOLDEN = { version: 44, hash: 1302947161 };
+  const GOLDEN = { version: 46, hash: 419548047 };
   const gh = stateHash(runBot(4242, 6).s);
   if (VERSION === GOLDEN.version) check('golden replay: sim unchanged at this VERSION (else bump VERSION)', gh === GOLDEN.hash, `got ${gh}`);
   else log(`NOTE golden replay: VERSION ${VERSION} — set GOLDEN = { version: ${VERSION}, hash: ${gh} }`);

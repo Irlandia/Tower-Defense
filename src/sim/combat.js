@@ -63,6 +63,11 @@ export function ignite(s, e, dps, time, owner, src = null) {
 
 export function damage(s, e, amount, owner, { pierce = false, crit = false, big = false, quiet = false, src = null } = {}) {
   if (e.dead) return;
+  if (e.disguised) { // Перевертень drops the mask at the first hit
+    e.disguised = false;
+    e.speedMul *= BOSSES[e.bk].skill.speed / e.disguiseMul;
+    s.events.push({ type: "bossReveal", id: e.id, bk: e.bk, wave: e.bossWave || s.wave, x: e.x, y: e.y });
+  }
   const om = player(s, owner).mods;
   const mult = vsMult(e.type, src);
   amount *= mult * (src && e.lap >= 3 ? 1 + om.lapDmg : 1);
@@ -78,11 +83,12 @@ export function damage(s, e, amount, owner, { pierce = false, crit = false, big 
     if (e.bk && BOSSES[e.bk].skill.split) for (let i = 0; i < BOSSES[e.bk].skill.split; i++) spawn(s, "splitter", e.lane, Math.max(0, e.dist - 8 - i * 10), e.hpMul * 0.6);
     s.events.push({ type: "bossRage", id: e.id, wave: e.bossWave || s.wave });
   }
-  if (e.hp <= 0) kill(s, e, owner);
+  if (e.hp <= 0) kill(s, e, owner, src);
 }
 
 // The player who lands the killing blow gets the gold.
-export function kill(s, e, owner) {
+// src = tower family of the blow (null: ability, barrel); goes into the death event for run summaries.
+export function kill(s, e, owner, src = null) {
   e.dead = true;
   const def = ENEMIES[e.type];
   let pl = player(s, owner);
@@ -93,7 +99,7 @@ export function kill(s, e, owner) {
   pl.gold += gold;
   pl.kills++;
   s.kills++;
-  s.events.push({ type: 'death', x: e.x, y: e.y, kind: e.type, gold, p: s.players[owner] ? owner : 0 });
+  s.events.push({ type: 'death', x: e.x, y: e.y, kind: e.type, bk: e.bk, by: src, gold, p: s.players[owner] ? owner : 0 });
   // Talents come only from bosses: every player gets a personal choice (never pauses co-op)
   if (def.lives) {
     for (let i = 0; i < s.players.length; i++) {

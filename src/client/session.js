@@ -5,6 +5,7 @@ import { VERSION, brawlWeek } from '../sim/data.js';
 import * as Meta from '../meta.js';
 import { app, bus, net, meta, ui, collected, me } from './app.js';
 import { broadcastRoster } from './roster.js';
+import { summary, resetSummary, collect } from './summary.js';
 
 /** Begin a run locally (solo, host, or guest on the host's `start`). Emits `run:start`. */
 export function startGame(seed, opts) {
@@ -15,6 +16,7 @@ export function startGame(seed, opts) {
   app.pending = [];
   net.inbox = [];
   collected.clear();
+  resetSummary();
   ui.build = null; ui.selected = null; ui.ability = null; ui.me = me();
   app.paused = false; app.draftPause = false; app.speed = 1;
   app.running = true;
@@ -41,10 +43,11 @@ export function resync(m) {
   app.myIdx = m.idx ?? app.myIdx;
   startGame(m.seed, m.opts);
   for (const [tick, adv, cmds] of m.log) {
-    while (app.state.tick < tick) step(app.state);
+    while (app.state.tick < tick) { step(app.state); collect(app.state.events); }
     step(app.state, cmds, adv);
+    collect(app.state.events);
   }
-  while (app.state.tick < m.tick) step(app.state);
+  while (app.state.tick < m.tick) { step(app.state); collect(app.state.events); }
   app.lastMsgAt = performance.now();
 }
 
@@ -61,8 +64,8 @@ export function finishRun(won) {
   if (net.role === 'host') net.send({ t: 'end', won });
   app.running = false;
   app.talentOpen = false;
-  const { earned, record, level, levelUp } = Meta.finishRun(meta, app.state);
-  bus.emit('run:end', { won, earned, record, level, levelUp });
+  const { earned, record, level, levelUp, bestiary } = Meta.finishRun(meta, app.state, summary);
+  bus.emit('run:end', { won, earned, record, level, levelUp, bestiary });
 }
 
 /** Circle mode: the player chose to go on after the win. */

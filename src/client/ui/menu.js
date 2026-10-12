@@ -10,6 +10,7 @@ import { myEntry } from '../roster.js';
 import { newRun, enterLobby, resumeGame, canResume } from '../session.js';
 import { pixelIcon, MODE_ICONS } from './icons.js';
 import { hidePop } from './popup.js';
+import { renderBestiary } from './bestiary.js';
 
 // ---------- rendering ----------
 const DIFF_NAMES = Object.fromEntries(Meta.DIFFS.map((d) => [d.id, d.name]));
@@ -101,6 +102,7 @@ export function renderMenu() {
   renderCampaign();
   renderDifficulty();
   renderTree();
+  if (app.menuTab === 'bestiary') renderBestiary($('bestiary'));
   for (const b of document.querySelectorAll('[data-board]')) b.classList.toggle('active', b.dataset.board === app.boardMode);
 }
 

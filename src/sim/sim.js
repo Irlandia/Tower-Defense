@@ -12,7 +12,7 @@ import { rand, randInt } from './rng.js';
 import { center, key, genClassic, genCircle, placeFarm, posAt } from './mapgen.js';
 import { isFree, player, family, towerStats, missionStars } from './queries.js';
 import { spawn, ignite, damage, explode } from './combat.js';
-import { planLanes, startWave } from './waves.js';
+import { planLanes, startWave, waveHpMul } from './waves.js';
 import { applyCmd } from './commands.js';
 
 export { posAt } from './mapgen.js';
@@ -156,10 +156,19 @@ export function step(s, cmds = [], advance = true) {
       e.abT = bd.skill.every * T;
       if (bd.hp) { e.hp = e.maxHp = Math.round(e.maxHp * bd.hp); }
       if (bd.speed) e.speedMul *= bd.speed;
+      if (bd.skill.type === "disguise") { // Перевертень: walks as a slime inside a slime pack until the first hit
+        e.disguised = true;
+        e.disguiseMul = ENEMIES.slime.speed / ENEMIES[q.type].speed;
+        e.speedMul *= e.disguiseMul;
+        for (let i = 1; i <= bd.skill.pack; i++) spawn(s, "slime", e.lane, i * 9, waveHpMul(s, s.wave)).bossWave = s.wave;
+      }
     }
-    if (ENEMIES[q.type].lives) s.events.push({ type: "bossSpawn", id: e.id, kind: q.type, wave: s.wave, bk: e.bk });
+    if (ENEMIES[q.type].lives) s.events.push({ type: "bossSpawn", id: e.id, kind: q.type, wave: s.wave, bk: e.bk, hidden: !!e.disguised });
   }
 
+  // boss auras that change the whole map: Нічна Мара brings the night, Вихор turns the ring
+  s.dark = s.enemies.some((e) => !e.dead && e.bk && BOSSES[e.bk].skill.type === "dark");
+  if (s.ringRev && !s.enemies.some((e) => !e.dead && e.bk && BOSSES[e.bk].skill.type === "reverse")) s.ringRev = false;
   for (const e of s.enemies) updateEnemy(s, e);
   for (const z of s.zones) updateZone(s, z);
   for (const t of s.towers) updateTower(s, t);
@@ -228,7 +237,11 @@ function updateEnemy(s, e) {
   if (e.dead) return;
   if (e.hasteT > 0) e.hasteT--;
   const speed = def.speed * e.speedMul * (e.slowT > 0 ? e.slowF : 1) * (e.dashT > 0 ? BOSSES[e.bk].skill.mult : 1) * (e.hasteT > 0 ? e.hasteF : 1);
-  const next = posAt(s.map, e.lane, e.dist + speed / T);
+  // Вихор: enemies already on the ring walk it backwards (wrapping inside lap 0 never counts as a lap)
+  const back = s.ringRev && L.loop && e.dist > L.loopStart;
+  let nd = e.dist + (back ? -speed : speed) / T;
+  if (back && nd <= L.loopStart) nd += L.loopLen;
+  const next = posAt(s.map, e.lane, nd);
   // Barricades stop enemies walking into them; enemies chew through the wall.
   const wall = s.walls.find((w) => w.hp > 0 && Math.hypot(next.x - w.x, next.y - w.y) < 16 && Math.hypot(next.x - w.x, next.y - w.y) < Math.hypot(e.x - w.x, e.y - w.y));
   e.blocked = !!wall;
@@ -237,7 +250,7 @@ function updateEnemy(s, e) {
     if (wall.hp <= 0) s.events.push({ type: 'wallbreak', x: wall.x, y: wall.y });
     return;
   }
-  e.dist += speed / T;
+  e.dist = nd;
   e.x = next.x; e.y = next.y;
   if (L.loop) {
     // every full lap makes the monster faster and heals it a bit
@@ -265,6 +278,18 @@ function updateEnemy(s, e) {
 // Each boss has a signature move on a timer (see BOSSES[].skill in data.js).
 function bossSkill(s, e) {
   const sk = BOSSES[e.bk].skill;
+  if (e.disguised) return; // Перевертень keeps quiet until unmasked
+  if (sk.type === "trail" && s.tick % 5 === 0) { // Пан Равлик: everyone on the slime road behind him runs faster
+    const L = s.map.lanes[e.lane];
+    for (const o of s.enemies) {
+      if (o === e || o.dead || o.lane !== e.lane) continue;
+      let d = e.dist - o.dist;
+      if (L.loop && o.dist > L.loopStart && e.dist > L.loopStart) d = ((d % L.loopLen) + L.loopLen) % L.loopLen;
+      if (d < 0 || d > sk.len) continue;
+      o.hasteF = Math.max(o.hasteT > 0 ? o.hasteF : 1, sk.mult);
+      o.hasteT = Math.max(o.hasteT || 0, 6);
+    }
+  }
   if (e.dashT > 0) e.dashT--;
   if (e.magnetT > 0) e.magnetT--;
   if (e.hideT > 0) e.hideT--;
@@ -328,6 +353,9 @@ function bossSkill(s, e) {
       for (const o of [e, lead]) { const p = posAt(s.map, o.lane, o.dist); o.x = o.px = p.x; o.y = o.py = p.y; }
       break;
     }
+    case "reverse": // Вихор: the whole ring turns back (until he dies)
+      s.ringRev = !s.ringRev;
+      break;
     case "snipe": { // spits at the strongest tower in range: stunned
       const t = s.towers.filter((k) => !TOWERS[k.kind].support && Math.hypot(k.x - e.x, k.y - e.y) <= sk.range)
         .sort((a, b) => b.spent - a.spent || a.id - b.id)[0];

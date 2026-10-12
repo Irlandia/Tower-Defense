@@ -1,5 +1,5 @@
 // End-of-run modal: result, XP, campaign stars/story, leaderboard submission, next steps.
-import { CAMPAIGN } from '../../sim/data.js';
+import { CAMPAIGN, BOSSES } from '../../sim/data.js';
 import * as Api from '../../api.js';
 import * as Meta from '../../meta.js';
 import { app, bus, net, meta, me, P } from '../app.js';
@@ -7,7 +7,19 @@ import { $, esc } from '../dom.js';
 import { others } from '../roster.js';
 import { newRun, send, enterLobby } from '../session.js';
 
-bus.on('run:end', ({ won, earned, record, level, levelUp }) => {
+// "New in the bestiary" line: bosses met / beaten for the first time, better medals.
+function bestiaryLine(b) {
+  if (!b) return '';
+  const names = (ks) => ks.filter((k) => BOSSES[k]).map((k) => esc(BOSSES[k].name)).join(', ');
+  const parts = [];
+  if (b.killed.length) parts.push(`переможено вперше: <b>${names(b.killed)}</b>`);
+  const met = b.seen.filter((k) => !b.killed.includes(k));
+  if (met.length) parts.push(`зустрінуто: <b>${names(met)}</b>`);
+  if (b.medal.length) parts.push(`краща рамка: <b>${names(b.medal)}</b>`);
+  return parts.length ? `<p class="bst-new">📖 Бестіарій — ${parts.join(' · ')}</p>` : '';
+}
+
+bus.on('run:end', ({ won, earned, record, level, levelUp, bestiary }) => {
   const s = app.state;
   const M = s.mission;
   const farmLost = s.farmMax && s.farmHp <= 0;
@@ -29,6 +41,7 @@ bus.on('run:end', ({ won, earned, record, level, levelUp }) => {
     <p>Хвиля <b>${s.wave}</b>${s.endless ? ' (нескінченний)' : ' / ' + s.winWave} · Вбито <b>${s.kills}</b>${s.players.length > 1 ? ` (ти: ${P().kills})` : ''}${record ? ' · <span class="rec">Новий рекорд!</span>' : ''}</p>
     <p class="crys">+${earned} ✦ досвіду <span>(рівень ${level}${level < Meta.MAX_LEVEL ? "" : " · макс."})</span></p>
     ${levelUp ? `<p class="rec">▲ Новий рівень ${level}! Ще одне очко таланту</p>` : ""}
+    ${bestiaryLine(bestiary)}
     <p id="scoreMsg">${M ? '' : app.nick ? 'Надсилаємо результат…' : 'Введи нік у меню, щоб потрапити в таблицю лідерів'}</p>
     <div class="row">${canContinue ? '<button id="endless" class="big primary">Продовжити ∞</button>' : ''}${net.role === 'guest' ? (won && s.mode === 'circle' ? '<p>Хост вирішує: продовжити чи ні…</p>' : '<p>Чекаємо, поки хост почне нову гру…</p>') : '<button id="again" class="big">Ще раз</button>'}<button id="menuBtn" class="big">Меню</button></div>`;
   m.classList.remove('hidden');

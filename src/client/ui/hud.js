@@ -94,6 +94,10 @@ function infoContent(s) {
     return { key: 'b' + ui.build, html: `<b>${def.name}</b><br>${def.desc}<br><span class="hint">Shift — ставити кілька · ПКМ — скасувати</span>` };
   }
   const en = ui.hoverEnemy && s.enemies.find((e) => e.id === ui.hoverEnemy);
+  if (en && en.disguised) { // Перевертень: the panel keeps his secret too
+    const sl = ENEMIES.slime, hp = Math.max(1, Math.round((sl.hp * en.hp) / en.maxHp));
+    return { key: `e${en.id}:d`, html: `<b>${sl.name}</b> · ❤ ${hp}/${sl.hp}<br><span class="hint">Якийсь він підозріло блискучий…</span>` };
+  }
   if (en) {
     const def = ENEMIES[en.type];
     const vs = Object.entries(def.vs || {});

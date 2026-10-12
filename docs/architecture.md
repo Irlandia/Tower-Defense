@@ -74,7 +74,7 @@
   |---|---|---|
   | `run:start` | session | скинути UI, музику, банер, панель веж |
   | `run:resume` | session | закрити меню |
-  | `run:end` `{won, earned, record}` | session | показати екран кінця |
+  | `run:end` `{won, earned, record, level, levelUp, bestiary}` | session | показати екран кінця |
   | `run:endless` | session | закрити екран кінця, банер |
   | `menu:show` | session | відкрити меню/лобі |
   | `net:status` `(text, kind)` | netplay | рядок статусу |
@@ -83,6 +83,7 @@
   | `frame` | loop | кадрові хуки UI (курсори, підписи, HUD) |
   | `banner` `(text, cls, sub, ms)` | будь-хто | показати банер |
 - **`session.js`** — життєвий цикл: `startGame`, `newRun`, `resync`, `send(cmd)`, `finishRun`, `canResume/resumeGame`, `enterLobby`. Єдине місце, що створює `state` і веде `cmdLog`.
+- **`summary.js`** — підсумок забігу (`summary`): лічильники з `state.events` за весь забіг (вбивства за родинами веж з `death.by`, боси з `bossSpawn`/`death.bk`, картки, монети, здібності). Наповнюють `loop.dispatch` (і під час тихого наздоганяння) та `session.resync`; скидається в `startGame`. Мета-фічі (бестіарій, далі доручення/майстерність) читають його в `finishRun`, а не рахують самі.
 - **`loop.js`** — фіксований крок 20 Гц, інтерполяція, фоновий тікер у Worker, режими solo/host/guest.
 - **`roster.js`** — склад кімнати (`app.roster`, `slotIdx`), `broadcastRoster`, `nickOf`.
 - **`protocol.js`** — чиста валідація вхідних мережевих повідомлень (`validate`), без DOM.
@@ -96,6 +97,7 @@
 - `popup.js` — меню вежі/перешкоди на карті.
 - `menu.js` — лобі, режими, кампанія, дерево талантів, таблиця лідерів, нік, мережеві кнопки.
 - `src/treeui.js` — екран дерева талантів (DOM, викликається з `menu.js`).
+- `bestiary.js` — вкладка «Бестіарій»: усі боси `BOSSES`, силует → портрет → рамка-медаль (найважча складність перемоги), дані `meta.bestiary`.
 - `tutorial.js` — підказки першої соло-гри (localStorage `pixeltd-tutorial-done`), підсвічує клітинку через `ui.tutorTile`.
 - `talents.js`, `endscreen.js`, `banner.js`, `feedback.js`, `overlay.js` (курсори партнерів), `icons.js`, `cursors.js`, `story.js`, `layout.js`.
 

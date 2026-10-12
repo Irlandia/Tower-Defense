@@ -95,7 +95,7 @@ const BASE_ABILITIES = ['meteor', 'nova', 'wall'];
 const DEFAULT_SLOTS = [...BASE_ABILITIES, null];
 const newBuild = () => ({ tree: {}, slots: [...DEFAULT_SLOTS] });
 export function newMeta() {
-  return { v: 2, xp: 0, builds: [newBuild(), newBuild(), newBuild()], active: 0, best: {}, wins: {}, runs: 0, campaign: {} };
+  return { v: 2, xp: 0, builds: [newBuild(), newBuild(), newBuild()], active: 0, best: {}, wins: {}, runs: 0, campaign: {}, bestiary: {} };
 }
 
 const spentOf = (tree) => Object.values(tree).reduce((a, r) => a + r, 0);
@@ -266,8 +266,30 @@ export function gameOpts(m, diffId, mode = "classic", players = 1, season = "ran
   };
 }
 
+// ---------- bestiary: every boss met (BOSSES key -> { seen, kills, best }) ----------
+// best = index in DIFFS of the hardest difficulty the boss was beaten on (-1: never beaten). Co-op kills count for everyone.
+export const bossEntry = (m, k) => (m.bestiary && m.bestiary[k]) || { seen: 0, kills: 0, best: -1 };
+// sum: the client's run summary (bossesSeen / bossesKilled keys). Returns what is new for the end screen.
+export function recordBosses(m, sum, diffId) {
+  m.bestiary = m.bestiary || {};
+  const rank = Math.max(0, DIFFS.findIndex((d) => d.id === diffId));
+  const out = { seen: [], killed: [], medal: [] };
+  const entry = (k) => (m.bestiary[k] = m.bestiary[k] || { seen: 0, kills: 0, best: -1 });
+  for (const k of sum.bossesSeen) { const b = entry(k); if (!b.seen && !out.seen.includes(k)) out.seen.push(k); b.seen++; }
+  for (const k of sum.bossesKilled) {
+    const b = entry(k);
+    if (!b.seen) b.seen = 1;
+    if (!b.kills && !out.killed.includes(k)) out.killed.push(k);
+    else if (rank > b.best && !out.medal.includes(k)) out.medal.push(k);
+    b.kills++;
+    b.best = Math.max(b.best, rank);
+  }
+  return out;
+}
+
 // Returns XP earned, whether it's a new record, and the level after the run (levelUp = a new talent point).
-export function finishRun(m, s) {
+// sum (optional): the run summary from the client (src/client/summary.js) — feeds the bestiary.
+export function finishRun(m, s, sum = null) {
   const d = DIFFS.find((k) => k.id === s.opts.diff) || DIFFS[0];
   // endless run after a win: only the extra waves pay (the win itself was already paid)
   const earned = s.endless && !s.won
@@ -281,7 +303,8 @@ export function finishRun(m, s) {
   m.runs++;
   if (record) m.best[key] = s.wave;
   if (s.won) m.wins[key] = (m.wins[key] || 0) + 1;
+  const bestiary = sum ? recordBosses(m, sum, d.id) : null;
   save(m);
   const after = level(m);
-  return { earned, record, level: after, levelUp: after > before };
+  return { earned, record, level: after, levelUp: after > before, bestiary };
 }

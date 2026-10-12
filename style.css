@@ -362,7 +362,7 @@ button, .tower-btn canvas, .tower-btn .cost, .tower-btn .key, .ability .key, .ab
 .xp-badge { background: #1f2438; padding: 7px 12px; color: var(--cyan); font-weight: 800; box-shadow: inset -3px -3px 0 #333c57, inset 3px 3px 0 #000; }
 .xp-badge span { color: var(--silver); font-weight: 600; font-size: 14px; }
 
-.menu-tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.menu-tabs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
 .menu-tabs button { font-size: 16px; padding: 10px 6px; background: #2a3150; }
 .menu-tabs button.active { background: #566c86; color: var(--yellow); box-shadow: inset -3px -3px 0 #333c57, inset 3px 3px 0 #94b0c2; }
 .menu-tab { background: rgba(51,60,87,.55); padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
@@ -402,7 +402,25 @@ details.camp-brief summary::-webkit-details-marker { display: none; }
 .coop-card p { margin: 0; }
 #coopStart { margin: 0; }
 .board-tabs { display: flex; gap: 6px; }
-@media (max-width: 760px) { .mode-tiles { grid-template-columns: repeat(2, 1fr); } .coop-cols, .play-row { grid-template-columns: 1fr; } }
+/* bestiary */
+.bst-head { margin: 0; display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
+.bst-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 6px; max-height: 230px; overflow: auto; }
+.bst-card { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 8px 4px 6px; background: #1f2438; box-shadow: inset -3px -3px 0 #1a1c2c, inset 3px 3px 0 #333c57; }
+.bst-card canvas { image-rendering: pixelated; }
+.bst-card small { font-size: 11px; line-height: 1.1; color: var(--silver); text-align: center; }
+.bst-card.unknown { opacity: .75; cursor: default; }
+.bst-card.unknown canvas { filter: drop-shadow(0 0 1px #566c86); }
+.bst-card.bronze { box-shadow: inset 0 0 0 3px #c28569; }
+.bst-card.silver { box-shadow: inset 0 0 0 3px #94b0c2; }
+.bst-card.gold { box-shadow: inset 0 0 0 3px #ffcd75; }
+.bst-card.active { background: #3d4870; }
+.bst-card.active small { color: var(--yellow); }
+.bst-info { background: #1f2438; padding: 8px 12px; min-height: 64px; }
+.bst-info p { margin: 4px 0 0; }
+.bst-new { color: var(--cyan); font-size: 14px; }
+.bst-about { color: var(--silver); font-size: 14px; }
+.bst-quote { color: var(--cyan); font-style: italic; }
+@media (max-width: 760px) { .menu-tabs { grid-template-columns: repeat(3, 1fr); } .mode-tiles { grid-template-columns: repeat(2, 1fr); } .coop-cols, .play-row { grid-template-columns: 1fr; } }
 
 /* ===================== tower popup: soft pixel card ===================== */
 #pop {

@@ -71,6 +71,16 @@ check('ui: back to menu with resume', !hidden('menu') && !hidden('resume'), 'men
 d.getElementById('resume').click();
 await wait(600);
 check('ui: resume hides menu', hidden('menu'));
+// run summary: the loop counts events; a boss kill ends up in the bestiary at the end of the run
+const S = await frame.contentWindow.eval("import('/src/client/summary.js')");
+check('summary: counts the running game', S.summary.kills === A.app.state.kills, `summary=${S.summary.kills} state=${A.app.state.kills}`);
+S.collect([{ type: 'bossSpawn', bk: 'kvak' }, { type: 'death', kind: 'boss', bk: 'kvak', by: 'arrow', p: 0 }]);
+check('summary: boss + kill by family', S.summary.bossesKilled.includes('kvak') && S.summary.byFamily.arrow >= 1);
+d.getElementById('toMenu').click();
+await wait(300);
+d.querySelector('.menu-tabs [data-tab="bestiary"]').click();
+await wait(100);
+check('ui: bestiary shows every boss', d.querySelectorAll('.bst-card').length === Object.keys((await frame.contentWindow.eval("import('/src/sim/data.js')")).BOSSES).length, 'cards=' + d.querySelectorAll('.bst-card').length);
 check('ui: no uncaught errors', errors.length === 0, errors.join(' | '));
 
 lines.push('');

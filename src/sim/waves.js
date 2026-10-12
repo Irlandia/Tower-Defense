@@ -1,7 +1,13 @@
 // Wave planning and composition (enemy packs, bosses, goblin thief).
-import { ENEMIES, UNLOCKS, MODES, CONFIG, BOSS_POOL, TICK_RATE as T } from './data.js';
+import { ENEMIES, UNLOCKS, MODES, CONFIG, BOSSES, BOSS_POOL, TICK_RATE as T } from './data.js';
 import { rand, randInt } from './rng.js';
 import { player } from './queries.js';
+
+// HP multiplier of the regular enemies of wave w (also used for packs that bosses bring along).
+export function waveHpMul(s, w) {
+  const over20 = Math.max(0, w - s.winWave);
+  return ((s.brawl && s.brawl.hp) || 1) * (1 + 0.22 * (w - 1) + 0.017 * (w - 1) * (w - 1)) * s.opts.hpMul * MODES.circle.endlessHpGrowth ** over20;
+}
 
 // Which lanes the next wave will use (shown to the player in advance).
 export function planLanes(s) {
@@ -36,7 +42,7 @@ export function startWave(s) {
   const lanes = s.plan;
   const over20 = Math.max(0, w - s.winWave);
   const B = s.brawl || {};
-  const hpMul = (B.hp || 1) * (1 + 0.22 * (w - 1) + 0.017 * (w - 1) * (w - 1)) * s.opts.hpMul * MODES.circle.endlessHpGrowth ** over20;
+  const hpMul = waveHpMul(s, w);
   const pool = B.pool || Object.keys(UNLOCKS).filter((k) => UNLOCKS[k] <= w);
   // co-op: a bit more enemies so two players still have to work
   const budget = (B.budget || 1) * (8 + w * 6) * (1 + 0.5 * (s.players.length - 1)); // +50% per extra player
@@ -92,8 +98,9 @@ export function startWave(s) {
 // A random boss from the pool, without repeats until every one has been met in this run.
 function drawBoss(s) {
   const seen = s.bossSeen || (s.bossSeen = []);
-  let pool = BOSS_POOL.filter((k) => !seen.includes(k));
-  if (!pool.length) { seen.length = 0; pool = [...BOSS_POOL]; }
+  const fits = BOSS_POOL.filter((k) => !BOSSES[k].modes || BOSSES[k].modes.includes(s.mode)); // e.g. Вихор: circle only
+  let pool = fits.filter((k) => !seen.includes(k));
+  if (!pool.length) { seen.length = 0; pool = [...fits]; }
   const k = pool[randInt(s, pool.length)];
   seen.push(k);
   return k;

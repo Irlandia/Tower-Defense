@@ -107,9 +107,11 @@ export class Renderer {
           this.burst(e.x, e.y, 30, C.yellow, 90);
           this.shake = 8;
           break;
-        case "bossSpawn": {
+        case "bossSpawn": case "bossReveal": {
           const info = e.bk ? BOSSES[e.bk] : bossFor(e.wave);
           this.bossInfo[e.id] = info;
+          if (e.hidden) break; // Перевертень walks in as a slime
+          if (e.type === "bossReveal") { this.burst(e.x, e.y - 8, 40, C.green, 110, -20); this.rings.push({ x: e.x, y: e.y, r: 4, max: 40, c: C.lime, life: 0.8 }); this.shake = Math.max(this.shake, 6); }
           this.quake = 2.2;
           this.say(e.id, info.lines[Math.floor(Math.random() * info.lines.length)], 3.5);
           break;
@@ -128,6 +130,9 @@ export class Renderer {
           if (e.kind === "heal") { this.burst(e.x, e.y - 8, 16, C.red, 40, -30); this.text(e.x, e.y - 30, '+', C.red, 2); }
           if (e.kind === "cleanse") this.rings.push({ x: e.x, y: e.y - 8, r: 2, max: 26, c: C.cyan, life: 0.8 });
           if (e.kind === "shuffle") { this.burst(e.x, e.y - 8, 20, C.orange, 60); this.burst(e.x, e.y - 8, 10, C.blue, 60); }
+          if (e.kind === "reverse") { this.rings.push({ x: e.x, y: e.y - 8, r: 4, max: 60, c: C.cyan, life: 0.9 }); this.rings.push({ x: e.x, y: e.y - 8, r: 60, max: 4, c: C.white, life: 0.9 }); this.shake = Math.max(this.shake, 3); }
+          if (e.kind === "dark") this.rings.push({ x: e.x, y: e.y - 8, r: 4, max: 90, c: C.navy, life: 1.2 });
+          if (e.kind === "trail") this.burst(e.x, e.y + 4, 14, C.lime, 40, -10);
           if (e.kind === "snipeHit") { this.burst(e.x, e.y - 10, 20, C.orange, 60); this.burst(e.x, e.y - 10, 10, C.yellow, 40); this.shake = Math.max(this.shake, 2); }
         }
           if (e.kind === "dash") { this.burst(e.x, e.y + 4, 20, "#a8805e", 70, -10); this.text(e.x, e.y - 34, "!!", C.red, 2); this.shake = Math.max(this.shake, 3); }
@@ -306,6 +311,7 @@ export class Renderer {
 
     for (const z of s.zones) this.drawZone(z, s.tick);
     this.drawDecals();
+    this.drawSlimeTrails(s);
     if (ui.hover && !ui.ability && !ui.build) {
       g.fillStyle = 'rgba(244,244,244,0.08)';
       g.fillRect(ui.hover.tx * TILE, ui.hover.ty * TILE, TILE, TILE);
@@ -576,9 +582,10 @@ export class Renderer {
     const x = e.px + (e.x - e.px) * alpha;
     const y = e.py + (e.y - e.py) * alpha;
     const frozen = e.slowT > 0 && e.slowF === 0;
-    const bs = e.bk && e.type === "boss" ? bossSprites(e.bk, BOSSES[e.bk]) : null; // bosses with their own look
-    const spr = bs ? (e.flash > 0 ? bs.f : bs.n) : (e.flash > 0 ? FLASH : SPRITES)[e.type];
-    const heavy = e.type === "boss" || e.type === "king";
+    const look = e.disguised ? "slime" : e.type; // Перевертень in disguise looks like a plain slime
+    const bs = e.bk && e.type === "boss" && !e.disguised ? bossSprites(e.bk, BOSSES[e.bk]) : null; // bosses with their own look
+    const spr = bs ? (e.flash > 0 ? bs.f : bs.n) : (e.flash > 0 ? FLASH : SPRITES)[look];
+    const heavy = !e.disguised && (e.type === "boss" || e.type === "king");
     let bob;
     if (heavy) {
       // heavy gait: slow lift, hard drop; every landing shakes the ground
@@ -603,7 +610,8 @@ export class Renderer {
     if (e.immuneT > 0) g.globalAlpha = 0.55 + 0.25 * Math.sin(tick / 2); // ghostly
     g.drawImage(spr, dx, dy);
     g.globalAlpha = 1;
-    if (frozen) g.drawImage(bs ? bs.z : FROZEN[e.type], dx, dy);
+    if (frozen) g.drawImage(bs ? bs.z : FROZEN[look], dx, dy);
+    if (e.disguised && (tick + e.id) % 23 < 2) { g.fillStyle = C.yellow; g.fillRect(dx + 2 + ((tick >> 3) % 4) * 2, dy + 2, 1, 1); } // the only tell: a faint glint
     if (e.shieldT > 0) { g.strokeStyle = (tick >> 1) % 2 ? C.white : C.silver; g.strokeRect(dx - 2.5, dy - 2.5, spr.width + 5, spr.height + 5); }
     if (e.hasteT > 0 && (tick >> 1) % 2) this.parts.push({ x: x - 6 + Math.random() * 4, y: y + Math.random() * 6 - 4, vx: -40, vy: 0, life: 0.2, c: C.lime });
     if (e.wetT > 0 && (tick >> 2) % 3 === 0) { g.fillStyle = C.sky; g.fillRect(dx + 2 + (e.id % 9), dy + spr.height, 1, 3); }
@@ -615,7 +623,7 @@ export class Renderer {
     if (e.slowT > 0 && !frozen) { g.fillStyle = C.cyan; g.fillRect(dx, dy + spr.height - 1, spr.width, 1); }
     if (e.burnT > 0 && Math.random() < 0.6) this.parts.push({ x: x + Math.random() * 10 - 5, y: dy + 4, vx: 0, vy: -24, life: 0.3, c: Math.random() < 0.5 ? C.orange : C.yellow, s: 2 });
     if (e.blocked && (tick >> 2) % 2) this.parts.push({ x: x + Math.random() * 8 - 4, y: y + 4, vx: Math.random() * 20 - 10, vy: -10, life: 0.3, c: '#c28569' });
-    if (e.hp < e.maxHp) {
+    if (e.hp < e.maxHp && !e.disguised) {
       const w = Math.max(14, spr.width);
       const bx = Math.round(x - w / 2), by = dy - 4;
       g.fillStyle = C.ink; g.fillRect(bx - 1, by - 1, w + 2, 4);
@@ -630,6 +638,23 @@ export class Renderer {
     this.decals.push({ x: Math.round(x), y: Math.round(y) + 6, life: 4, big: king, seed: Math.random() });
     if (this.decals.length > 40) this.decals.shift();
     if (this.onStomp) this.onStomp(king);
+  }
+
+  // Пан Равлик: a glossy slime road behind him (the stretch where other enemies speed up).
+  drawSlimeTrails(s) {
+    const g = this.g;
+    for (const e of s.enemies) {
+      if (e.dead || !e.bk || BOSSES[e.bk].skill.type !== "trail") continue;
+      const len = BOSSES[e.bk].skill.len;
+      for (let d = 0; d <= len; d += 4) {
+        if (e.dist - d < 0) break;
+        const p = posAt(s.map, e.lane, e.dist - d);
+        g.globalAlpha = 0.55 * (1 - d / len);
+        g.fillStyle = (d >> 2) % 3 ? C.lime : C.green;
+        g.fillRect(Math.round(p.x) - 3, Math.round(p.y) + 3, 6, 3);
+      }
+    }
+    g.globalAlpha = 1;
   }
 
   drawDecals() {

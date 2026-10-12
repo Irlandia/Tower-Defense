@@ -38,14 +38,15 @@ src/client/session.js# життєвий цикл забігу: startGame/newRun/
 src/client/loop.js   # фіксований крок 20 Гц, solo/host/guest, фоновий тікер
 src/client/protocol.js, netplay.js, roster.js  # валідація мережевих повідомлень, обробники, склад кімнати
 src/client/debug.js  # ?demo / ?select
-src/client/ui/*      # tutorial (навчання першої гри, ?tutorial), hud (+ прев'ю наступної хвилі), popup, menu, talents, endscreen, banner, input, actions, feedback, overlay, icons, cursors, story, layout
+src/client/summary.js# підсумок забігу з подій sim (вбивства за родинами веж, боси, картки…) — джерело для мети
+src/client/ui/*      # bestiary (книга босів), tutorial (навчання першої гри, ?tutorial), hud (+ прев'ю наступної хвилі), popup, menu, talents, endscreen, banner, input, actions, feedback, overlay, icons, cursors, story, layout
 src/render.js        # Canvas-рендер + juice (частинки, числа шкоди, тряска, підписи комбо)
 src/background.js    # статичний фон карти: земля за сезоном, вода, дороги з декором, печери
 vendor/peerjs.min.js # PeerJS 1.5.4 (локальна копія, без CDN)
 src/sprites.js       # піксель-арт кодом, бітмап-шрифт цифр
 src/audio.js         # 8-біт звуки
 src/net.js           # PeerJS-транспорт (кімната за 5-символьним кодом)
-src/meta.js          # досвід → рівні → очки; дерево (4 гілки × 4 яруси, 3 білди), loadout здібностей → perks, складності, рекорди (localStorage pixeltd-meta-v2)
+src/meta.js          # досвід → рівні → очки; дерево (4 гілки × 4 яруси, 3 білди), loadout здібностей → perks, складності, рекорди, бестіарій босів (localStorage pixeltd-meta-v2)
 src/treeui.js        # екран дерева талантів (DOM): гілки, білди, слоти Q/W/E/R
 src/critters.js      # декоративні тварини: тільки рендер, не впливають на гру
 src/api.js           # клієнт api/api.php: нік за IP + таблиця лідерів

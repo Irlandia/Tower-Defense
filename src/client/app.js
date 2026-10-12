@@ -34,6 +34,7 @@ export const app = {
   selectedMission: 1,
   menuTab: 'play',
   boardMode: 'classic',
+  bestiaryPick: null, // boss key shown in the bestiary details
   nick: '',
   // run control
   myIdx: 0, // guest: player index assigned by the host at start
