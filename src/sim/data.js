@@ -6,7 +6,7 @@ export const COLS = 26;
 export const ROWS = 14;
 export const TICK_RATE = 20;
 // Bump on every change to sim/data: co-op peers refuse to play with a different version.
-export const VERSION = 37;
+export const VERSION = 38;
 
 export const CONFIG = {
   startGold: 160,
@@ -25,11 +25,15 @@ export const CONFIG = {
   sellRatio: 0.7,
 };
 
-// Active player abilities (hotkeys Q / W / E).
+// Player abilities. A player's loadout (talent tree, src/meta.js) puts them in slots Q / W / E / R.
+// Base: meteor, nova, wall. From the tree: goldrain, overdrive, quake.
 export const ABILITIES = {
-  meteor: { name: 'Метеор', key: 'Q', cd: 30, radius: 54, desc: 'Клік по карті: вибух + підпал.' },
-  nova: { name: 'Крижана нова', key: 'W', cd: 45, freeze: 2, wet: 5, desc: 'Заморожує ВСІХ ворогів на 2 с і робить їх мокрими.' },
-  wall: { name: 'Барикада', key: 'E', cd: 35, hp: 80, hpPerWave: 15, desc: 'Клік по дорозі: стіна, яку вороги мусять зламати. Одна на гравця.' },
+  meteor: { name: 'Метеор', cd: 30, radius: 54, desc: 'Клік по карті: вибух + підпал.' },
+  nova: { name: 'Крижана нова', cd: 45, freeze: 2, wet: 5, desc: 'Заморожує ВСІХ ворогів на 2 с і робить їх мокрими.' },
+  wall: { name: 'Барикада', cd: 35, hp: 80, hpPerWave: 15, desc: 'Клік по дорозі: стіна, яку вороги мусять зламати. Одна на гравця.' },
+  goldrain: { name: 'Золотий дощ', cd: 40, radius: 60, coins: 5, value: 8, desc: 'Клік по карті: на полі падає 5 монет — збери мишкою.' },
+  overdrive: { name: 'Овердрайв', cd: 60, dur: 6, bonus: 0.4, desc: 'Твої вежі стріляють на 40% швидше.' },
+  quake: { name: 'Землетрус', cd: 40, radius: 70, dmg: 25, dmgPerWave: 4, slow: 2, slowF: 0.5, desc: 'Клік по карті: удар по площі (ігнорує броню) і сповільнення.' },
 };
 
 export const TOWERS = {
@@ -143,7 +147,7 @@ export const CARDS = [
   { id: 'bounty', name: 'Нагорода', desc: "+30% золота за вбивства", rarity: "common", max: 2, apply: (s, p) => { p.mods.gold *= 1.3; } },
   { id: 'cash', name: 'Скарб', desc: "Одразу +100 золота і ще +15 за кожну пройдену хвилю", rarity: "common", max: 99, apply: (s, p) => { p.gold += 100 + 15 * s.wave; } },
   // --- rare ---
-  { id: 'crit', name: 'Око сокола', desc: "Лучники: +15% шансу крита, крит x2.5", rarity: "rare", max: 2, apply: (s, p) => { p.mods.crit += 0.15; p.mods.critMul = 2.5; } },
+  { id: 'crit', name: 'Око сокола', desc: "Лучники: +15% шансу крита, крит x2.5", rarity: "rare", max: 2, apply: (s, p) => { p.mods.crit += 0.15; p.mods.critMul = Math.max(p.mods.critMul, 2.5); } },
   { id: 'storm', name: 'Буря', desc: "Тесла: +2 стрибки блискавки", rarity: "rare", max: 1, needs: "tesla", apply: (s, p) => { p.mods.chain += 2; } },
   { id: 'steam', name: 'Парова машина', desc: "Вибух пари (вогонь по мокрих) x2", rarity: "rare", max: 1, modes: ["classic"], needs: "fire", apply: (s, p) => { p.mods.steam *= 2; } },
   { id: 'veteran', name: 'Ветерани', desc: "Усі вежі: +20% шкоди", rarity: "rare", max: 2, apply: (s, p) => { for (const k in p.mods.dmg) p.mods.dmg[k] *= 1.2; } },
