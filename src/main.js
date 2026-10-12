@@ -2,7 +2,7 @@
 // All game rules live in ./sim; meta-progression in ./meta; networking in ./net; nick + leaderboard in ./api.
 import { TILE, TICK_RATE, TOWERS, TOWER_ORDER, BRANCHES, CARDS, CONFIG, ABILITIES, MODES, VERSION, BOSSES, bossFor, AURA, ENEMIES, RARITY, SEASONS, SEASON_ORDER, brawlWeek, brawlOf, CAMPAIGN } from './sim/data.js';
 import {
-  createGame, step, canPlace, towerAt, obstacleAt, barrelAt, towerStats, upgradeCost, canEvolve, sellValue, clearCost,
+  createGame, step, canPlace, family, towerAt, obstacleAt, barrelAt, towerStats, upgradeCost, canEvolve, sellValue, clearCost,
   enemyAt, abilityMax, isRoad, canMove, hasWall, auraCost, isLocked, placeCost,
 } from './sim/sim.js';
 import { Renderer, W, H, MX, MY, PLAYER_COLORS } from './render.js';
@@ -471,21 +471,27 @@ function updatePop() {
     const up = upgradeCost(t);
     const evo = canEvolve(t);
     key = `t${t.id}:${t.kind}:${t.level}:${Math.floor(gold / 5)}:${Math.round(st.dmg)}:${st.buff}:${Math.ceil((t.moveCd || 0) / TICK_RATE)}`;
-    html = `<div class="pop-title"><b>${def.name}</b> <span>${def.from ? '★ еволюція' : 'рів. ' + t.level}</span></div>
+    // header: tower icon on a family-coloured tile, name, level badge
+    html = `<div class="pop-title" style="--fam: var(--fam-${family(t.kind)})"><span class="pop-ico" data-icon="${t.kind}"></span>
+        <b>${def.name}</b><span class="lvl-badge">${def.from ? '★ еволюція' : 'рів. ' + t.level}</span></div>
       ${def.support
         ? `<div class="pop-stats"><span>◎ ${def.range}</span><span class="buff">⚔ +${Math.round((t.aura.dmg ? AURA.dmg.bonus[t.aura.dmg - 1] : 0) * 100)}%</span><span>⏱ +${Math.round((t.aura.rate ? AURA.rate.bonus[t.aura.rate - 1] : 0) * 100)}%</span></div>`
         : `<div class="pop-stats"><span>⚔ ${Math.round(st.dmg)}</span><span>◎ ${Math.round(st.range)}</span><span>⏱ ${(TICK_RATE / st.period).toFixed(1)}/с</span>${st.buff ? `<span class="buff">⚡+${Math.round(st.buff * 100)}%</span>` : ''}</div>`}`;
     if (def.support) key += `:${t.aura.dmg}${t.aura.rate}`;
+    // one action row: label (+ small detail line) on the left, a price chip on the right
+    const act = (attr, cls, label, sub, price, off) =>
+      `<button ${attr} class="pa ${cls}" ${off ? 'disabled' : ''}><span class="pa-txt">${label}${sub ? `<small>${sub}</small>` : ''}</span>${price ? `<i class="pa-cost">${price}</i>` : ''}</button>`;
     if (!mine) {
       html += `<div class="pop-stats"><span style="color:${PLAYER_COLORS[t.owner]}">Вежа гравця ${nickOf(t.owner)}</span></div>`;
     } else {
-      if (up) html += `<button data-act="upgrade" ${gold < up ? 'disabled' : ''}>▲ Покращити <i>● ${up}</i></button>`;
+      if (up) html += act('data-act="upgrade"', 'pa-up', '▲ Покращити', `рівень ${t.level} → ${t.level + 1}`, `● ${up}`, gold < up);
       if (def.support) {
         for (const k of ['dmg', 'rate']) {
           const lv = t.aura[k], cost = auraCost(t, k), a = AURA[k];
+          const label = `${k === 'dmg' ? '⚔' : '⏱'} ${a.name}`;
           html += cost
-            ? `<button data-act="aura" data-aura="${k}" ${gold < cost ? 'disabled' : ''}>${k === 'dmg' ? '⚔' : '⏱'} ${a.name} ${lv}→${lv + 1} (+${Math.round(a.bonus[lv] * 100)}%) <i>● ${cost}</i></button>`
-            : `<button disabled>${k === 'dmg' ? '⚔' : '⏱'} ${a.name} — МАКС</button>`;
+            ? act(`data-act="aura" data-aura="${k}"`, `pa-${k}`, label, `рівень ${lv} → ${lv + 1} · +${Math.round(a.bonus[lv] * 100)}%`, `● ${cost}`, gold < cost)
+            : act('', `pa-${k}`, label, 'максимальний рівень', '✓', true);
         }
       }
       if (evo) {
@@ -498,15 +504,17 @@ function updatePop() {
         html += '</div>';
       }
       const mcd = Math.ceil((t.moveCd || 0) / TICK_RATE);
-      html += `<button data-act="move" ${mcd ? 'disabled' : ''}>↔ Перемістити [M] <i>${mcd ? mcd + ' с' : `до ${CONFIG.moveRange} кл.`}</i></button>`;
-      html += `<button data-act="sell" class="sell">Продати <i>+${sellValue(t)}</i></button>`;
+      html += `<div class="pa-row">`
+        + act('data-act="move"', "pa-move", "↔ Перемістити", mcd ? `зачекай ${mcd} с` : `до ${CONFIG.moveRange} клітинок · M`, "", mcd)
+        + act('data-act="sell"', "pa-sell", "Продати", "", `+${sellValue(t)}`, false)
+        + `</div>`;
     }
   } else {
     const cost = clearCost(o);
     key = `o${o.id}:${gold >= cost}`;
     html = `<div class="pop-title"><b>${o.kind === 'tree' ? 'Дерево' : 'Камінь'}</b></div>
       <div class="pop-stats"><span>Звільняє місце під вежу. Іноді там скарб!</span></div>
-      <button data-act="clear" ${gold < cost ? 'disabled' : ''}>⛏ Розчистити <i>● ${cost}</i></button>`;
+      <button data-act="clear" class="pa pa-up" ${gold < cost ? "disabled" : ""}><span class="pa-txt">⛏ Розчистити</span><i class="pa-cost">● ${cost}</i></button>`;
   }
   if (key !== popKey) {
     popKey = key;
@@ -1233,3 +1241,7 @@ setInterval(() => {
   $('coopStart').classList.toggle('hidden', !host);
   if (host) $('coopStart').textContent = $('playSolo').textContent;
 }, 300);
+// debug: ?demo&select=N opens the popup of the N-th tower (for screenshots)
+if (new URLSearchParams(location.search).has('select')) {
+  setTimeout(() => { const t = state.towers[+new URLSearchParams(location.search).get('select') || 0]; if (t) ui.selected = 't' + t.id; }, 600);
+}
