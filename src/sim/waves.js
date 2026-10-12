@@ -24,6 +24,7 @@ export function startWave(s) {
   s.wave++;
   const w = s.wave;
   for (const b of s.barrels) b.ready = true;
+  for (const wl of s.walls) if (player(s, wl.owner).mods.wallRegen > 0) wl.hp = wl.max; // «Ремонт барикади»: fixed up between waves
   // co-op prank: pickpockets take a cut of their partner's gold at every wave start
   for (let i = 0; i < s.players.length; i++) {
     const pl = s.players[i], other = s.players[(i + 1) % s.players.length]; // picks the next player's pocket

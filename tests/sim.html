@@ -657,6 +657,20 @@ try {
 
   check('campaign: Валерія Кудряшівна appears in mission 7', CAMPAIGN_NPC === 'valeria');
 
+  // talent «Ремонт барикади»: the wall mends itself every second and fully at a wave start
+  const rp = createGame(13);
+  const [wx, wy] = [...rp.map.tiles][8].split(',').map(Number);
+  step(rp, [{ type: 'wall', tx: wx, ty: wy, p: 0 }]);
+  const wl = rp.walls[0];
+  wl.hp = 10;
+  for (let i = 0; i < 20; i++) step(rp);
+  check('repair: no talent, no mending', wl.hp === 10);
+  CARDS.find((c) => c.id === 'repair').apply(rp, rp.players[0]);
+  for (let i = 0; i < 20; i++) step(rp);
+  check('repair: +5% of max per second', Math.abs(wl.hp - (10 + wl.max * 0.05)) < 0.01, `${wl.hp} / ${wl.max}`);
+  rp.countdown = 1; step(rp);
+  check('repair: full at a wave start', wl.hp === wl.max);
+
   // Time of day: start phase from the seed, moves every DAY.every waves; night = shorter sight, more gold
   const starts = new Set([1, 2, 3, 4, 5, 6, 7, 8].map((sd) => dayPhase(createGame(sd))));
   check('day: runs start at different times of day', starts.size >= 3, [...starts].join());
@@ -768,7 +782,7 @@ try {
 
   // Golden replay: a fixed bot run must give the same fingerprint until VERSION is bumped.
   // When you change src/sim on purpose: VERSION++ and paste the new hash printed below.
-  const GOLDEN = { version: 48, hash: 419548047 };
+  const GOLDEN = { version: 49, hash: 419548047 };
   const gh = stateHash(runBot(4242, 6).s);
   if (VERSION === GOLDEN.version) check('golden replay: sim unchanged at this VERSION (else bump VERSION)', gh === GOLDEN.hash, `got ${gh}`);
   else log(`NOTE golden replay: VERSION ${VERSION} — set GOLDEN = { version: ${VERSION}, hash: ${gh} }`);

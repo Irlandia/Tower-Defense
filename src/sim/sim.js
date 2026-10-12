@@ -38,7 +38,7 @@ function newPlayer(opts, i = 0) {
       cdAll: k.cdAll ?? 1, meteorCd: (k.meteorCd || opts.meteorCd || 1) * (BR.meteorCd || 1), novaCd: k.novaCd || 1, wallCd: k.wallCd || 1,
       goldrainCd: 1, overdriveCd: 1, quakeCd: 1, dragonCd: 1,
       wall: k.wall || 1, meteorDmg: k.meteorDmg || 1, novaFreeze: k.novaFreeze || 0, overSec: k.overSec || 0,
-      aura: k.aura || 1, moveCd: k.moveCd || 1, barrel: 1, lapDmg: 0, hunter: 0, thief: 0,
+      aura: k.aura || 1, moveCd: k.moveCd || 1, barrel: 1, lapDmg: 0, hunter: 0, thief: 0, wallRegen: 0,
       towerRate: { ...(k.rate || {}) }, towerRange: { ...(k.range || {}) }, multi: { ...(k.multi || {}) }, splash: k.splash || 1, discount: { ...(k.discount || {}) },
       cards: k.cards || opts.cards || 3,
     },
@@ -182,6 +182,8 @@ export function step(s, cmds = [], advance = true) {
   s.zones = s.zones.filter((z) => z.life > 0);
   s.coins = s.coins.filter((c) => c.life > 0);
   s.walls = s.walls.filter((w) => w.hp > 0);
+  // talent «Ремонт барикади»: a standing barricade mends itself every second
+  for (const w of s.walls) { const r = player(s, w.owner).mods.wallRegen; if (r > 0) w.hp = Math.min(w.max, w.hp + (w.max * r) / T); }
 
   s.stats.peak = Math.max(s.stats.peak, s.enemies.length);
   // campaign: enemies passing by the farm trample it

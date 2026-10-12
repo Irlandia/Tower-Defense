@@ -6,7 +6,7 @@ export const COLS = 26;
 export const ROWS = 14;
 export const TICK_RATE = 20;
 // Bump on every change to sim/data: co-op peers refuse to play with a different version.
-export const VERSION = 48;
+export const VERSION = 49;
 
 export const CONFIG = {
   startGold: 160,
@@ -159,6 +159,8 @@ export const CARDS = [
   { id: 'cash', name: 'Скарб', desc: 'Одразу +80 золота і ще +12 за кожну пройдену хвилю', rarity: 'common', max: 99, apply: (s, p) => { p.gold += 80 + 12 * s.wave; } },
   { id: 'cheap', name: 'Цехова знижка', desc: 'Нові вежі на 12% дешевші', rarity: 'common', max: 2, apply: (s, p) => { p.mods.discount.all = (p.mods.discount.all || 0) + 0.12; } },
   { id: 'mason', name: 'Каменяр', desc: 'Барикада: утричі міцніша і −30% перезарядки', rarity: 'common', max: 1, apply: (s, p) => { p.mods.wall *= 3; p.mods.wallCd *= 0.7; } },
+  { id: 'repair', name: 'Ремонт барикади', desc: 'Твоя барикада лагодиться: +5% міцності щосекунди, а на початку хвилі — повністю', rarity: 'common', max: 2,
+    apply: (s, p) => { p.mods.wallRegen += 0.05; } },
   // --- rare: change how a tower plays ---
   { id: 'crit', name: 'Око сокола', desc: 'Лучники: +12% шансу крита, крит ×2.5', rarity: 'rare', max: 2, apply: (s, p) => { p.mods.crit += 0.12; p.mods.critMul = Math.max(p.mods.critMul, 2.5); } },
   { id: 'volley', name: 'Залп', desc: 'Лучники стріляють ще в одну ціль', rarity: 'rare', max: 1, apply: (s, p) => { p.mods.multi.arrow = (p.mods.multi.arrow || 0) + 1; } },
