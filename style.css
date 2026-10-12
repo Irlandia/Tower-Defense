@@ -255,3 +255,93 @@ button, input { font-family: 'Nunito', system-ui, sans-serif; font-weight: 700; 
 #sayLayer .say.gold { color: #ffcd75; }
 #sayLayer .say.nick { font-size: 12px; padding: 1px 6px; transform: translate(0, -100%); }
 #sayLayer .say.bar { background: none; box-shadow: none; color: #ffcd75; font-size: 13px; text-shadow: 0 1px 0 #1a1c2c, 0 -1px 0 #1a1c2c, 1px 0 0 #1a1c2c, -1px 0 0 #1a1c2c; }
+
+#info .done { color: #a7f070; }
+
+/* ===================== button redesign ===================== */
+:root { --fam-arrow: #ef7d57; --fam-cannon: #94b0c2; --fam-frost: #73eff7; --fam-tesla: #ffcd75; --fam-fire: #b13e53; --fam-totem: #a7f070; }
+button { border-radius: 6px; transition: transform .08s, filter .12s, background .12s; }
+button:hover:not(:disabled) { filter: brightness(1.12); }
+
+/* tower cards: family colour stripe, icon tile, coin price chip, hotkey badge */
+.tower-btn {
+  --fam: var(--slate);
+  background: linear-gradient(180deg, #3a4566 0%, #2c3553 100%);
+  box-shadow: inset 4px 0 0 var(--fam), inset -2px -2px 0 rgba(0,0,0,.35), inset 2px 2px 0 rgba(255,255,255,.08), 0 2px 0 #151726;
+  padding: 6px 10px 6px 12px; gap: 12px;
+}
+.tower-btn[data-kind="arrow"] { --fam: var(--fam-arrow); }
+.tower-btn[data-kind="cannon"] { --fam: var(--fam-cannon); }
+.tower-btn[data-kind="frost"] { --fam: var(--fam-frost); }
+.tower-btn[data-kind="tesla"] { --fam: var(--fam-tesla); }
+.tower-btn[data-kind="fire"] { --fam: var(--fam-fire); }
+.tower-btn[data-kind="totem"] { --fam: var(--fam-totem); }
+.tower-btn canvas {
+  width: 36px; height: 44px; padding: 2px 4px; border-radius: 6px;
+  background: radial-gradient(circle at 50% 70%, color-mix(in srgb, var(--fam) 35%, transparent), rgba(26,28,44,.6) 70%);
+}
+.tower-btn .label b { font-size: 16px; }
+.tower-btn .cost { display: inline-flex; align-items: center; gap: 4px; margin-top: 3px; padding: 1px 8px 1px 4px; border-radius: 10px; background: rgba(26,28,44,.6); font-weight: 800; width: fit-content; }
+.tower-btn .key, .ability .key {
+  top: 5px; right: 6px; min-width: 16px; height: 16px; line-height: 16px; text-align: center;
+  border-radius: 4px; background: rgba(26,28,44,.7); color: var(--silver); font-size: 11px; font-weight: 800;
+}
+.tower-btn:hover:not(:disabled) { transform: translateX(3px); }
+.tower-btn.active {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--fam) 45%, #3a4566), #2c3553);
+  box-shadow: inset 4px 0 0 var(--fam), 0 0 0 2px var(--fam), 0 0 14px color-mix(in srgb, var(--fam) 60%, transparent);
+}
+.tower-btn.poor:not(.active) .cost { color: var(--red); }
+.tower-btn.locked { filter: grayscale(1) brightness(.8); opacity: .55; }
+
+/* abilities: icon + name, radial cooldown like a clock */
+#abilities { gap: 8px; }
+.ability {
+  display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 4px 7px;
+  background: linear-gradient(180deg, #3d3060, #2b2346); color: var(--white);
+  box-shadow: inset -2px -2px 0 rgba(0,0,0,.35), inset 2px 2px 0 rgba(255,255,255,.1), 0 2px 0 #151726;
+}
+.ability .ab-icon { font-size: 20px; line-height: 1; }
+.ability .ab-name { font-size: 12px; font-weight: 800; line-height: 1.1; text-align: center; }
+.ability .cd { inset: 0; height: auto; border-radius: 6px; background: conic-gradient(rgba(10,12,24,.72) calc(var(--cd) * 360deg), transparent 0); }
+.ability.cooling { color: var(--silver); }
+.ability.active { box-shadow: 0 0 0 2px var(--yellow), 0 0 14px rgba(255,205,117,.5); }
+.ability[data-ab="meteor"] { background: linear-gradient(180deg, #5a3040, #3b2030); }
+.ability[data-ab="nova"] { background: linear-gradient(180deg, #2c4f66, #1f3548); }
+.ability[data-ab="wall"] { background: linear-gradient(180deg, #5a4430, #3d2e20); }
+
+/* next wave: the main call to action */
+#next {
+  font-size: 18px; padding: 12px; border-radius: 8px; letter-spacing: .3px;
+  background: linear-gradient(180deg, #4fd27b, #2c9a55);
+  box-shadow: inset 0 -3px 0 rgba(0,0,0,.25), inset 0 2px 0 rgba(255,255,255,.25), 0 3px 0 #1d5c37;
+}
+#next:hover:not(:disabled) { transform: translateY(-1px); }
+#next:disabled { background: linear-gradient(180deg, #2f5a40, #244633); color: #9fc6ad; opacity: 1; box-shadow: inset 0 2px 6px rgba(0,0,0,.3); }
+#talent { border-radius: 8px; background: linear-gradient(180deg, #8a4fb3, #5d2f80); }
+
+/* small round controls */
+.controls button { height: 36px; padding: 0; border-radius: 8px; background: #2c3553; font-size: 16px; }
+.controls button:hover { background: #3a4566; }
+
+/* ---- pixel finish: hard edges, stepped "pixel corners", flat colours with bevels ---- */
+button, .tower-btn canvas, .tower-btn .cost, .tower-btn .key, .ability .key, .ability .cd, .controls button, #next, #talent { border-radius: 0; }
+/* 2px notched corners give the chunky pixel-art outline */
+.tower-btn, .ability, #next, #talent, .controls button {
+  clip-path: polygon(0 3px, 3px 3px, 3px 0, calc(100% - 3px) 0, calc(100% - 3px) 3px, 100% 3px, 100% calc(100% - 3px), calc(100% - 3px) calc(100% - 3px), calc(100% - 3px) 100%, 3px 100%, 3px calc(100% - 3px), 0 calc(100% - 3px));
+}
+.tower-btn { background: #333c57; box-shadow: inset 4px 0 0 var(--fam), inset -3px -3px 0 #1a1c2c, inset 3px 3px 0 #566c86; }
+.tower-btn.active { background: color-mix(in srgb, var(--fam) 40%, #333c57); box-shadow: inset 4px 0 0 var(--fam), inset -3px -3px 0 #1a1c2c, inset 3px 3px 0 var(--fam); }
+.tower-btn canvas { background: #1f2438; box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--fam) 55%, transparent); }
+.tower-btn .cost { background: #1f2438; border-radius: 0; }
+.tower-btn .key, .ability .key { background: #1a1c2c; }
+.ability { box-shadow: inset -3px -3px 0 rgba(0,0,0,.45), inset 3px 3px 0 rgba(255,255,255,.18); }
+.ability[data-ab="meteor"] { background: #6b3346; }
+.ability[data-ab="nova"] { background: #29506b; }
+.ability[data-ab="wall"] { background: #6b4e33; }
+.ability.active { box-shadow: inset -3px -3px 0 rgba(0,0,0,.45), inset 3px 3px 0 #ffcd75; filter: brightness(1.2); }
+#next { background: #38b764; box-shadow: inset -3px -3px 0 #257179, inset 3px 3px 0 #a7f070; }
+#next:disabled { background: #2a5a42; box-shadow: inset -3px -3px 0 #1a3a2c, inset 3px 3px 0 #3d7a5a; }
+#talent { background: #6b3a8a; box-shadow: inset -3px -3px 0 #3d1f52, inset 3px 3px 0 #b97ae0; }
+.controls button { background: #333c57; box-shadow: inset -3px -3px 0 #1a1c2c, inset 3px 3px 0 #566c86; }
+.controls button:active, .tower-btn:active, .ability:active, #next:active { box-shadow: inset 3px 3px 0 #1a1c2c; transform: translateY(1px); }

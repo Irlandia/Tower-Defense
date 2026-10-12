@@ -51,7 +51,7 @@ function startGame(seed, opts) {
   state = createGame(seed, opts);
   music.play(state.season);
   if (state.mission) tellStory(state.mission.story.intro);
-  setTimeout(() => (state.mission ? banner(`Місія ${state.mission.id}: ${state.mission.title}`, "boss intro", state.mission.side.text, 2600) : state.brawl ? banner(`${state.brawl.icon} ${state.brawl.name.toUpperCase()}`, "boss intro", state.brawl.desc, 3200) : banner(SEASONS[state.season].name.toUpperCase(), "gold", "сезон", 1800)), 200);
+  setTimeout(() => (state.mission ? banner(`Місія ${state.mission.id}: ${state.mission.title}`, "boss intro", `вистояти ${state.winWave} хвиль · ★ ${state.mission.side.text}`, 2600) : state.brawl ? banner(`${state.brawl.icon} ${state.brawl.name.toUpperCase()}`, "boss intro", state.brawl.desc, 3200) : banner(SEASONS[state.season].name.toUpperCase(), "gold", "сезон", 1800)), 200);
   endShown = false;
   game = { seed, opts };
   cmdLog = [];
@@ -402,7 +402,8 @@ for (const id of Object.keys(ABILITIES)) {
   b.className = 'ability';
   b.id = 'ab-' + id;
   b.title = a.desc;
-  b.innerHTML = `<span class="ab-name">${a.name}</span><span class="key">${a.key}</span><span class="cd"></span>`;
+  b.dataset.ab = id;
+  b.innerHTML = `<span class="ab-icon">${{ meteor: "☄", nova: "❄", wall: "🧱" }[id]}</span><span class="ab-name">${a.name}</span><span class="key">${a.key}</span><span class="cd"></span>`;
   b.addEventListener('click', () => useAbility(id));
   $('abilities').append(b);
 }
@@ -575,11 +576,14 @@ function updateUI() {
       : '<b>Порада</b><br>Крига робить ворогів <span class="wet">мокрими</span>: Тесла бʼє їх x2, а Вогонь викликає вибух пари.';
     if (state.mission) {
       const M = state.mission, mine = state.towers.filter((t) => t.owner === me()).length;
-      html = `<b>Місія ${M.id}: ${esc(M.title)}</b><br>★ Ціль: ${esc(M.side.text)}`
+      const sp = sideProgress(state), ep = state.stats.early, en = M.early || 0;
+      html = `<b>Місія ${M.id}: ${esc(M.title)}</b><br>Головне: вистояти ${state.winWave} хвиль`
+        + `<br><span class="${sp.ok ? 'done' : ''}">★ ${sp.text} ${sp.ok ? '✓' : ''}</span>`
+        + `<br><span class="${ep >= en ? 'done' : ''}">★ Ранні виклики хвиль: ${Math.min(ep, en)} / ${en} ${ep >= en ? '✓' : ''}</span>`
         + (M.maxTowers ? `<br>Веж: ${mine} / ${M.maxTowers}` : "")
         + (state.farmMax ? `<br>🌾 Врожай: ${Math.ceil(state.farmHp)} / ${state.farmMax}<br><span class="hint">Вороги, що проходять повз поле, топчуть посіви. Врожай знищено — поразка.</span>` : "")
         + (M.night ? "<br>Ніч: вежі бачать на 30% ближче" : "");
-      key += ":" + mine + ":" + Math.ceil(state.farmHp);
+      key += ":" + mine + ":" + Math.ceil(state.farmHp) + ":" + sp.text + sp.ok + ep;
     } else if (state.brawl) html = `<b>${state.brawl.icon} Бійка: ${state.brawl.name}</b><br>${state.brawl.desc}`;
     if (!state.mission) html += state.mode === "circle"
       ? "<br><span class=\"hint\">🌳 дерева — скарби · монети — наводь мишку. Удвох: кожен тримає свій вхід (печери зліва і справа).</span>"
@@ -779,7 +783,7 @@ function renderMenu() {
     brief.className = 'camp-brief';
     brief.innerHTML = `<b>Місія ${M.id}. ${esc(M.title)}</b><span class="hint">${rules.join(' · ')}</span>
       ${M.story.intro.map(([who, t]) => `<p><i>${esc(who)}:</i> «${esc(t)}»</p>`).join('')}
-      <span class="hint">★ перемога · ★ ${esc(M.side.text)} · ★ ранній виклик хвиль ×${M.early}</span>`;
+      <span class="hint">Перемога — вистояти всі хвилі. Зірки: ★ за перемогу · ★ ${esc(M.side.text)} · ★ ранній виклик хвиль ×${M.early}</span>`;
     cw.append(brief);
     for (const n of cw.querySelectorAll('[data-mission]')) n.addEventListener('click', () => { selectedMission = +n.dataset.mission; renderMenu(); });
   }
@@ -1156,3 +1160,25 @@ function tellStory(lines) {
     else banner(who, 'gold', text, 3500);
   }, 1800 + i * 4200));
 }
+
+// Campaign side objective as live progress for the panel (the win itself is surviving all waves).
+function sideProgress(s) {
+  const side = s.mission.side, st = s.stats;
+  switch (side.type) {
+    case 'coins': return { text: `Монети: ${Math.min(st.coins, side.n)} / ${side.n}`, ok: st.coins >= side.n };
+    case 'noLeak': return { text: st.leaks ? `Пропущено ворогів: ${st.leaks} — зірку втрачено` : 'Жодного пропущеного ворога', ok: !st.leaks, lost: !!st.leaks };
+    case 'farm': {
+      const pct = Math.round((100 * s.farmHp) / (s.farmMax || 1));
+      return { text: `Врожай: ${pct}% (треба ≥ 50%)`.replace('≥', 'від'), ok: pct >= side.pct * 100 };
+    }
+    case 'peak': return { text: `Найбільше живих: ${st.peak} / ${side.n}`, ok: st.peak <= side.n, lost: st.peak > side.n };
+  }
+  return { text: side.text, ok: false };
+}
+// a banner the moment a collectable objective is reached
+let sideDone = false;
+setInterval(() => {
+  if (!running || !state.mission) { sideDone = false; return; }
+  const side = state.mission.side;
+  if (side.type === 'coins' && !sideDone && state.stats.coins >= side.n) { sideDone = true; sfx.play('card'); banner('★ Ціль виконано!', 'gold', side.text, 1800); }
+}, 250);
