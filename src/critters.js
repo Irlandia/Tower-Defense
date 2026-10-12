@@ -103,10 +103,11 @@ export class Critters {
     return null;
   }
 
-  reset(map, season = "summer") {
+  reset(map, season = "summer", npc = null) {
     this.map = map;
     this.season = season;
     this.initFarm(map);
+    this.initValeria(npc === "valeria");
     this.iceFish = [];
     this.list = [];
     this.jumps = [];
@@ -144,6 +145,7 @@ export class Critters {
   update(dt, enemies) {
     this.updateFish(dt);
     this.updateFarm(dt);
+    this.updateValeria(dt, enemies);
     for (const c of this.list) {
       const K = KIND[c.kind];
       c.t -= dt;
@@ -346,6 +348,7 @@ export class Critters {
 
   // Click reaction; returns true if a critter was hit.
   poke(x, y) {
+    if (this.pokeValeria(x, y)) return true;
     if (this.pokeFarm(x, y)) return true;
     if (this.pokeFish(x, y)) return true;
     const c = this.list.find((k) => Math.hypot(k.x - x, k.y - 4 - y) < 10);
@@ -521,6 +524,7 @@ Object.assign(Critters.prototype, {
 
   // farmer's and dog's lines, drawn after everything else so they stay readable (even at night)
   drawFarmSay(g) {
+    this.drawValeriaSay();
     const F = this.farm;
     if (!F) return;
     for (const k of [F.farmer, F.dog]) {
@@ -531,13 +535,15 @@ Object.assign(Critters.prototype, {
 
   farmItems() {
     const F = this.farm;
-    if (!F) return [];
-    const out = [{ y: F.farmer.y, farmer: true }, { y: F.dog.y, dog: true }];
+    const out = this.valeria ? [{ y: this.valeria.y, valeria: true }] : [];
+    if (!F) return out;
+    out.push({ y: F.farmer.y, farmer: true }, { y: F.dog.y, dog: true });
     if (F.bowl) out.push({ y: F.bowl.y - 1, bowl: true });
     return out;
   },
 
   drawFarm(g, it) {
+    if (it.valeria) { this.drawValeria(g); return; }
     const F = this.farm;
     if (!F) return;
     const say = (k, x, y) => {
@@ -590,5 +596,81 @@ Object.assign(Critters.prototype, {
       if (d.state !== 'run' && Math.floor(performance.now() / 150) % 2) { g.fillStyle = '#a8805e'; g.fillRect(d.dir > 0 ? x - 1 : x + 9, y + 1, 1, 1); }
       d.sayAt = [d.x, y - 2];
     }
+  },
+});
+
+// ---------- Валерія Кудряшівна: a cheerful neutral fair-goer in a campaign mission (mission.npc = 'valeria') ----------
+// Decoration only: wanders the grass between the roads and shouts funny lines; never touches the simulation.
+const VAL_COL = { H: '#8a4a2a', h: '#d0803f', s: '#f2c6a0', k: '#1a1c2c', r: '#b13e53', p: '#5d275d', P: '#8a3f8f', w: '#f4f4f4', y: '#ffcd75' };
+const VALERIA = {
+  stand: ['.HhHhHh..', 'HhHhHhHh.', 'hHsssshHh', 'Hhsksksh.', 'hHssrsshH', '.hHsssHh.', '..yPPPy..', '.pPPPPPp.', 's.PwPwP.s', '..ppppp..', '..p...p..', '.kk...kk.'],
+  walk: ['.HhHhHh..', 'HhHhHhHh.', 'hHsssshHh', 'Hhsksksh.', 'hHssrsshH', '.hHsssHh.', '..yPPPy..', '.pPPPPPp.', 's.PwPwP.s', '..ppppp..', '.p.....p.', 'kk.....kk'],
+  shout: ['HhHhHhH..', 'hHhHhHhH.', 'HhsssshHh', 'hHsksksH.', 'HhsskkshH', '.hHsssHh.', 's.yPPPy.s', '.pPPPPPp.', '..PwPwP..', '..ppppp..', '..p...p..', '.kk...kk.'],
+};
+function valSprite(rows, flip) {
+  const cv = document.createElement('canvas');
+  cv.width = rows[0].length; cv.height = rows.length;
+  const g = cv.getContext('2d');
+  rows.forEach((row, y) => { for (let x = 0; x < row.length; x++) { const c = VAL_COL[row[x]]; if (!c) continue; g.fillStyle = c; g.fillRect(flip ? row.length - 1 - x : x, y, 1, 1); } });
+  return cv;
+}
+const VAL_SPR = Object.fromEntries(Object.entries(VALERIA).map(([k, rows]) => [k, [valSprite(rows, false), valSprite(rows, true)]]));
+const VAL_LINES = [
+  'Хто замовляв слиз з підливою?', 'Я не панікую, я голосно думаю!', 'Мої кучері — не гніздо, гоблінам не сідати!',
+  'Тарасе, не стій — будуй!', 'Купуйте пиріжки! З… ну, з чимось!', 'Ще одна хвиля — і я в спа!',
+  'Слизи, ви хоч ноги витирайте!', 'Кудряшівна все бачить!', 'Монетки збирайте — на ярмарку все дороге!',
+  'Дракони? Де дракони? Я хочу автограф!', 'Хто так будує? А, нормально будує.', 'Ой, вежечка! Яка гарненька!',
+];
+const VAL_POKE = ['Не чіпай зачіску — я її три години крутила!', 'Ой! Лоскотно!', 'Привіт, будівничий!', 'Я тут просто подивитись!', 'Автограф — після перемоги!'];
+const VAL_SCARED = ['Ай! Слиз на горизонті!', 'Тікаю-тікаю… ні, стою, мені цікаво!', 'Ану киш звідси, слизняку!'];
+const VAL_BOSS = ['Оце так здоровань!', 'Цей бос — як понеділок: великий і ніхто не чекав!', 'Ой, мамочки, він ще й розмовляє!'];
+
+Object.assign(Critters.prototype, {
+  initValeria(on) {
+    const at = on && this.randomSpot();
+    this.valeria = at ? { x: at.x, y: at.y, tx: at.x, ty: at.y, dir: 1, t: 2, say: null, sayT: 0, shoutT: rnd(2, 4), sawBoss: new Set() } : null;
+  },
+  updateValeria(dt, enemies) {
+    const v = this.valeria;
+    if (!v) return;
+    v.sayT -= dt;
+    v.t -= dt;
+    // stroll between grass spots
+    const dx = v.tx - v.x, dy = v.ty - v.y, d = Math.hypot(dx, dy);
+    if (d > 1) { const sp = 14 * dt; v.x += (dx / d) * Math.min(sp, d); v.y += (dy / d) * Math.min(sp, d); v.dir = dx >= 0 ? 1 : -1; }
+    else if (v.t <= 0) { const n = this.randomSpot((x, y) => Math.hypot(x - v.x, y - v.y) < 70); if (n) { v.tx = n.x; v.ty = n.y; } v.t = rnd(2, 5); }
+    const shout = (lines, time = 2.6) => { v.say = lines[Math.floor(Math.random() * lines.length)]; v.sayT = time; };
+    // a new boss on the map gets a comment
+    const boss = enemies && enemies.find((e) => !e.dead && (e.type === 'boss' || e.type === 'king') && !v.sawBoss.has(e.id));
+    if (boss) { v.sawBoss.add(boss.id); shout(VAL_BOSS, 3); v.shoutT = rnd(6, 9); return; }
+    v.shoutT -= dt;
+    if (v.shoutT > 0 || v.sayT > 0) return;
+    const near = enemies && enemies.some((e) => !e.dead && Math.hypot(e.x - v.x, e.y - v.y) < 40);
+    shout(near ? VAL_SCARED : VAL_LINES);
+    v.shoutT = rnd(6, 10);
+  },
+  pokeValeria(x, y) {
+    const v = this.valeria;
+    if (!v || Math.hypot(v.x - x, v.y - 6 - y) > 9) return false;
+    v.say = VAL_POKE[Math.floor(Math.random() * VAL_POKE.length)];
+    v.sayT = 2.4;
+    v.shoutT = Math.max(v.shoutT, 4);
+    return true;
+  },
+  drawValeria(g) {
+    const v = this.valeria;
+    if (!v) return;
+    const moving = Math.hypot(v.tx - v.x, v.ty - v.y) > 1;
+    const key = v.sayT > 0 ? 'shout' : moving && Math.floor(performance.now() / 200) % 2 ? 'walk' : 'stand';
+    const spr = VAL_SPR[key][v.dir > 0 ? 0 : 1];
+    const bounce = v.sayT > 0 ? Math.round(Math.abs(Math.sin(performance.now() / 120))) : 0;
+    const x = Math.round(v.x - 4), y = Math.round(v.y - spr.height) - bounce;
+    g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(x + 1, Math.round(v.y), 7, 2);
+    g.drawImage(spr, x, y);
+    v.sayAt = [v.x, y - 3];
+  },
+  drawValeriaSay() {
+    const v = this.valeria;
+    if (v && v.sayT > 0 && v.say && v.sayAt) say(v.sayAt[0], v.sayAt[1], v.say, '', '#ffcd75');
   },
 });

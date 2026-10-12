@@ -6,7 +6,7 @@ export const COLS = 26;
 export const ROWS = 14;
 export const TICK_RATE = 20;
 // Bump on every change to sim/data: co-op peers refuse to play with a different version.
-export const VERSION = 47;
+export const VERSION = 48;
 
 export const CONFIG = {
   startGold: 160,
@@ -316,7 +316,7 @@ export const brawlOf = (week) => BRAWLS[((week % BRAWLS.length) + BRAWLS.length)
 // ---------- Campaign «Останній прилив»: 10 missions played in order ----------
 // rules: same engine as brawls (towers, alwaysWet, pool, split, killGold, coinChance, speed, regen, hp, budget)
 // plus mission mechanics: farmHp (protect the farm), maxTowers, night (shorter tower sight), goblins (a thief every wave),
-// limit (circle alive limit), bosses (wave -> BOSSES key). side = the second star's objective; early = early calls for the third star.
+// limit (circle alive limit), npc (decorative character on the map, critters.js: "valeria"), bosses (wave -> BOSSES key). side = the second star's objective; early = early calls for the third star.
 // story: intro lines (speaker: text) and an outro line.
 export const CAMPAIGN = [
   { id: 1, title: 'Перші паростки', season: 'spring', map: 'classic', waves: 5, early: 1,
@@ -338,8 +338,8 @@ export const CAMPAIGN = [
     rules: { pool: ['slime', 'splitter'], split: 3, budget: 1.3 }, night: true, side: { type: 'noLeak', text: 'замок без втрат' },
     story: { intro: [['Дід Панас', 'Вночі вежі бачать лише поруч. Став їх ближче до дороги.'], ['Мама Слизу', 'Діточки, ховайтесь у темряві…']], outro: ['Дід Панас', 'Світанок. Ти вистояв ніч, хлопче.'] } },
   { id: 7, title: 'Осінній ярмарок', season: 'autumn', map: 'classic', waves: 10, early: 3,
-    rules: { killGold: 0, coinChance: 0.4, coinValue: 2 }, bosses: { 10: 10 }, side: { type: 'coins', n: 25, text: 'збери 25 монет' },
-    story: { intro: [['Дід Панас', 'Ярмарок! Золото не дають за вбивства — лише монети, що падають.'], ['Мама Слизу', 'Хто образив моїх слизиків?!']], outro: ['Дід Панас', 'Мама Слизу відступила. Але на півночі брязкає залізо…'] } },
+    rules: { killGold: 0, coinChance: 0.4, coinValue: 2 }, bosses: { 10: 10 }, npc: 'valeria', side: { type: 'coins', n: 25, text: 'збери 25 монет' },
+    story: { intro: [['Дід Панас', 'Ярмарок! Золото не дають за вбивства — лише монети, що падають.'], ['Валерія Кудряшівна', 'Ярмарок не скасовується! Я тут з пиріжками й новинами — ви бийте слизів, а я покричу!'], ['Мама Слизу', 'Хто образив моїх слизиків?!']], outro: ['Валерія Кудряшівна', 'Ура! Пиріжки за мій рахунок! Ну… за половину.'] } },
   { id: 8, title: 'Залізний легіон', season: 'autumn', map: 'classic', waves: 12, early: 3,
     rules: { pool: ['knight', 'healer'] }, maxTowers: 6, bosses: { 12: 15 }, side: { type: 'noLeak', text: 'замок без втрат' },
     story: { intro: [['Дід Панас', 'Лицарі в броні. Веж — лише шість: кожну прокачуй до кінця.'], ['Барон Іржавий', 'Сталь не боїться ваших стріл!']], outro: ['Барон Іржавий', 'Король… він не пробачить старому Панасу…'] } },

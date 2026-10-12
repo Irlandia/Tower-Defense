@@ -9,7 +9,8 @@ import { ABILITIES } from '../src/sim/data.js';
 import * as Meta from '../src/meta.js';
 import { sellRatioOf, abilityMax, stateHash, dayPhase, nightSight } from '../src/sim/sim.js';
 import { kill, spawn, damage } from '../src/sim/combat.js';
-import { VERSION, BOSSES, BOSS_POOL } from '../src/sim/data.js';
+import { VERSION, BOSSES, BOSS_POOL, CAMPAIGN } from '../src/sim/data.js';
+const CAMPAIGN_NPC = CAMPAIGN.find((m) => m.id === 7).npc;
 Meta.setPersist(false); // tests never write the player's real save
 
 const lines = [];
@@ -654,6 +655,8 @@ try {
   const metaTree = Meta.TREE ? Meta.TREE.find((n) => n.id === 'k_hand') : null;
   check('dragon: unlocked by the Вільна рука keystone', !metaTree || metaTree.ability === 'dragon');
 
+  check('campaign: Валерія Кудряшівна appears in mission 7', CAMPAIGN_NPC === 'valeria');
+
   // Time of day: start phase from the seed, moves every DAY.every waves; night = shorter sight, more gold
   const starts = new Set([1, 2, 3, 4, 5, 6, 7, 8].map((sd) => dayPhase(createGame(sd))));
   check('day: runs start at different times of day', starts.size >= 3, [...starts].join());
@@ -765,7 +768,7 @@ try {
 
   // Golden replay: a fixed bot run must give the same fingerprint until VERSION is bumped.
   // When you change src/sim on purpose: VERSION++ and paste the new hash printed below.
-  const GOLDEN = { version: 47, hash: 419548047 };
+  const GOLDEN = { version: 48, hash: 419548047 };
   const gh = stateHash(runBot(4242, 6).s);
   if (VERSION === GOLDEN.version) check('golden replay: sim unchanged at this VERSION (else bump VERSION)', gh === GOLDEN.hash, `got ${gh}`);
   else log(`NOTE golden replay: VERSION ${VERSION} — set GOLDEN = { version: ${VERSION}, hash: ${gh} }`);
