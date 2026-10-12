@@ -7,7 +7,7 @@ html, body { margin: 0; height: 100%; }
 body {
   background: var(--ink) radial-gradient(ellipse at center, #252a45 0%, var(--ink) 70%);
   color: var(--white);
-  font-family: 'Rubik', system-ui, sans-serif; /* readable Cyrillic for all text */
+  font-family: 'Nunito', system-ui, sans-serif; /* readable Cyrillic for all text */
   user-select: none;
   overflow: auto;
 }
@@ -241,13 +241,13 @@ body.side #ui { align-self: center; }
 
 /* pixel font only for big titles and banners, where it reads well */
 #menu h1, #modal h2, #banner, #waveInfo, .card b, #modal .stars { font-family: 'Pixelify Sans', monospace; }
-button, input { font-family: 'Rubik', system-ui, sans-serif; font-weight: 500; }
+button, input { font-family: 'Nunito', system-ui, sans-serif; font-weight: 700; }
 
 /* HTML speech bubbles / labels over the canvas (crisp at any scale) */
 #sayLayer { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 3; line-height: 1.2; }
 #sayLayer .say {
   position: absolute; transform: translate(-50%, -100%); white-space: nowrap; max-width: 60%;
-  font: 600 14px 'Rubik', system-ui, sans-serif; color: #f4f4f4;
+  font: 600 14px 'Nunito', system-ui, sans-serif; color: #f4f4f4;
   background: rgba(26, 28, 44, .85); padding: 3px 8px; border-radius: 3px;
   box-shadow: 0 0 0 2px rgba(26, 28, 44, .5);
 }
