@@ -3,7 +3,7 @@
 // Handler signature: (s, pl, pi, c) where pl = s.players[pi], pi = acting player index, c = the command.
 import { TILE, COLS, ROWS, TOWERS, CARDS, CONFIG, OBSTACLES, BARREL, ABILITIES, AURA, ENEMIES, COIN, TICK_RATE as T } from './data.js';
 import { rand } from './rng.js';
-import { center } from './mapgen.js';
+import { center, posAt } from './mapgen.js';
 import {
   canPlace, isRoad, isLocked, placeCost, upgradeCost, canEvolve, canMove, sellValue, clearCost,
   auraCost, abilityMax, hasWall, hasAbility, sellRatioOf,
@@ -195,6 +195,21 @@ export const COMMANDS = {
     pl.cds.overdrive = abilityMax(s, 'overdrive', pi);
     pl.overT = Math.round((ABILITIES.overdrive.dur + pl.mods.overSec) * T);
     s.events.push({ type: 'overdrive', p: pi });
+  },
+
+  // click on a road: the dragon flies that whole lane from its end back to the spawn (sim.js updateDragon)
+  dragon(s, pl, pi, c) {
+    if (!isNum(c.x) || !isNum(c.y) || !hasAbility(pl, "dragon") || pl.cds.dragon > 0) return;
+    if (!isRoad(s, Math.floor(c.x / TILE), Math.floor(c.y / TILE))) return;
+    let lane = -1, best = 1e9;
+    s.map.lanes.forEach((L, i) => {
+      for (let d = 0; d <= L.total; d += 12) { const p = posAt(s.map, i, d); const k = Math.hypot(p.x - c.x, p.y - c.y); if (k < best) { best = k; lane = i; } }
+    });
+    if (lane < 0) return;
+    pl.cds.dragon = abilityMax(s, "dragon", pi);
+    const L = s.map.lanes[lane], p = posAt(s.map, lane, L.total);
+    s.dragons.push({ id: s.nextId++, lane, dist: L.total, owner: pi, x: p.x, y: p.y, px: p.x, py: p.y, hit: [] });
+    s.events.push({ type: "dragon", x: p.x, y: p.y, p: pi });
   },
 
   quake(s, pl, pi, c) {

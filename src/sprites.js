@@ -393,12 +393,19 @@ export function drawWall(g, w, t) {
 
 export function drawCoin(g, x, y, t, blink) {
   if (blink && (t >> 1) % 2) return;
-  const w = [4, 3, 1, 3][(t >> 2) % 4];
-  const yy = Math.round(y - 4 + Math.sin(t * 0.2) * 2);
-  ellipse(g, x, y + 3, 4, 1, 'rgba(0,0,0,0.3)');
-  R(g, x - w, yy - 4, w * 2, 8, C.orange);
-  R(g, x - w, yy - 4, Math.max(1, w * 2 - 1), 7, C.yellow);
-  if (w > 2) R(g, x - 1, yy - 2, 1, 3, C.white);
+  // a round pixel coin (9 px disc) that spins: each row is squeezed by the spin factor
+  const f = [1, 0.7, 0.25, 0.7][(t >> 2) % 4];
+  const yy = Math.round(y - 8 + Math.sin(t * 0.2) * 2);
+  ellipse(g, x, y + 3, 4, 1, "rgba(0,0,0,0.3)");
+  const HALF = [2, 3, 4, 4, 4, 4, 4, 3, 2];
+  for (let r = 0; r < 9; r++) {
+    const hw = Math.max(0, Math.round(HALF[r] * f));
+    R(g, x - hw - 1, yy + r, hw * 2 + 2, 1, C.ink); // outline
+    if (r === 0 || r === 8) continue;
+    if (hw > 0) R(g, x - hw, yy + r, hw * 2, 1, r > 5 ? C.orange : C.yellow); // face, darker bottom
+    if (hw > 2 && r > 1 && r < 7) R(g, x - hw + 1, yy + r, 1, 1, C.orange); // rim
+  }
+  if (f > 0.5) { R(g, x - 2, yy + 2, 1, 2, C.white); R(g, x - 1, yy + 2, 1, 1, C.white); R(g, x, yy + 3, 1, 3, C.orange); } // shine + mark
 }
 
 export function drawChest(g, x, y) {

@@ -86,7 +86,7 @@ export const TREE = [
   { id: 'm7', branch: 'cmd', tier: 3, max: 2, name: 'Гучний клич', desc: 'Овердрайв: +2 с за рівень', fx: (p, r) => { p.overSec += 2 * r; } },
   { id: 'm8', branch: 'cmd', tier: 3, max: 2, name: 'Крижана тиша', desc: 'Крижана нова: +0.5 с заморозки за рівень', fx: (p, r) => { p.novaFreeze += 0.5 * r; } },
   { id: 'm9', branch: 'cmd', tier: 3, max: 1, name: 'Мудрість', desc: '+1 картка таланту на вибір', fx: (p, r) => { p.cards += r; } },
-  { id: 'k_hand', branch: 'cmd', tier: 4, max: 1, key: true, excl: 'slots', name: 'Вільна рука', desc: '4 слоти здібностей', fx: (p) => { p.slots = 4; } },
+  { id: 'k_hand', branch: 'cmd', tier: 4, max: 1, key: true, excl: 'slots', ability: 'dragon', name: 'Вільна рука', desc: '4 слоти здібностей і здібність Дракон: летить уздовж дороги й випалює ворогів', fx: (p) => { p.slots = 4; } },
 ];
 export const nodeOf = (id) => TREE.find((n) => n.id === id);
 

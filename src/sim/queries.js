@@ -31,7 +31,7 @@ export function clearCost(o) {
   return OBSTACLES[o.kind];
 }
 export const hasWall = (s, p) => s.walls.some((w) => w.owner === p && w.hp > 0);
-const CD_KEY = { meteor: "meteorCd", nova: "novaCd", wall: "wallCd", goldrain: "goldrainCd", overdrive: "overdriveCd", quake: "quakeCd" };
+const CD_KEY = { meteor: "meteorCd", nova: "novaCd", wall: "wallCd", goldrain: "goldrainCd", overdrive: "overdriveCd", quake: "quakeCd", dragon: "dragonCd" };
 export function abilityMax(s, id, p = 0) {
   const m = player(s, p).mods;
   return Math.round(ABILITIES[id].cd * (m[CD_KEY[id]] ?? 1) * m.cdAll * T);

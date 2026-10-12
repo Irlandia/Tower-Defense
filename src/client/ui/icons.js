@@ -46,6 +46,10 @@ export const AB_ICONS = {
     c: { w: '#fff4d6', y: '#ffcd75', o: '#ef7d57' },
     rows: ['.......ww...', '......wy....', '.....wyy....', '....wyyyyy..', '.....yyyyy..', '......yyo...', '.....yy.....', '....yy......', '...yy.......', '..yo........', '............'],
   },
+  dragon: {
+    c: { g: '#38b764', d: '#257179', y: '#ffcd75', o: '#ef7d57', w: '#f4f4f4' },
+    rows: ['..d.........', '..dg...d....', '..ggg.dg....', '.gwggggg....', 'ggggggggg...', 'gggg..dggg..', '.oo....dgg..', 'oyyo....gg..', '.oyo...ggd..', '..o...ggd...', '......dd....'],
+  },
   quake: {
     c: { s: '#94b0c2', d: '#566c86', k: '#5a3e2c' },
     rows: ['.....ss.....', '...sssss....', '.sssssssss..', 'ssssssssssss', 'sssskssssss.', 'dddkdddddddd', '.....kd.....', '....kk......', '...kk.......', '..kd........', '............'],

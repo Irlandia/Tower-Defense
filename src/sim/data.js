@@ -6,7 +6,7 @@ export const COLS = 26;
 export const ROWS = 14;
 export const TICK_RATE = 20;
 // Bump on every change to sim/data: co-op peers refuse to play with a different version.
-export const VERSION = 46;
+export const VERSION = 47;
 
 export const CONFIG = {
   startGold: 160,
@@ -33,6 +33,8 @@ export const ABILITIES = {
   wall: { name: 'Барикада', cd: 35, hp: 80, hpPerWave: 15, desc: 'Клік по дорозі: стіна, яку вороги мусять зламати. Одна на гравця.' },
   goldrain: { name: 'Золотий дощ', cd: 40, radius: 60, coins: 5, value: 8, desc: 'Клік по карті: на полі падає 5 монет — збери мишкою.' },
   overdrive: { name: 'Овердрайв', cd: 60, dur: 6, bonus: 0.4, desc: 'Твої вежі стріляють на 40% швидше.' },
+  dragon: { name: 'Дракон', cd: 60, speed: 320, width: 20, dmg: 30, dmgPerWave: 6, burn: 12, burnTime: 3,
+    desc: 'Клік по дорозі: дракон пролітає всією цією лінією від замку до печери й випалює ворогів.' },
   quake: { name: 'Землетрус', cd: 40, radius: 70, dmg: 25, dmgPerWave: 4, slow: 2, slowF: 0.5, desc: 'Клік по карті: удар по площі (ігнорує броню) і сповільнення.' },
 };
 

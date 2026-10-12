@@ -634,6 +634,26 @@ try {
   for (let i = 0; i < 400 && !firstShot; i++) { step(ml); if (ml.projs.length) firstShot = ml.projs.length; }
   check('Подвійний залп: one arrow shot targets two enemies', firstShot === 2, `projs=${firstShot}`);
 
+  // Dragon (tree: Вільна рука): flies its lane back to the spawn, burns everyone it passes once, needs the ability
+  const dr = createGame(12);
+  const L0 = dr.map.lanes[0];
+  const drMid = posAt(dr.map, 0, L0.total / 2);
+  step(dr, [{ type: "dragon", x: drMid.x, y: drMid.y, p: 0 }]);
+  check('dragon: not in the loadout = nothing', dr.dragons.length === 0);
+  dr.players[0].abilities.push('dragon');
+  dr.queue = [0.2, 0.5, 0.8].map((k) => ({ type: 'slime', lane: 0, at: dr.tick + 1, hpMul: 20 }));
+  step(dr);
+  dr.enemies.forEach((e, i) => { e.dist = L0.total * [0.2, 0.5, 0.8][i]; const p = posAt(dr.map, 0, e.dist); e.x = p.x; e.y = p.y; e.speedMul = 0; });
+  step(dr, [{ type: 'dragon', x: 3, y: 3, p: 0 }]);
+  check('dragon: must be cast on a road', dr.dragons.length === 0);
+  step(dr, [{ type: "dragon", x: drMid.x, y: drMid.y, p: 0 }]);
+  check('dragon: cast, ability on cooldown', dr.dragons.length === 1 && dr.players[0].cds.dragon > 0);
+  for (let i = 0; i < 400 && dr.dragons.length; i++) step(dr);
+  check('dragon: flew the whole lane and is gone', dr.dragons.length === 0);
+  check('dragon: burned every enemy on the lane', dr.enemies.every((e) => e.hp < e.maxHp), dr.enemies.map((e) => e.hp + '/' + e.maxHp).join(' '));
+  const metaTree = Meta.TREE ? Meta.TREE.find((n) => n.id === 'k_hand') : null;
+  check('dragon: unlocked by the Вільна рука keystone', !metaTree || metaTree.ability === 'dragon');
+
   // Time of day: start phase from the seed, moves every DAY.every waves; night = shorter sight, more gold
   const starts = new Set([1, 2, 3, 4, 5, 6, 7, 8].map((sd) => dayPhase(createGame(sd))));
   check('day: runs start at different times of day', starts.size >= 3, [...starts].join());
@@ -745,7 +765,7 @@ try {
 
   // Golden replay: a fixed bot run must give the same fingerprint until VERSION is bumped.
   // When you change src/sim on purpose: VERSION++ and paste the new hash printed below.
-  const GOLDEN = { version: 46, hash: 419548047 };
+  const GOLDEN = { version: 47, hash: 419548047 };
   const gh = stateHash(runBot(4242, 6).s);
   if (VERSION === GOLDEN.version) check('golden replay: sim unchanged at this VERSION (else bump VERSION)', gh === GOLDEN.hash, `got ${gh}`);
   else log(`NOTE golden replay: VERSION ${VERSION} — set GOLDEN = { version: ${VERSION}, hash: ${gh} }`);

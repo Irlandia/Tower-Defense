@@ -5,7 +5,7 @@
 // Layout (see docs/architecture.md): data -> rng -> mapgen -> queries -> combat -> waves -> commands -> sim.
 // This file owns createGame/step and the per-tick entity updates, and re-exports the public API.
 import {
-  TILE, COLS, ROWS, TICK_RATE as T, CONFIG, TOWERS, ENEMIES,
+  TILE, COLS, ROWS, TICK_RATE as T, CONFIG, TOWERS, ENEMIES, ABILITIES,
   MAPGEN, SEASONS, SEASON_ORDER, MODES, TOWER_ORDER, brawlOf, CAMPAIGN, OBSTACLES, BOSSES, bossKey,
 } from './data.js';
 import { rand, randInt } from './rng.js';
@@ -36,7 +36,7 @@ function newPlayer(opts, i = 0) {
       crit: 0.1 + (k.crit || 0), critMul: 2 + (k.critMul || 0),
       // cooldown multipliers: each ability reads its own, cdAll applies to all (keystone Focus, tree)
       cdAll: k.cdAll ?? 1, meteorCd: (k.meteorCd || opts.meteorCd || 1) * (BR.meteorCd || 1), novaCd: k.novaCd || 1, wallCd: k.wallCd || 1,
-      goldrainCd: 1, overdriveCd: 1, quakeCd: 1,
+      goldrainCd: 1, overdriveCd: 1, quakeCd: 1, dragonCd: 1,
       wall: k.wall || 1, meteorDmg: k.meteorDmg || 1, novaFreeze: k.novaFreeze || 0, overSec: k.overSec || 0,
       aura: k.aura || 1, moveCd: k.moveCd || 1, barrel: 1, lapDmg: 0, hunter: 0, thief: 0,
       towerRate: { ...(k.rate || {}) }, towerRange: { ...(k.range || {}) }, multi: { ...(k.multi || {}) }, splash: k.splash || 1, discount: { ...(k.discount || {}) },
@@ -45,7 +45,7 @@ function newPlayer(opts, i = 0) {
     picked: {}, // talent id -> times taken (cards have a max)
     // the loadout by slot (Q/W/E/R); null = empty slot. Casting is allowed only for abilities in it.
     abilities: k.abilities || ['meteor', 'nova', 'wall'],
-    cds: { meteor: 0, nova: 0, wall: 0, goldrain: 0, overdrive: 0, quake: 0 },
+    cds: { meteor: 0, nova: 0, wall: 0, goldrain: 0, overdrive: 0, quake: 0, dragon: 0 },
     overT: 0, // ticks left of Overdrive
     drafts: [], // pending talent choices (arrays of card ids); picking never pauses the game
     rerolls: 0, // draft rerolls in stock (one per boss, see DRAFT.maxRerolls)
@@ -91,6 +91,7 @@ export function createGame(seed, opts = {}) {
     towers: [],
     projs: [],
     zones: [],
+    dragons: [], // ability: dragons flying back along a lane, burning everything they pass
     coins: [],
     walls: [],
     obstacles: [],
@@ -171,6 +172,8 @@ export function step(s, cmds = [], advance = true) {
   if (s.ringRev && !s.enemies.some((e) => !e.dead && e.bk && BOSSES[e.bk].skill.type === "reverse")) s.ringRev = false;
   for (const e of s.enemies) updateEnemy(s, e);
   for (const z of s.zones) updateZone(s, z);
+  for (const d of s.dragons) updateDragon(s, d);
+  s.dragons = s.dragons.filter((d) => d.dist > 0);
   for (const t of s.towers) updateTower(s, t);
   for (const p of s.projs) updateProj(s, p);
   for (const c of s.coins) c.life--;
@@ -521,5 +524,21 @@ function hit(s, p, target) {
         ignite(s, target, def.burn * lvMul, def.burnTime, p.owner, src);
       }
       break;
+  }
+}
+
+// Dragon (ability): glides back along its lane and scorches every enemy it passes, once each.
+function updateDragon(s, d) {
+  const A = ABILITIES.dragon;
+  d.px = d.x; d.py = d.y;
+  d.dist = Math.max(0, d.dist - A.speed / T);
+  const p = posAt(s.map, d.lane, d.dist);
+  d.x = p.x; d.y = p.y;
+  const dmg = A.dmg + s.wave * A.dmgPerWave;
+  for (const e of s.enemies) {
+    if (e.dead || d.hit.includes(e.id) || Math.hypot(e.x - d.x, e.y - d.y) > A.width) continue;
+    d.hit.push(e.id);
+    damage(s, e, dmg, d.owner, { pierce: true, src: 'fire' });
+    ignite(s, e, A.burn, A.burnTime, d.owner, 'fire');
   }
 }

@@ -304,7 +304,7 @@ export class Renderer {
     if (ui.ability && ui.ability !== 'wall' && ui.mouse && ABILITIES[ui.ability].radius) {
       this.rangeCircle(ui.mouse.x, ui.mouse.y, ABILITIES[ui.ability].radius, true, ABILITY_COLOR[ui.ability] || C.orange);
     }
-    if (ui.ability === 'wall' && ui.hover) {
+    if ((ui.ability === 'wall' || ui.ability === 'dragon') && ui.hover) {
       g.fillStyle = isRoad(s, ui.hover.tx, ui.hover.ty) ? 'rgba(255,205,117,0.35)' : 'rgba(177,62,83,0.4)';
       g.fillRect(ui.hover.tx * TILE, ui.hover.ty * TILE, TILE, TILE);
     }
@@ -393,6 +393,7 @@ export class Renderer {
 
     this.drawMagnets(s);
     this.drawProjectiles(s, alpha);
+    if (s.dragons) for (const d of s.dragons) this.drawDragon(d, alpha, s.tick);
     for (const c of s.coins) drawCoin(g, c.x, c.y, s.tick + c.id, c.life < 2 * TICK_RATE);
     for (const ch of this.chests) drawChest(g, ch.x, ch.y - (1 - ch.life) * 14);
 
@@ -545,6 +546,27 @@ export class Renderer {
       const my = e === "top" ? 4 : e === "bottom" ? ROWS * TILE - 20 : sp[1] * TILE + 2;
       if ((s.tick >> 3) % 2) drawNum(g, "!", mx, my, C.yellow, 3, C.ink);
     }
+  }
+
+  // Dragon ability: a little green dragon flapping along the road, breathing fire downward.
+  drawDragon(d, alpha, tick) {
+    const g = this.g;
+    const x = Math.round(d.px + (d.x - d.px) * alpha), y = Math.round(d.py + (d.y - d.py) * alpha) - 22;
+    const dir = d.x < d.px ? -1 : 1; // faces where it flies
+    const flap = (tick >> 1) % 2;
+    const P = (px, py, w, h, c) => { g.fillStyle = c; g.fillRect(x + (dir > 0 ? px : -px - w), y + py, w, h); };
+    ellipse(g, x, y + 30, 10, 3, 'rgba(0,0,0,0.3)'); // shadow on the ground
+    // wings
+    P(-6, flap ? -9 : -3, 10, 3, C.teal); P(-4, flap ? -12 : -1, 6, 3, C.teal);
+    // body, tail, head
+    P(-10, 0, 18, 7, C.green); P(-14, 2, 5, 3, C.green); P(-17, 0, 4, 3, C.teal);
+    P(7, -4, 8, 7, C.green); P(13, -2, 3, 4, C.green);
+    P(9, -3, 2, 2, C.white); P(10, -3, 1, 1, C.ink); // eye
+    P(-8, 6, 14, 2, C.lime); // belly
+    P(8, -6, 2, 2, C.yellow); P(11, -6, 2, 2, C.yellow); // horns
+    // fire breath onto the road
+    for (let i = 0; i < 3; i++) this.parts.push({ x: x + dir * (15 + Math.random() * 6), y: y + 2 + Math.random() * 4, vx: dir * (20 + Math.random() * 30), vy: 40 + Math.random() * 40, life: 0.35, c: Math.random() < 0.5 ? C.orange : C.yellow, s: 2 });
+    if (Math.random() < 0.5) this.parts.push({ x: x + Math.random() * 16 - 8, y: y + 28, vx: 0, vy: -10, life: 0.6, c: C.dark, s: 2 });
   }
 
   drawProjectiles(s, alpha) {

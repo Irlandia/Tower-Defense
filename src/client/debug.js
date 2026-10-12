@@ -2,7 +2,7 @@
 //   ?tutorial — fresh solo classic run with the first-run hints
 //   ?demo[=circle|circle2|circle4|boss|brawl|campaign][&season=winter][&week=N][&mission=N][&select=I]
 import { TOWER_ORDER, brawlWeek, DAY } from '../sim/data.js';
-import { canPlace, isRoad } from '../sim/sim.js';
+import { canPlace, isRoad, posAt } from '../sim/sim.js';
 import * as Meta from '../meta.js';
 import { app, ui, meta } from './app.js';
 import { startGame, send } from './session.js';
@@ -32,6 +32,11 @@ export function runDemoIfRequested() {
   const s = app.state;
   s.players[0].gold = 2000;
   s.opts.locked = []; s.opts.lockedBy = null;
+  if (q.has('dragon')) { // &dragon: cast the dragon on the first lane (screenshots)
+    s.players[0].abilities = [...s.players[0].abilities, 'dragon'];
+    const p = posAt(s.map, 0, s.map.lanes[0].total / 2);
+    setTimeout(() => send({ type: 'dragon', x: p.x, y: p.y }), +(q.get('dragon') || 300));
+  }
   if (q.has('time')) s.dayStart = Math.max(0, DAY.phases.findIndex((p) => p.id === q.get('time'))); // &time=day|evening|night|dawn
   // put each tower type on a free tile next to the road
   const spots = [];

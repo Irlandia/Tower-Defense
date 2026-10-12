@@ -56,6 +56,10 @@ canvas.addEventListener('mousedown', (ev) => {
     else if (!mt) ui.moving = null;
     return;
   }
+  if (ui.ability === 'dragon') { // needs a road: the dragon follows that lane
+    if (isRoad(s, m.tx, m.ty)) { send({ type: 'dragon', x: m.x, y: m.y }); ui.ability = null; }
+    return;
+  }
   if (ui.ability === 'wall') {
     if (isRoad(s, m.tx, m.ty)) { send({ type: 'wall', tx: m.tx, ty: m.ty }); ui.ability = null; }
     return;
