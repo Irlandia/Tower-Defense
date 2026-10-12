@@ -1,6 +1,6 @@
 // Client entry: menu/lobby, fixed-tick loop (solo / co-op host / co-op guest), input, DOM UI.
 // All game rules live in ./sim; meta-progression in ./meta; networking in ./net; nick + leaderboard in ./api.
-import { TILE, TICK_RATE, TOWERS, TOWER_ORDER, BRANCHES, CARDS, CONFIG, ABILITIES, MODES, VERSION, BOSSES, bossFor, AURA, ENEMIES, RARITY } from './sim/data.js';
+import { TILE, TICK_RATE, TOWERS, TOWER_ORDER, BRANCHES, CARDS, CONFIG, ABILITIES, MODES, VERSION, BOSSES, bossFor, AURA, ENEMIES, RARITY, SEASONS, SEASON_ORDER } from './sim/data.js';
 import {
   createGame, step, canPlace, towerAt, obstacleAt, barrelAt, towerStats, upgradeCost, canEvolve, sellValue, clearCost,
   enemyAt, abilityMax, isRoad, canMove, hasWall, auraCost,
@@ -25,7 +25,8 @@ let running = false;
 let endShown = false; // end screen already shown for this run (guest may get it twice: event + host message)
 let pending = [];
 let diff = 'normal';
-let mode = 'classic';
+let mode = "classic";
+let season = "random";
 let nick = '';
 let partnerNick = '';
 const ui = { build: null, selected: null, hover: null, mouse: null, ability: null, hoverEnemy: null, partner: null, me: 0, moving: null };
@@ -44,6 +45,7 @@ const P = () => state.players[me()] || state.players[0];
 // ---------- game lifecycle ----------
 function startGame(seed, opts) {
   state = createGame(seed, opts);
+  setTimeout(() => banner(SEASONS[state.season].name.toUpperCase(), "gold", "сезон", 1800), 200);
   endShown = false;
   game = { seed, opts };
   cmdLog = [];
@@ -64,7 +66,7 @@ function startGame(seed, opts) {
 
 function newRun() {
   const seed = (Math.random() * 2 ** 32) >>> 0;
-  const opts = Meta.gameOpts(meta, diff, mode, net.connected ? 2 : 1);
+  const opts = Meta.gameOpts(meta, diff, mode, net.connected ? 2 : 1, season);
   if (net.role === 'host') net.send({ t: 'start', seed, opts, v: VERSION });
   startGame(seed, opts);
 }
@@ -642,6 +644,15 @@ function renderMenu() {
     b.addEventListener('click', () => { mode = id; renderMenu(); });
     ml.append(b);
   }
+  const sl = $("seasons");
+  sl.innerHTML = "";
+  for (const id of ["random", ...SEASON_ORDER]) {
+    const b = document.createElement("button");
+    b.className = "diff" + (season === id ? " active" : "");
+    b.innerHTML = `<b>${id === "random" ? "🎲 Випадковий" : { spring: "🌸 ", summer: "☀ ", autumn: "🍂 ", winter: "❄ " }[id] + SEASONS[id].name}</b>`;
+    b.addEventListener("click", () => { season = id; renderMenu(); });
+    sl.append(b);
+  }
   const dl = $('diffs');
   dl.innerHTML = '';
   for (const d of Meta.DIFFS) {
@@ -910,8 +921,9 @@ fit();
 if (new URLSearchParams(location.search).has('demo')) {
   // debug: start immediately with a few towers to check rendering
   const dm = new URLSearchParams(location.search).get('demo');
+  season = new URLSearchParams(location.search).get('season') || 'random';
   mode = dm && dm.startsWith('circle') ? 'circle' : 'classic';
-  startGame(12345, Meta.gameOpts(meta, diff, mode, dm === 'circle2' ? 2 : 1));
+  startGame(12345, Meta.gameOpts(meta, diff, mode, dm === 'circle2' ? 2 : 1, season));
   state.players[0].gold = 2000;
   state.opts.locked = [];
   // put each tower type on a free tile next to the road

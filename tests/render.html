@@ -13,12 +13,13 @@ import { Critters } from '../src/critters.js';
 const out = [];
 let failed = 0;
 const r = new Renderer(document.getElementById('c'));
-for (const mode of ['classic', 'circle']) {
+for (const mode of ["classic", "circle"]) {
   for (const players of [1, 2]) {
+   for (const season of ["spring", "summer", "autumn", "winter"]) {
     for (let me = 0; me < players; me++) {
-      const name = `${mode} players=${players} me=${me}`;
+      const name = `${mode} players=${players} me=${me} ${season}`;
       try {
-        const s = createGame(42, { mode, players });
+        const s = createGame(42, { mode, players, season });
         const free = [];
         for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) if (canPlace(s, x, y)) free.push([x, y]);
         step(s, TOWER_ORDER.map((kind, i) => ({ type: 'place', kind: i === 5 ? 'totem' : i % 3 === 0 ? 'arrow' : 'frost', tx: free[i * 7][0], ty: free[i * 7][1], p: i % players })));
@@ -40,13 +41,14 @@ for (const mode of ['classic', 'circle']) {
         out.push('FAIL ' + name + '\n  ' + e.stack);
       }
     }
+   }
   }
 }
 // fish: leap, click a fish in the air, click empty water, and draw it all
 try {
-  const s = createGame(42, { mode: "classic" });
+  const s = createGame(42, { mode: "classic", season: "summer" });
   const c = new Critters();
-  c.reset(s.map);
+  c.reset(s.map, "summer");
   const water = [...s.map.water][0];
   if (water) {
     const [wx, wy] = water.split(",").map(Number);

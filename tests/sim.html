@@ -332,6 +332,16 @@ try {
   check("boss skills: Baron uses magnet", b15.seen.has("magnet"));
   check("boss skills: King decree", b20.seen.has("decree"));
 
+  // seasons: chosen or seeded, change the landscape; same seed+season = same map
+  const seaCount = {};
+  for (let seed = 1; seed <= 80; seed++) { const sg = createGame(seed); seaCount[sg.season] = (seaCount[sg.season] || 0) + 1; }
+  check("seasons: random season covers all four", Object.keys(seaCount).length === 4, JSON.stringify(seaCount));
+  const wA = createGame(4, { season: "winter" }), wB = createGame(4, { season: "winter" });
+  check("seasons: chosen season is applied and deterministic", wA.season === "winter" && JSON.stringify(wA.obstacles) === JSON.stringify(wB.obstacles));
+  const autumnTrees = createGame(4, { season: "autumn" }).obstacles.filter((o) => o.kind === "tree").length;
+  const winterTrees = wA.obstacles.filter((o) => o.kind === "tree").length;
+  check("seasons: autumn is woodier than winter", autumnTrees > winterTrees, `${autumnTrees} vs ${winterTrees}`);
+
   // co-op: separate wallets, talents and ownership
   const co = createGame(9, { players: 2 });
   const [c1, c2] = free(co, 2);

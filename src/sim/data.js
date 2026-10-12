@@ -6,7 +6,7 @@ export const COLS = 26;
 export const ROWS = 14;
 export const TICK_RATE = 20;
 // Bump on every change to sim/data: co-op peers refuse to play with a different version.
-export const VERSION = 24;
+export const VERSION = 25;
 
 export const CONFIG = {
   startGold: 160,
@@ -100,6 +100,14 @@ export const MODES = {
 };
 
 export const MAPGEN = { lanes3Chance: 0.45, ponds: [1, 2], barrels: 4 };
+// Seasons change the look and the landscape: pond count, how many obstacles and how many of them are trees.
+export const SEASON_ORDER = ["spring", "summer", "autumn", "winter"];
+export const SEASONS = {
+  spring: { name: "Весна", ponds: [2, 3], obstacles: 28, trees: 0.7 },
+  summer: { name: "Літо", ponds: [1, 2], obstacles: 30, trees: 0.65 },
+  autumn: { name: "Осінь", ponds: [1, 2], obstacles: 36, trees: 0.85, chest: 0.4 },
+  winter: { name: "Зима", ponds: [1, 3], obstacles: 30, trees: 0.4, frozen: true },
+};
 export const BARREL = { radius: 48, dmg: 30, dmgPerWave: 6 };
 export const OBSTACLES = { count: 30, tree: 15, rock: 25, chestChance: 0.3, chestGold: 45 };
 export const COIN = { chance: 0.1, life: 8, base: 4 };

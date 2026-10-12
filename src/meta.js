@@ -41,7 +41,7 @@ export function buy(m, id) {
   return true;
 }
 
-export function gameOpts(m, diffId, mode = "classic", players = 1) {
+export function gameOpts(m, diffId, mode = "classic", players = 1, season = "random") {
   const d = DIFFS.find((k) => k.id === diffId) || DIFFS[0];
   return {
     hpMul: d.hpMul,
@@ -53,6 +53,7 @@ export function gameOpts(m, diffId, mode = "classic", players = 1) {
     diff: d.id,
     mode,
     players,
+    season,
   };
 }
 

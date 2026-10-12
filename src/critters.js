@@ -102,8 +102,10 @@ export class Critters {
     return null;
   }
 
-  reset(map) {
+  reset(map, season = "summer") {
     this.map = map;
+    this.season = season;
+    this.iceFish = [];
     this.list = [];
     this.jumps = [];
     this.sparks = [];
@@ -169,6 +171,7 @@ export class Critters {
 
   // Every few seconds a fish leaps out of a random pond tile, arcs through the air and splashes back.
   updateFish(dt) {
+    if (this.season === "winter") { this.updateIceFish(dt); return; }
     for (const j of this.jumps) j.t += dt;
     this.jumps = this.jumps.filter((j) => j.t < j.dur + 0.6);
     for (const p of this.sparks) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 60 * dt; p.life -= dt; }
@@ -199,6 +202,7 @@ export class Critters {
   // Click on a leaping fish: it gets flicked high with a spin and complains; golden fish showers sparkles.
   // Click on empty water: a curious fish pops out.
   pokeFish(x, y) {
+    if (this.season === "winter") return this.pokeIce(x, y);
     for (const j of this.jumps) {
       const p = this.fishPos(j);
       if (p.k >= 1 || j.smacked || Math.hypot(p.x - x, p.y - y) > 10) continue;
@@ -219,6 +223,7 @@ export class Critters {
   }
 
   drawFish(g) {
+    if (this.season === "winter") { this.drawIceFish(g); return; }
     for (const j of this.jumps) {
       const land = j.y2 ?? j.y;
       // splash rings where it left and where it lands
@@ -260,7 +265,65 @@ export class Critters {
     }
   }
 
+  // Winter: fish frozen under the ice, slowly turning and staring up at you.
+  updateIceFish(dt) {
+    if (!this.iceFish.length && this.map.water.size) {
+      const tiles = [...this.map.water];
+      for (let i = 0; i < Math.min(4, tiles.length); i++) {
+        const [tx, ty] = tiles[Math.floor(Math.random() * tiles.length)].split(",").map(Number);
+        this.iceFish.push({ x: tx * TILE + rnd(6, 18), y: ty * TILE + rnd(8, 18), dir: Math.random() < 0.5 ? 1 : -1, t: rnd(0, 6), bonk: 0, say: null, sayT: 0, gold: Math.random() < 0.15 });
+      }
+    }
+    for (const f of this.iceFish) {
+      f.t += dt;
+      if (f.bonk > 0) f.bonk -= dt;
+      if (f.sayT > 0) f.sayT -= dt;
+      if (Math.random() < dt * 0.15) f.dir = -f.dir; // slowly turns around
+    }
+  }
+
+  pokeIce(x, y) {
+    const f = this.iceFish.find((k) => Math.hypot(k.x - x, k.y - y) < 9);
+    if (f) {
+      f.bonk = 0.4; f.sayT = 1.4;
+      f.say = f.gold ? ["Відтань мене — дам бажання!", "Холодно, але я золота!"][Math.floor(Math.random() * 2)] : ["Тук-тук!", "Випусти!", "Буль… ой, лід", "Мені й тут добре"][Math.floor(Math.random() * 4)];
+      return true;
+    }
+    if (this.map.water.has(Math.floor(x / TILE) + "," + Math.floor(y / TILE))) {
+      this.iceFish.push({ x, y, dir: 1, t: 0, bonk: 0.3, say: "Хрусь!", sayT: 0.8, gold: false, crack: true, life: 0.8 });
+      return true;
+    }
+    return false;
+  }
+
+  drawIceFish(g) {
+    this.iceFish = this.iceFish.filter((f) => !f.crack || f.sayT > 0);
+    for (const f of this.iceFish) {
+      if (!f.crack) {
+        const wob = f.bonk > 0 ? Math.round(Math.sin(f.bonk * 40) * 2) : 0;
+        g.save();
+        g.globalAlpha = 0.55; // seen through the ice
+        g.translate(Math.round(f.x) + wob, Math.round(f.y));
+        g.scale(f.dir, 1);
+        g.drawImage(FISH[f.gold ? 1 : 0], -6, -4);
+        g.restore();
+        // big staring eye, blinking now and then
+        if (Math.floor(f.t * 2) % 9 !== 0) { g.fillStyle = "#1a1c2c"; g.fillRect(Math.round(f.x) + wob + (f.dir > 0 ? 3 : -4), Math.round(f.y) - 1, 1, 1); }
+      } else {
+        g.fillStyle = "#f4f4f4";
+        for (let i = -3; i <= 3; i++) g.fillRect(Math.round(f.x + i * 1.5), Math.round(f.y + ((i * 5) % 3) - 1), 1, 1);
+      }
+      if (f.sayT > 0 && f.say) {
+        g.font = "8px \"Pixelify Sans\", monospace";
+        const w = Math.ceil(g.measureText(f.say).width);
+        g.fillStyle = "#1a1c2c"; g.fillText(f.say, Math.round(f.x - w / 2) + 1, Math.round(f.y - 7));
+        g.fillStyle = f.gold ? "#ffcd75" : "#29366f"; g.fillText(f.say, Math.round(f.x - w / 2), Math.round(f.y - 8));
+      }
+    }
+  }
+
   updateFrog(c, dt) {
+    if (this.season === "winter") { c.state = "sleep"; return; } // frogs hibernate
     if (c.state === 'hop') {
       c.hopT += dt;
       const k = Math.min(1, c.hopT / c.hopDur);
@@ -297,13 +360,14 @@ export class Critters {
     if (!c) return false;
     if (c.kind === 'cow') { this.talk(c, KIND.cow.poke); c.state = 'idle'; c.t = 1; c.hopKick = 0.25; }
     if (c.kind === 'deer') this.scare(c, { x, y });
-    if (c.kind === 'frog') { this.talk(c, KIND.frog.poke); this.hopTo(c, 2.5, 16); }
+    if (c.kind === "frog" && this.season === "winter") { c.say = ["Хррр…", "Ще 5 хвилинок…", "Весною розбудиш!"][Math.floor(Math.random() * 3)]; c.sayT = 1.6; }
+    else if (c.kind === "frog") { this.talk(c, KIND.frog.poke); this.hopTo(c, 2.5, 16); }
     return true;
   }
 
   draw(g, c) {
     const grazing = c.state === 'graze' && Math.floor(performance.now() / 900 + c.x) % 3 !== 0;
-    const frame = c.kind === 'frog' ? (c.state === 'hop' ? 2 : c.frame) : grazing ? 2 : c.state === 'walk' || c.state === 'flee' ? c.frame : 0;
+    const frame = c.kind === "frog" ? (c.state === "sleep" ? 1 : c.state === "hop" ? 2 : c.frame) : grazing ? 2 : c.state === 'walk' || c.state === 'flee' ? c.frame : 0;
     const spr = SPR[c.kind][frame][c.dir > 0 ? 0 : 1];
     let lift = c.hop || 0;
     if (c.hopKick > 0) { c.hopKick -= 0.016; lift = 3; }
@@ -311,6 +375,13 @@ export class Critters {
     g.fillStyle = 'rgba(0,0,0,0.25)';
     g.fillRect(Math.round(c.x - spr.width / 2.6), Math.round(c.y), Math.round(spr.width / 1.3), 2);
     g.drawImage(spr, x, y);
+    if (c.state === "sleep") {
+      // hibernating frog: snow cap and drifting "z"
+      g.fillStyle = "#f4f4f4"; g.fillRect(x, y - 1, spr.width, 1);
+      const k = Math.floor(performance.now() / 300 + c.x) % 8;
+      g.fillStyle = "#29366f";
+      g.fillRect(x + spr.width + 1, y - 3 - k, 3, 1); g.fillRect(x + spr.width + 2, y - 2 - k, 1, 1); g.fillRect(x + spr.width + 1, y - 1 - k, 3, 1);
+    }
     if (c.sayT > 0 && c.say) {
       g.font = '8px "Pixelify Sans", monospace';
       const w = Math.ceil(g.measureText(c.say).width);

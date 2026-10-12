@@ -8,6 +8,14 @@ import {
 import { Critters } from './critters.js';
 
 export const PLAYER_COLORS = [C.yellow, C.cyan];
+// Ground palettes per season.
+const GROUND = {
+  spring: { base: "#5fcf6a", patch: "#4cbb5c", tuft: ["#3a9e58", "#c7f59a"], bloom: ["#f4b6d2", "#f4f4f4", "#ffcd75", "#c9a8ff"], flowers: 160, rim: "#d9b382" },
+  summer: { base: "#38b764", patch: "#2f9e57", tuft: ["#257179", "#a7f070"], bloom: ["#ffcd75", "#f4f4f4", "#b13e53", "#73eff7"], flowers: 70, rim: "#d9b382" },
+  autumn: { base: "#9aa04a", patch: "#857f3a", tuft: ["#6d6b2f", "#c9a046"], bloom: ["#ef7d57", "#b13e53", "#ffcd75", "#8a6248"], flowers: 260, rim: "#c29a6b" },
+  winter: { base: "#e8f1f6", patch: "#d3e2ec", tuft: ["#ffffff", "#b9cfdc"], bloom: ["#ffffff", "#73eff7"], flowers: 60, rim: "#f4f4f4" },
+};
+
 export const W = 640;
 export const H = 360;
 export const HUD = 20;
@@ -39,41 +47,50 @@ export class Renderer {
     this.critters = new Critters();
   }
 
-  makeBackground(map) {
+  makeBackground(map, season = 'summer') {
     const cv = document.createElement('canvas');
     cv.width = COLS * TILE; cv.height = ROWS * TILE;
     const g = cv.getContext('2d');
     const road = (x, y) => map.tiles.has(x + ',' + y);
     const water = (x, y) => map.water.has(x + ',' + y);
     const rnd = Math.random;
-    // grass with soft darker patches
+    const L = GROUND[season] || GROUND.summer;
+    // ground with soft darker patches
     for (let ty = 0; ty < ROWS; ty++) {
       for (let tx = 0; tx < COLS; tx++) {
         const patch = Math.sin(tx * 0.5 + ty * 0.3) + Math.cos(ty * 0.6 - tx * 0.2) > 0.8;
-        g.fillStyle = patch ? '#2f9e57' : C.green;
+        g.fillStyle = patch ? L.patch : L.base;
         g.fillRect(tx * TILE, ty * TILE, TILE, TILE);
       }
     }
     for (let i = 0; i < 900; i++) {
       const x = Math.floor(rnd() * cv.width), y = Math.floor(rnd() * cv.height);
-      g.fillStyle = rnd() < 0.55 ? C.teal : C.lime;
-      g.fillRect(x, y, 1, rnd() < 0.5 ? 2 : 3); // grass tufts
+      g.fillStyle = rnd() < 0.55 ? L.tuft[0] : L.tuft[1];
+      g.fillRect(x, y, 1, rnd() < 0.5 ? 2 : 3); // grass tufts / snow drifts
     }
-    for (let i = 0; i < 70; i++) {
+    for (let i = 0; i < L.flowers; i++) {
       const x = Math.floor(rnd() * cv.width), y = Math.floor(rnd() * cv.height);
-      g.fillStyle = [C.yellow, C.white, C.red, C.cyan][Math.floor(rnd() * 4)];
-      g.fillRect(x, y, 2, 2);
-      g.fillStyle = C.teal; g.fillRect(x, y + 2, 1, 2);
+      g.fillStyle = L.bloom[Math.floor(rnd() * L.bloom.length)];
+      g.fillRect(x, y, 2, season === 'autumn' ? 1 : 2); // flowers, fallen leaves, frost glints
+      if (season !== 'autumn' && season !== 'winter') { g.fillStyle = L.tuft[0]; g.fillRect(x, y + 2, 1, 2); }
     }
-    // water: sand rim, deep center
+    // water: rim, deep centre; in winter a sheet of cracked ice
     for (const k of map.water) {
       const [tx, ty] = k.split(',').map(Number);
-      g.fillStyle = '#d9b382';
+      g.fillStyle = L.rim;
       g.fillRect(tx * TILE - 2, ty * TILE - 2, TILE + 4, TILE + 4);
     }
     for (const k of map.water) {
       const [tx, ty] = k.split(',').map(Number);
       const x = tx * TILE, y = ty * TILE;
+      if (season === 'winter') {
+        g.fillStyle = '#bfe6f2'; g.fillRect(x, y, TILE, TILE);
+        g.fillStyle = '#9fd3e6';
+        if (!water(tx, ty - 1)) g.fillRect(x, y, TILE, 2);
+        g.fillStyle = C.white;
+        for (let i = 0; i < 3; i++) { const cx = x + Math.floor(rnd() * 20), cy = y + Math.floor(rnd() * 20); for (let k2 = 0; k2 < 5; k2++) g.fillRect(cx + k2, cy + ((k2 * 7) % 3) - 1, 1, 1); }
+        continue;
+      }
       g.fillStyle = C.blue; g.fillRect(x, y, TILE, TILE);
       if (!water(tx, ty - 1)) { g.fillStyle = C.navy; g.fillRect(x, y, TILE, 3); }
       if (water(tx - 1, ty) && water(tx + 1, ty) && water(tx, ty - 1) && water(tx, ty + 1)) { g.fillStyle = C.navy; g.fillRect(x + 4, y + 6, 14, 10); }
@@ -95,6 +112,14 @@ export class Renderer {
         g.fillStyle = '#c29a6b';
         if (!road(tx, ty + 1)) g.fillRect(x, y + TILE - 2, TILE, 2);
         if (!road(tx + 1, ty) && tx < COLS - 1) g.fillRect(x + TILE - 2, y, 2, TILE);
+      }
+    }
+    if (season === "winter") {
+      // snowy road edges and slush
+      for (const k of map.tiles) {
+        const [tx, ty] = k.split(",").map(Number);
+        if (tx < 0 || tx >= COLS) continue;
+        for (let i = 0; i < 6; i++) { g.fillStyle = rnd() < 0.6 ? C.white : "#c9d6de"; g.fillRect(tx * TILE + Math.floor(rnd() * 22), ty * TILE + Math.floor(rnd() * 22), 2, 1); }
       }
     }
     for (const [x, y] of map.spawns) drawCave(g, x === 0 ? 0 : COLS * TILE - 16, y * TILE);
@@ -267,7 +292,7 @@ export class Renderer {
   // ---------- draw ----------
   draw(s, alpha, ui, dt) {
     const g = this.g;
-    if (this.mapRef !== s.map) { this.mapRef = s.map; this.bg = this.makeBackground(s.map); this.critters.reset(s.map); }
+    if (this.mapRef !== s.map) { this.mapRef = s.map; this.bg = this.makeBackground(s.map, s.season); this.critters.reset(s.map, s.season); this.season = s.season; }
     this.critters.update(Math.min(dt, 0.1), s.enemies);
     this.updateFx(dt);
     g.save();
@@ -330,7 +355,7 @@ export class Renderer {
     const hov = (tx, ty) => ui.hover && ui.hover.tx === tx && ui.hover.ty === ty;
     for (const it of items) {
       if (it.o) {
-        drawObstacle(g, it.o, it.o.tx * TILE, it.o.ty * TILE);
+        drawObstacle(g, it.o, it.o.tx * TILE, it.o.ty * TILE, s.season);
         if (hov(it.o.tx, it.o.ty)) this.outline(it.o.tx * TILE, it.o.ty * TILE);
       } else if (it.b) {
         drawBarrel(g, it.b.tx * TILE, it.b.ty * TILE, it.b.ready, s.tick);
@@ -437,6 +462,7 @@ export class Renderer {
   }
 
   drawWater(s) {
+    if (s.season === "winter") return; // frozen: no ripples
     const g = this.g;
     for (const k of s.map.water) {
       const [tx, ty] = k.split(',').map(Number);
@@ -700,8 +726,29 @@ export class Renderer {
     }
   }
 
+  // Seasonal weather particles: petals, falling leaves, snow; summer has glints on the ponds.
+  ambient(dt) {
+    const W2 = COLS * TILE, H2 = ROWS * TILE;
+    const sea = this.season;
+    if (sea === "winter" && Math.random() < dt * 40) this.parts.push({ x: Math.random() * W2, y: -2, vx: Math.random() * 8 - 4, vy: 18 + Math.random() * 14, life: 14, c: C.white, s: Math.random() < 0.3 ? 2 : 1, keep: true });
+    if (sea === "autumn" && Math.random() < dt * 6) this.parts.push({ x: Math.random() * W2, y: -2, vx: 10 + Math.random() * 10, vy: 14 + Math.random() * 8, life: 14, c: [C.orange, C.red, C.yellow][Math.floor(Math.random() * 3)], s: 2, keep: true, sway: Math.random() * 6 });
+    if (sea === "spring" && Math.random() < dt * 5) this.parts.push({ x: Math.random() * W2, y: -2, vx: 12 + Math.random() * 8, vy: 10 + Math.random() * 6, life: 16, c: Math.random() < 0.7 ? "#f4b6d2" : C.white, s: 1, keep: true, sway: Math.random() * 6 });
+    if (sea === "summer" && this.mapRef && this.mapRef.water.size && Math.random() < dt * 3) {
+      const tiles = [...this.mapRef.water];
+      const [tx, ty] = tiles[Math.floor(Math.random() * tiles.length)].split(",").map(Number);
+      this.parts.push({ x: tx * TILE + Math.random() * TILE, y: ty * TILE + Math.random() * TILE, vx: 0, vy: 0, life: 0.4, c: C.white });
+    }
+    void H2;
+  }
+
   updateFx(dt) {
-    for (const p of this.parts) { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.92; p.vy *= 0.92; p.life -= dt; }
+    this.ambient(dt);
+    for (const p of this.parts) {
+      p.x += (p.vx + (p.sway ? Math.sin(p.life * 3 + p.sway) * 10 : 0)) * dt; p.y += p.vy * dt;
+      if (!p.keep) { p.vx *= 0.92; p.vy *= 0.92; }
+      p.life -= dt;
+      if (p.keep && p.y > ROWS * TILE) p.life = 0; // weather leaves the map at the bottom
+    }
     this.parts = this.parts.filter((p) => p.life > 0);
     if (this.parts.length > 2000) this.parts.splice(0, this.parts.length - 2000);
     for (const t of this.texts) { t.y -= 22 * dt; t.life -= dt; }

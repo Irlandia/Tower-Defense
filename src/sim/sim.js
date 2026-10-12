@@ -3,7 +3,7 @@
 // Every command carries `p` = player index (0 = host/solo, 1 = guest); each player has own gold, talents, abilities.
 import {
   TILE, COLS, ROWS, TICK_RATE as T, CONFIG, TOWERS, ENEMIES, UNLOCKS, CARDS,
-  MAPGEN, MODES, BARREL, OBSTACLES, COIN, ABILITIES, AURA, BRANCHES, RARITY, BOSSES, bossKey,
+  MAPGEN, SEASONS, SEASON_ORDER, MODES, BARREL, OBSTACLES, COIN, ABILITIES, AURA, BRANCHES, RARITY, BOSSES, bossKey,
 } from './data.js';
 import { rand, randInt } from './rng.js';
 
@@ -43,7 +43,8 @@ function addTiles(points, tiles) {
 
 function genPonds(s, tiles) {
   const water = new Set();
-  const ponds = MAPGEN.ponds[0] + randInt(s, MAPGEN.ponds[1] - MAPGEN.ponds[0] + 1);
+  const [p0, p1] = SEASONS[s.season].ponds;
+  const ponds = p0 + randInt(s, p1 - p0 + 1);
   for (let k = 0; k < ponds; k++) {
     const cx = 2 + randInt(s, COLS - 6), cy = 1 + randInt(s, ROWS - 2);
     const rx = 1.2 + rand(s) * 1.6, ry = 0.9 + rand(s) * 1.1;
@@ -212,6 +213,8 @@ export function createGame(seed, opts = {}) {
     over: false,
     kills: 0,
   };
+  // season: chosen in the menu, or random (from the seed, so co-op peers agree)
+  s.season = SEASONS[o.season] ? o.season : SEASON_ORDER[randInt(s, SEASON_ORDER.length)];
   s.map = o.mode === "circle" ? genCircle(s, o.players > 1) : genClassic(s);
   s.plan = planLanes(s);
 
@@ -228,10 +231,11 @@ export function createGame(seed, opts = {}) {
   }
   // Trees and rocks block building; clearing them costs gold and may reveal a chest.
   guard = 0;
-  while (s.obstacles.length < OBSTACLES.count && guard++ < 2000) {
+  const sea = SEASONS[s.season];
+  while (s.obstacles.length < sea.obstacles && guard++ < 2000) {
     const tx = randInt(s, COLS), ty = randInt(s, ROWS);
     if (!isFree(s, tx, ty) || nearSpawn(tx, ty) || nearCastle(tx, ty)) continue;
-    s.obstacles.push({ id: s.nextId++, tx, ty, kind: rand(s) < 0.65 ? 'tree' : 'rock', chest: rand(s) < OBSTACLES.chestChance, v: randInt(s, 3) });
+    s.obstacles.push({ id: s.nextId++, tx, ty, kind: rand(s) < sea.trees ? "tree" : "rock", chest: rand(s) < (sea.chest || OBSTACLES.chestChance), v: randInt(s, 3) });
   }
   return s;
 }

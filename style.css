@@ -201,3 +201,6 @@ body.side #ui { align-self: center; }
 #game.magnet { cursor: none !important; }
 
 #pop { overflow-y: auto; }
+
+#seasons { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+#seasons .diff { padding: 6px 4px; font-size: 13px; }

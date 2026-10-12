@@ -281,47 +281,86 @@ function canvasOf(w, h, fn) {
   fn(cv.getContext('2d'));
   return cv;
 }
-const LEAF = [C.lime, C.green, C.teal, '#1e4f4a'];
-const TREES = [
-  canvasOf(28, 36, (g) => {
-    ellipse(g, 15, 33, 10, 3, 'rgba(0,0,0,0.3)');
-    cyl(g, 14, 32, 2, 9, WOOD);
-    sphere(g, 9, 19, 7, LEAF); sphere(g, 19, 18, 7, LEAF); sphere(g, 14, 12, 8, LEAF);
-  }),
-  canvasOf(28, 38, (g) => {
-    ellipse(g, 15, 35, 9, 3, 'rgba(0,0,0,0.3)');
-    cyl(g, 14, 34, 2, 6, WOOD);
-    cone(g, 14, 30, 11, 10, [C.green, C.teal, '#1e4f4a']);
-    cone(g, 14, 22, 9, 9, [C.green, C.teal, '#1e4f4a']);
-    cone(g, 14, 15, 6, 9, [C.lime, C.green, C.teal]);
-  }),
-  canvasOf(28, 34, (g) => {
-    ellipse(g, 15, 31, 10, 3, 'rgba(0,0,0,0.3)');
-    cyl(g, 14, 30, 2, 8, WOOD);
-    sphere(g, 14, 15, 10, LEAF);
-    R(g, 10, 12, 2, 2, C.red); R(g, 17, 17, 2, 2, C.red); R(g, 12, 19, 2, 2, C.red);
-  }),
-];
-const ROCKS = [
-  canvasOf(24, 20, (g) => {
-    ellipse(g, 13, 17, 10, 3, 'rgba(0,0,0,0.3)');
-    sphere(g, 10, 11, 7, [C.white, C.silver, C.slate, C.dark]);
-    sphere(g, 16, 13, 5, [C.white, C.silver, C.slate, C.dark]);
-  }),
-  canvasOf(24, 20, (g) => {
-    ellipse(g, 12, 17, 9, 3, 'rgba(0,0,0,0.3)');
-    sphere(g, 12, 11, 7, [C.silver, C.slate, C.dark, C.ink]);
-    R(g, 9, 7, 3, 2, C.green); R(g, 12, 6, 2, 1, C.lime);
-  }),
-  canvasOf(24, 20, (g) => {
-    ellipse(g, 12, 17, 10, 3, 'rgba(0,0,0,0.3)');
-    sphere(g, 8, 13, 5, [C.white, C.silver, C.slate, C.dark]);
-    sphere(g, 15, 10, 6, [C.white, C.silver, C.slate, C.dark]);
-  }),
-];
+// Trees and rocks per season. Leaves: [highlight, light, mid, dark].
+const SEASON_LOOK = {
+  spring: { leaf: ['#c7f59a', C.lime, C.green, C.teal], pine: [C.lime, C.green, C.teal], dots: ['#f4b6d2', C.white], fruit: null, snow: false },
+  summer: { leaf: [C.lime, C.green, C.teal, '#1e4f4a'], pine: [C.green, C.teal, '#1e4f4a'], dots: null, fruit: C.red, snow: false },
+  autumn: { leaf: [C.yellow, C.orange, C.red, C.plum], pine: [C.green, C.teal, '#1e4f4a'], dots: [C.yellow], fruit: null, snow: false },
+  winter: { leaf: null, pine: ['#dfeef5', C.silver, C.slate], dots: null, fruit: null, snow: true },
+};
 
-export function drawObstacle(g, o, x, y) {
-  const spr = o.kind === 'tree' ? TREES[o.v % 3] : ROCKS[o.v % 3];
+// bare branches for winter deciduous trees
+function bareTree(g, cx, base) {
+  cyl(g, cx, base, 2, 12, WOOD);
+  const br = [[-1, -12, -7, -20], [1, -13, 6, -22], [0, -16, -3, -26], [0, -16, 4, -27], [-1, -9, -9, -14], [1, -10, 9, -16]];
+  for (const [x0, y0, x1, y1] of br) {
+    const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0));
+    for (let i = 0; i <= n; i++) R(g, cx + x0 + ((x1 - x0) * i) / n, base + y0 + ((y1 - y0) * i) / n, 1, 1, WOOD[1]);
+    R(g, cx + x1 - 1, base + y1 - 1, 3, 1, C.white); // snow on twig tips
+  }
+}
+
+function buildTrees(look) {
+  const dots = (g, cx, cy, r, n) => {
+    if (!look.dots) return;
+    for (let i = 0; i < n; i++) {
+      const a = (i * 2.4) % 6.28, d = ((i * 37) % 10) / 10 * r;
+      R(g, cx + Math.cos(a) * d, cy + Math.sin(a) * d, 2, 1, look.dots[i % look.dots.length]);
+    }
+  };
+  return [
+    canvasOf(28, 36, (g) => {
+      ellipse(g, 15, 33, 10, 3, 'rgba(0,0,0,0.3)');
+      if (!look.leaf) return bareTree(g, 14, 32);
+      cyl(g, 14, 32, 2, 9, WOOD);
+      sphere(g, 9, 19, 7, look.leaf); sphere(g, 19, 18, 7, look.leaf); sphere(g, 14, 12, 8, look.leaf);
+      dots(g, 14, 16, 9, 10);
+    }),
+    canvasOf(28, 38, (g) => {
+      ellipse(g, 15, 35, 9, 3, 'rgba(0,0,0,0.3)');
+      cyl(g, 14, 34, 2, 6, WOOD);
+      cone(g, 14, 30, 11, 10, look.pine);
+      cone(g, 14, 22, 9, 9, look.pine);
+      cone(g, 14, 15, 6, 9, look.snow ? [C.white, '#dfeef5', C.silver] : [look.pine[0], look.pine[1], look.pine[2]]);
+      if (look.snow) { R(g, 6, 29, 6, 1, C.white); R(g, 16, 28, 7, 1, C.white); R(g, 8, 21, 5, 1, C.white); R(g, 16, 20, 5, 1, C.white); }
+    }),
+    canvasOf(28, 34, (g) => {
+      ellipse(g, 15, 31, 10, 3, 'rgba(0,0,0,0.3)');
+      if (!look.leaf) return bareTree(g, 14, 30);
+      cyl(g, 14, 30, 2, 8, WOOD);
+      sphere(g, 14, 15, 10, look.leaf);
+      if (look.fruit) { R(g, 10, 12, 2, 2, look.fruit); R(g, 17, 17, 2, 2, look.fruit); R(g, 12, 19, 2, 2, look.fruit); }
+      dots(g, 14, 15, 9, 12);
+    }),
+  ];
+}
+
+function buildRocks(snow) {
+  const cap = (g, cx, cy, r) => { if (snow) { ellipse(g, cx - 1, cy - r + 2, r - 1, 2, C.white); } };
+  return [
+    canvasOf(24, 20, (g) => {
+      ellipse(g, 13, 17, 10, 3, 'rgba(0,0,0,0.3)');
+      sphere(g, 10, 11, 7, [C.white, C.silver, C.slate, C.dark]); cap(g, 10, 11, 7);
+      sphere(g, 16, 13, 5, [C.white, C.silver, C.slate, C.dark]); cap(g, 16, 13, 5);
+    }),
+    canvasOf(24, 20, (g) => {
+      ellipse(g, 12, 17, 9, 3, 'rgba(0,0,0,0.3)');
+      sphere(g, 12, 11, 7, [C.silver, C.slate, C.dark, C.ink]);
+      if (snow) cap(g, 12, 11, 7); else { R(g, 9, 7, 3, 2, C.green); R(g, 12, 6, 2, 1, C.lime); }
+    }),
+    canvasOf(24, 20, (g) => {
+      ellipse(g, 12, 17, 10, 3, 'rgba(0,0,0,0.3)');
+      sphere(g, 8, 13, 5, [C.white, C.silver, C.slate, C.dark]); cap(g, 8, 13, 5);
+      sphere(g, 15, 10, 6, [C.white, C.silver, C.slate, C.dark]); cap(g, 15, 10, 6);
+    }),
+  ];
+}
+
+const OBSTACLE_SPR = Object.fromEntries(Object.entries(SEASON_LOOK).map(([k, look]) => [k, { tree: buildTrees(look), rock: buildRocks(look.snow) }]));
+
+export function drawObstacle(g, o, x, y, season = 'summer') {
+  const set = OBSTACLE_SPR[season] || OBSTACLE_SPR.summer;
+  const spr = set[o.kind][o.v % 3];
   g.drawImage(spr, x + Math.round((24 - spr.width) / 2), y + 23 - spr.height);
 }
 
