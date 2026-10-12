@@ -77,14 +77,14 @@ $('pause').addEventListener('click', togglePause);
 $('mute').addEventListener('click', () => {
   sfx.muted = !sfx.muted;
   $('mute').textContent = sfx.muted ? '🔇' : '🔊';
-  if (sfx.muted) music.stop(); else if (app.running) music.play(app.state.season);
+  if (sfx.muted) music.stop(); else if (app.running) music.playFor(app.state);
 });
 $('music').textContent = music.on ? '♪' : '♪̸';
 $('music').addEventListener('click', () => {
   sfx.unlock();
   music.setOn(!music.on);
   $('music').textContent = music.on ? '♪' : '♪̸';
-  if (music.on && app.running) music.play(app.state.season);
+  if (music.on && app.running) music.playFor(app.state);
 });
 
 /** The info panel text for the current context: building, hovered enemy, moving, ability, or the default tip. */

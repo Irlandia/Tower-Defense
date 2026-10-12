@@ -44,7 +44,7 @@ canvas.addEventListener('contextmenu', (ev) => { ev.preventDefault(); cancel(); 
 
 canvas.addEventListener('mousedown', (ev) => {
   sfx.unlock();
-  if (app.running) music.play(app.state.season); // audio may only start after a user gesture
+  if (app.running) music.playFor(app.state); // audio may only start after a user gesture
   if (ev.button !== 0 || !app.running) return;
   const s = app.state;
   const m = toMap(ev);

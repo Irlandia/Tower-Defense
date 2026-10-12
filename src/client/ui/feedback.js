@@ -13,7 +13,7 @@ const DAY_TEXT = { day: 'Настав день', evening: 'Вечоріє', nigh
 
 bus.on('run:start', () => {
   const s = app.state;
-  music.play(s.season);
+  music.playFor(s);
   setTimeout(() => {
     const st = app.state;
     if (st.mission) banner(`Місія ${st.mission.id}: ${st.mission.title}`, 'boss intro', `вистояти ${st.winWave} хвиль · ★ ${st.mission.side.text}`, 2600);

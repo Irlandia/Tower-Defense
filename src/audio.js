@@ -85,12 +85,38 @@ export class Sfx {
 // A slow chord loop: soft pad + bass on the downbeat + a gentle random arpeggio from the chord,
 // plus a seasonal ambience layer (birds, crickets, wind, sleigh-bell twinkles).
 const midi = (n) => 440 * 2 ** ((n - 69) / 12);
-const SONGS = {
+export const SONGS = {
   spring: { bpm: 92, wave: 'triangle', chords: [[60, 64, 67, 72], [57, 60, 64, 69], [65, 69, 72, 77], [67, 71, 74, 79]], amb: 'birds' },
   summer: { bpm: 100, wave: 'square', chords: [[55, 59, 62, 67], [52, 55, 59, 64], [48, 52, 55, 60], [50, 54, 57, 62]], amb: 'crickets' },
   autumn: { bpm: 76, wave: 'triangle', chords: [[57, 60, 64, 69], [53, 57, 60, 65], [55, 59, 62, 67], [52, 56, 59, 64]], amb: 'wind' },
   winter: { bpm: 64, wave: 'sine', chords: [[62, 65, 69, 74], [58, 62, 65, 70], [60, 64, 67, 72], [57, 61, 64, 69]], amb: 'bells' },
+  // Campaign: one theme per mission, matching its map and mood.
+  // drums: 8 steps per bar (k kick, s snare, h hat, . rest); arp: 'up' climbs the chord, 'bounce' root/top, default random.
+  m1: { bpm: 96, wave: 'triangle', arp: 'up', drums: 'k...h...', amb: 'birds', // first sprouts: gentle C major
+    chords: [[60, 64, 67, 72], [55, 59, 62, 67], [57, 60, 64, 69], [53, 57, 60, 65]] },
+  m2: { bpm: 88, wave: 'sine', amb: 'water', // the ford: flowing F major by the river
+    chords: [[53, 57, 60, 65], [60, 64, 67, 72], [62, 65, 69, 74], [58, 62, 65, 70]] },
+  m3: { bpm: 128, wave: 'square', arp: 'bounce', drums: 'k.h.s.hh', amb: 'crickets', // goblin bazaar: cheeky dorian
+    chords: [[57, 60, 64, 69], [62, 66, 69, 74], [57, 60, 64, 69], [64, 68, 71, 76]] },
+  m4: { bpm: 112, wave: 'square', drums: 'k..sk.s.', amb: 'rain', // storm over the hills: tense minor
+    chords: [[62, 65, 69, 74], [58, 62, 65, 70], [60, 64, 67, 72], [57, 61, 64, 69]] },
+  m5: { bpm: 104, wave: 'triangle', arp: 'up', drums: 'k.h.k.h.', amb: 'crickets', // the cycle: a progression that goes round
+    chords: [[64, 67, 71, 76], [60, 64, 67, 72], [55, 59, 62, 67], [62, 66, 69, 74]] },
+  m6: { bpm: 70, wave: 'sine', drums: 'k.......', amb: 'owl', // night of slime: dark C minor
+    chords: [[60, 63, 67, 72], [56, 60, 63, 68], [53, 56, 60, 65], [55, 59, 62, 67]] },
+  m7: { bpm: 120, wave: 'square', arp: 'bounce', drums: 'k.s.k.s.', amb: 'crowd', // autumn fair: a polka
+    chords: [[55, 59, 62, 67], [62, 66, 69, 74], [55, 59, 62, 67], [60, 64, 67, 72], [62, 66, 69, 74], [55, 59, 62, 67]] },
+  m8: { bpm: 96, wave: 'square', drums: 'k.ksk.s.', amb: 'wind', // iron legion: a heavy march
+    chords: [[52, 55, 59, 64], [52, 55, 59, 64], [48, 52, 55, 60], [47, 51, 54, 59]] },
+  m9: { bpm: 60, wave: 'sine', amb: 'bells', // eternal winter: the sad twist
+    chords: [[57, 60, 64, 69], [53, 57, 60, 65], [50, 53, 57, 62], [52, 56, 59, 64]] },
+  m10: { bpm: 132, wave: 'square', arp: 'up', drums: 'k.skk.s.', amb: 'wind', // the last tide: epic finale
+    chords: [[62, 65, 69, 74], [58, 62, 65, 70], [53, 57, 60, 65], [60, 64, 67, 72], [55, 58, 62, 67], [57, 61, 64, 69]] },
 };
+/** Which theme a run plays: its campaign mission's own, otherwise its season's. */
+export function songFor(s) {
+  return s && s.mission && SONGS['m' + s.mission.id] ? 'm' + s.mission.id : (s && s.season) || 'summer';
+}
 
 export class Music {
   constructor(sfx) {
@@ -110,6 +136,9 @@ export class Music {
     if (!on) this.stop();
     else if (this.season) this.play(this.season);
   }
+
+  // the theme for a run: its campaign mission, otherwise its season
+  playFor(s) { this.play(songFor(s)); }
 
   play(season) {
     this.season = season;
@@ -154,11 +183,15 @@ export class Music {
         this.note(midi(chord[0] - 24), this.next, eighth * 4, 0.06, 'triangle', 0.02); // bass
       }
       if (pos === 4) this.note(midi(chord[0] - 24 + 7), this.next, eighth * 3, 0.04, 'triangle', 0.02);
-      // sparse arpeggio: not every step, a little randomness so it never loops exactly
-      if (Math.random() < (pos % 2 ? 0.35 : 0.7)) {
+      // arpeggio: climbing / bouncing for the mission themes, otherwise sparse and a little random
+      const arpVol = S.wave === 'square' ? 0.012 : 0.03;
+      if (S.arp === 'up') this.note(midi(chord[pos % chord.length] + (pos >= 4 ? 12 : 0)), this.next, eighth * 1.4, arpVol, S.wave, 0.01);
+      else if (S.arp === 'bounce') this.note(midi(pos % 2 ? chord[3] : chord[0] + (pos % 4 === 2 ? 7 : 0)), this.next, eighth * 0.9, arpVol, S.wave, 0.005);
+      else if (Math.random() < (pos % 2 ? 0.35 : 0.7)) {
         const n = chord[Math.floor(Math.random() * chord.length)] + (Math.random() < 0.3 ? 12 : 0);
-        this.note(midi(n), this.next, eighth * 1.6, S.wave === 'square' ? 0.012 : 0.03, S.wave, 0.01);
+        this.note(midi(n), this.next, eighth * 1.6, arpVol, S.wave, 0.01);
       }
+      if (S.drums) this.drum(S.drums[pos], this.next);
       this.ambience(S.amb, this.next, eighth);
       this.next += eighth;
       this.step++;
@@ -177,8 +210,41 @@ export class Music {
     o.stop(t + dur + 0.05);
   }
 
+  // soft 8-bit percussion: k kick (falling sine), s snare and h hat (filtered noise bursts)
+  drum(kind, t) {
+    if (kind === 'k') {
+      const o = this.ctx.createOscillator(), g = this.ctx.createGain();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(130, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.12);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.09, t + 0.005); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+      o.connect(g).connect(this.out); o.start(t); o.stop(t + 0.18);
+    } else if ((kind === 's' || kind === 'h') && this.sfx.noiseBuf) this.noise(t, kind === 's' ? 0.1 : 0.03, kind === 's' ? 1800 : 7000, kind === 's' ? 0.03 : 0.012, 'highpass');
+  }
+
+  noise(t, dur, freq, vol, type = 'bandpass') {
+    const src = this.ctx.createBufferSource(), f = this.ctx.createBiquadFilter(), g = this.ctx.createGain();
+    src.buffer = this.sfx.noiseBuf; src.loop = true;
+    f.type = type; f.frequency.setValueAtTime(freq, t);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + Math.min(0.01, dur / 3)); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(f).connect(g).connect(this.out); src.start(t); src.stop(t + dur + 0.02);
+  }
+
   ambience(kind, t, eighth) {
     const r = Math.random();
+    if (kind === 'water' && r < 0.18) { // bubbling stream: little rising blips
+      const o = this.ctx.createOscillator(), g = this.ctx.createGain(), f = 500 + Math.random() * 500;
+      o.type = 'sine'; o.frequency.setValueAtTime(f, t); o.frequency.exponentialRampToValueAtTime(f * 1.8, t + 0.05);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.01, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+      o.connect(g).connect(this.out); o.start(t); o.stop(t + 0.07);
+    }
+    if (kind === 'rain' && this.sfx.noiseBuf) {
+      if (r < 0.5) this.noise(t, eighth * 1.2, 5000, 0.01, 'highpass'); // steady hiss of rain
+      if (r > 0.995) this.noise(t, 2.5, 120, 0.12, 'lowpass'); // distant thunder
+    }
+    if (kind === 'owl' && r < 0.012) for (let i = 0; i < 2; i++) this.note(midi(64 - i * 3), t + i * 0.35, 0.3, 0.02, 'sine', 0.05); // hoo-hoo
+    if (kind === 'owl' && r > 0.8) for (let i = 0; i < 2; i++) this.note(3800 + Math.random() * 300, t + i * 0.04, 0.02, 0.003, 'square', 0.002); // crickets
+    if (kind === 'crowd' && this.sfx.noiseBuf && r < 0.08) this.noise(t, 0.6 + Math.random() * 0.6, 500 + Math.random() * 500, 0.012); // fair chatter
+    if (kind === 'crowd' && r > 0.985) this.note(midi(79 + [0, 4, 7][Math.floor(Math.random() * 3)]), t, eighth * 2, 0.012, 'square', 0.003); // a stall's bell
     if (kind === 'birds' && r < 0.06) {
       // two quick chirps sliding up
       for (let i = 0; i < 2; i++) {
