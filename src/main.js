@@ -1182,3 +1182,38 @@ setInterval(() => {
   const side = state.mission.side;
   if (side.type === 'coins' && !sideDone && state.stats.coins >= side.n) { sideDone = true; sfx.play('card'); banner('★ Ціль виконано!', 'gold', side.text, 1800); }
 }, 250);
+
+// Pixel-art ability icons (12x11 maps, drawn at 2x with a dark outline) instead of emoji.
+const AB_ICONS = {
+  meteor: {
+    c: { o: '#ef7d57', y: '#ffcd75', w: '#fff4d6', r: '#b13e53', k: '#1a1c2c' },
+    rows: ['.........w.w', '........ywy.', '.......yoy..', '...rrrr.y...', '..royyor....', '.royyyyor...', '.roykykor...', '.royyyyor...', '..royyor....', '...rrrr.....', '............'],
+  },
+  nova: {
+    c: { c: '#73eff7', b: '#41a6f6', w: '#f4f4f4' },
+    rows: ['.....w......', '...w.c.w....', '....ccc.....', '.w.c.b.c.w..', '..ccwwwcc...', 'wcbbwwwbbcw.', '..ccwwwcc...', '.w.c.b.c.w..', '....ccc.....', '...w.c.w....', '.....w......'],
+  },
+  wall: {
+    c: { B: '#c28569', b: '#8a6248', D: '#5a3e2c', s: '#94b0c2' },
+    rows: ['.B...B...B..', 'BbB.BbB.BbB.', 'BbB.BbB.BbB.', 'DDDDDDDDDDD.', 'BsB.BsB.BsB.', 'BbB.BbB.BbB.', 'DDDDDDDDDDD.', 'BbB.BbB.BbB.', 'BbB.BbB.BbB.', 'bbb.bbb.bbb.', '............'],
+  },
+};
+function pixelIcon({ rows, c }) {
+  const S = 2, W2 = rows[0].length, H2 = rows.length;
+  const cv = document.createElement('canvas');
+  cv.width = (W2 + 2) * S; cv.height = (H2 + 2) * S;
+  const g = cv.getContext('2d');
+  const filled = (x, y) => rows[y] && rows[y][x] && rows[y][x] !== '.';
+  // outline: every empty pixel touching a filled one
+  g.fillStyle = '#1a1c2c';
+  for (let y = -1; y <= H2; y++) for (let x = -1; x <= W2; x++) {
+    if (filled(x, y)) continue;
+    if (filled(x + 1, y) || filled(x - 1, y) || filled(x, y + 1) || filled(x, y - 1)) g.fillRect((x + 1) * S, (y + 1) * S, S, S);
+  }
+  rows.forEach((row, y) => { for (let x = 0; x < W2; x++) if (c[row[x]]) { g.fillStyle = c[row[x]]; g.fillRect((x + 1) * S, (y + 1) * S, S, S); } });
+  return cv;
+}
+for (const el of document.querySelectorAll('.ability .ab-icon')) {
+  const id = el.parentElement.dataset.ab;
+  if (AB_ICONS[id]) { el.textContent = ''; el.append(pixelIcon(AB_ICONS[id])); }
+}

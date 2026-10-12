@@ -345,3 +345,6 @@ button, .tower-btn canvas, .tower-btn .cost, .tower-btn .key, .ability .key, .ab
 #talent { background: #6b3a8a; box-shadow: inset -3px -3px 0 #3d1f52, inset 3px 3px 0 #b97ae0; }
 .controls button { background: #333c57; box-shadow: inset -3px -3px 0 #1a1c2c, inset 3px 3px 0 #566c86; }
 .controls button:active, .tower-btn:active, .ability:active, #next:active { box-shadow: inset 3px 3px 0 #1a1c2c; transform: translateY(1px); }
+
+.ability .ab-icon canvas { width: 28px; height: 26px; image-rendering: pixelated; display: block; }
+.ability .ab-icon { height: 26px; }
