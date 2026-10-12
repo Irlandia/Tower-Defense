@@ -40,7 +40,7 @@ export function runDemoIfRequested() {
   spots.forEach(([tx, ty], i) => send({ type: 'place', kind: TOWER_ORDER[i], tx, ty }));
   if (dm === 'boss') {
     s.wave = 4;
-    s.queue.push({ type: 'boss', lane: 0, at: s.tick + 1, hpMul: 1 });
+    s.queue.push({ type: 'boss', bk: q.get('bk') || undefined, lane: 0, at: s.tick + 1, hpMul: 1 }); // &bk=kvak etc.
   } else send({ type: 'nextWave' });
   return true;
 }

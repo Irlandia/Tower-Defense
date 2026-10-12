@@ -6,7 +6,7 @@ export const COLS = 26;
 export const ROWS = 14;
 export const TICK_RATE = 20;
 // Bump on every change to sim/data: co-op peers refuse to play with a different version.
-export const VERSION = 41;
+export const VERSION = 42;
 
 export const CONFIG = {
   startGold: 160,
@@ -179,6 +179,61 @@ export const BOSSES = {
   15: { name: 'Барон Іржавий', title: 'Володар Брухту', skill: { type: "magnet", name: "Магніт", every: 9, dur: 3, range: 110 }, lines: ['Сталь не боїться ваших стріл!', 'Здавайтеся, і я буду милосердним. Жартую.', 'Мій обладунок древніший за ваш замок!'], rage: ['Подряпина? НА МОЇЙ БРОНІ?!', 'Досить ігор!'] },
   20: { name: 'Король Слизу', title: 'Останній Прилив', skill: { type: "decree", name: "Указ і Розкол", every: 7, range: 72, stun: 2, split: 3 }, lines: ['На коліна перед королем!', 'Це королівство тепер моє.', 'Я — кінець вашої історії.'], rage: ['НЕМОЖЛИВО!', 'Я лише почав розминатися!'] },
 };
+// 15 more bosses: each regular boss wave draws a random one (seeded, no repeats until the pool runs out).
+// map: 8x8 sprite (Sweetie 16 hex: 0 ink, 1 plum, 2 red, 3 orange, 4 yellow, 5 lime, 6 green, 7 teal, 8 navy,
+// 9 blue, a sky, b cyan, c white, d silver, e slate, f dark). hp / speed: multipliers on the base boss.
+// Skill types (sim.js bossSkill): summon, blink, rally, shield, haste, burrow, steal, heal, cleanse, shuffle, snipe,
+// plus the classic dash, brood, magnet, decree.
+Object.assign(BOSSES, {
+  kvak: { name: 'Квак Великий', title: 'Цар Ставка', color: '#38b764', skill: { type: 'blink', name: 'Стрибок', every: 5, dist: 55 },
+    map: ['.4.44.4.', '.444444.', '06c66c60', '06066060', '06666660', '06222260', '.066660.', '06.00.60'],
+    lines: ['Ква! На коліна, головастики!', 'Мій ставок — моє королівство!'], rage: ['КВА-А-А!', 'Ви намочили мою корону!'] },
+  shroom: { name: 'Пані Поганка', title: 'Королева Спор', color: '#b13e53', skill: { type: 'rally', name: 'Цілющі спори', every: 6, range: 70, pct: 0.15 },
+    map: ['..0000..', '.02c220.', '02222c20', '02c22220', '00000000', '.0cccc0.', '.0c0c00.', '..0000..'],
+    lines: ['Мої спори всюди…', 'Вдихніть глибше, любі!'], rage: ['Ви потоптали мою грибницю!', 'Апчхи!'] },
+  rat: { name: 'Пискун', title: 'Щурячий Вождь', color: '#566c86', speed: 1.3, hp: 0.85, skill: { type: 'summon', name: 'Зграя', every: 5, what: 'runner', count: 3 },
+    map: ['0......0', '0e0..0e0', '.0eeee0.', '0eceece0', '0eeeeee0', '.0e33e0.', '..0ee0..', '.0.00.0e'],
+    lines: ['Пі-пі! Хлопці, за мною!', 'Ваш сир — наш сир!'], rage: ['Розбігайтеся!', 'ПІ-І-І!'] },
+  golem: { name: 'Брилл', title: 'Камінний Голем', color: '#94b0c2', speed: 0.8, hp: 1.3, skill: { type: 'shield', name: "Кам'яна шкіра", every: 8, dur: 3, armor: 10 },
+    map: ['.000000.', '0dddddd0', '0dcddcd0', '0dddddd0', '0eddddde', '0deeeed0', '0dd00dd0', '0e0..0e0'],
+    lines: ['Брилл… прийшов.', 'Камінь не відчуває болю.'], rage: ['Тріщина?..', 'БРИЛЛ ЗЛИЙ.'] },
+  witch: { name: 'Відьма Ожина', title: 'Болотяна Знахарка', color: '#5d275d', skill: { type: 'haste', name: 'Зілля швидкості', every: 7, dur: 3, range: 80, mult: 1.6 },
+    map: ['...00...', '..0110..', '.011110.', '00000000', '.05c5c0.', '.055550.', '.011110.', '0111111.'],
+    lines: ['Хі-хі, ковток зілля — і вперед!', 'Котел уже кипить…'], rage: ['Моє зілля!', 'Прокляття на ваші вежі!'] },
+  mole: { name: 'Копач', title: 'Підземний Кріт', color: '#8a6248', skill: { type: 'burrow', name: 'Підкоп', every: 8, dur: 2.5 },
+    map: ['........', '..0000..', '.033330.', '03c33c30', '0333c330', '03333330', '0c0330c0', '.0.00.0.'],
+    lines: ['Під землею вас не чути…', 'Рий-рий-рий!'], rage: ['Світло! Очі!', 'Закопаю!'] },
+  zlotko: { name: 'Злотко', title: 'Гоблін-Скарбник', color: '#ffcd75', skill: { type: 'steal', name: 'Кишеньки', every: 7, gold: 12 },
+    map: ['..0..0..', '.050050.', '.055550.', '.5c55c5.', '0455554.', '04444440', '0444c440', '.044440.'],
+    lines: ['Дзинь-дзинь! Це вже моє.', 'Податок на вежі!'], rage: ['Мої монетки!', 'Грабіж!'] },
+  yeti: { name: 'Бурул', title: 'Єті з Перевалу', color: '#f4f4f4', speed: 0.9, hp: 1.15, skill: { type: 'decree', name: 'Крижаний рик', every: 8, range: 60, stun: 1.5 },
+    map: ['.0cccc0.', '0cccccc0', '0c0cc0c0', '0cccccc0', '0c2222c0', '0cccccc0', '.0cccc0.', '0c0..0c0'],
+    lines: ['Гр-р-р… холодно?', 'Бурул любить сніг!'], rage: ['РРРОАР!', 'Бурул розтопився!'] },
+  morok: { name: 'Морок', title: 'Чорний Лицар', color: '#29366f', hp: 1.2, skill: { type: 'summon', name: 'Варта', every: 7, what: 'knight', count: 2 },
+    map: ['..0000..', '.088880.', '.080080.', '.0b88b0.', '08888880', '08e88e80', '.0e00e0.', '..0..0..'],
+    lines: ['Варто, до зброї!', 'Темрява не відступає.'], rage: ['Мій шолом!', 'Ви пожалкуєте.'] },
+  count: { name: 'Граф Кровопивець', title: 'Нічний Гість', color: '#5d275d', skill: { type: 'heal', name: 'Ковток', every: 5, pct: 0.08 },
+    map: ['..0000..', '.011110.', '01c11c10', '01111110', '01c00c10', '.011110.', '0222222.', '02.00.20'],
+    lines: ['Добрий вечір… смачного мені.', 'Ваш замок — чудовий склеп.'], rage: ['Сонце?! Ні!', 'Мій плащ!'] },
+  wisp: { name: 'Шепіт', title: 'Болотний Привид', color: '#73eff7', speed: 1.15, skill: { type: 'cleanse', name: 'Безтілесність', every: 6, dur: 3 },
+    map: ['..0000..', '.0bbbb0.', '0bcbbcb0', '0b0bb0b0', '0bbbbbb0', '0bbbbbb0', '0b.bb.b0', '.0..0..0'],
+    lines: ['Уууу… крига мене не тримає…', 'Ви мене бачите?'], rage: ['Я розвіюсь!', 'Уууу-у!'] },
+  hive: { name: 'Матка', title: 'Королева Вулика', color: '#ffcd75', skill: { type: 'summon', name: 'Рій', every: 4, what: 'mini', count: 4 },
+    map: ['.c0..0c.', '.cc00cc.', '.044440.', '04c44c40', '00000000', '04444440', '.000000.', '..0..0..'],
+    lines: ['Бззз! Діти, жальте!', 'Мед — тільки для своїх.'], rage: ['Вулик у небезпеці!', 'БЗЗЗЗ!'] },
+  jester: { name: 'Хіхо', title: 'Блазень Короля', color: '#ef7d57', speed: 1.1, skill: { type: 'shuffle', name: 'Фокус-покус', every: 6 },
+    map: ['03....90', '.03..90.', '..0330..', '.0c33c0.', '0333333.', '03c22c30', '.033330.', '.0.00.0.'],
+    lines: ['Хі-хі! Вгадай, де я?', 'Фокус-покус, вежі — в ступор!'], rage: ['Не смішно!', 'Хо-хо… ой.'] },
+  zharik: { name: 'Жарик', title: 'Дракончик', color: '#ef7d57', skill: { type: 'snipe', name: 'Вогнеплюй', every: 6, range: 110, stun: 3 },
+    map: ['.0....0.', '.30..03.', '.033330.', '03c33c30', '03333330', '0332233.', '00333300', '.0.00.0.'],
+    lines: ['Пф-ф! Зараз підсмажу!', 'Я ще маленький, але гарячий!'], rage: ['Кхе-кхе, дим!', 'Мама-дракон дізнається!'] },
+  kistyak: { name: 'Кістяк', title: 'Некромант', color: '#94b0c2', skill: { type: 'summon', name: 'Підняти мертвих', every: 6, what: 'splitter', count: 2 },
+    map: ['..0000..', '.0cccc0.', '0c0cc0c0', '0cccccc0', '.0c00c0.', '.011110.', '01111110', '01.00.10'],
+    lines: ['Вставайте, мої слизики…', 'Смерть — лише початок.'], rage: ['Мої кістки!', 'Я ще повернусь!'] },
+});
+// Regular boss waves draw from these (the King stays the final boss of wave 20; campaign generals stay fixed).
+export const BOSS_POOL = Object.keys(BOSSES).filter((k) => k !== '20');
+
 // Endless waves reuse the boss roster in rotation.
 export function bossKey(w) {
   return BOSSES[w] ? w : [5, 10, 15, 20][Math.floor(w / 2) % 4];

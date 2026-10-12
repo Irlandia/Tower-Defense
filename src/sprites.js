@@ -559,3 +559,13 @@ export function drawField(g, fx, fy, fw, fh, season, TILE) {
   R(g, x0, y0, W, 1, '#c28569'); R(g, x0, y0 + H - 4, W, 1, '#c28569');
   if (season === 'winter') for (let i = 0; i < W; i += 3) R(g, x0 + i, y0 - 1, 2, 1, C.white);
 }
+
+// Bosses with their own look (BOSSES[k].map in data.js): sprites are built on first sight and cached.
+const BOSS_SPR = {};
+export function bossSprites(key, def) {
+  if (!def || !def.map) return null;
+  if (!BOSS_SPR[key]) {
+    BOSS_SPR[key] = { n: makeSprite(def.map, 3), f: makeSprite(def.map, 3, C.white), z: makeSprite(def.map, 3, 'rgba(115,239,247,0.55)') };
+  }
+  return BOSS_SPR[key];
+}

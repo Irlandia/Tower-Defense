@@ -3,7 +3,7 @@ import { TILE, COLS, ROWS, TICK_RATE, TOWERS, CONFIG, ABILITIES, BARREL, BOSSES,
 import { towerStats, canPlace, posAt, isRoad, canMove } from './sim/sim.js';
 import {
   C, SPRITES, FLASH, FROZEN, ENEMY_COLOR, drawTower, drawCastle, drawCave, drawNum, numWidth, drawIcon,
-  drawObstacle, drawBarrel, drawCoin, drawChest, drawWall, ellipse, drawFarmHouse, drawField,
+  drawObstacle, drawBarrel, drawCoin, drawChest, drawWall, ellipse, drawFarmHouse, drawField, bossSprites,
 } from './sprites.js';
 import { say, SAY } from "./say.js";
 import { Critters } from './critters.js';
@@ -113,7 +113,22 @@ export class Renderer {
           this.say(e.id, info.lines[Math.floor(Math.random() * info.lines.length)], 3.5);
           break;
         }
-        case "bossSkill":
+        case "bossSkill": {
+          // name the move above the boss so players learn what each one does
+          const bi = this.bossInfo[e.id];
+          if (bi && e.kind !== "snipeHit") this.labels.push({ x: e.x, y: e.y - 44, text: bi.skill.name + '!', color: bi.color || '#ffcd75', life: 1.2 });
+          const col = (bi && bi.color) || C.white;
+          if (e.kind === "summon") { this.burst(e.x, e.y, 22, col, 60, -20); this.rings.push({ x: e.x, y: e.y, r: 2, max: 24, c: col, life: 0.8 }); }
+          if (e.kind === "blink") { this.burst(e.x, e.y, 18, C.lime, 70, -25); this.rings.push({ x: e.x, y: e.y + 4, r: 2, max: 18, c: C.lime, life: 0.6 }); }
+          if (e.kind === "rally") this.rings.push({ x: e.x, y: e.y, r: 4, max: 70, c: C.lime, life: 1 });
+          if (e.kind === "shield") { this.burst(e.x, e.y - 8, 14, C.silver, 40); this.shake = Math.max(this.shake, 2); }
+          if (e.kind === "haste") this.rings.push({ x: e.x, y: e.y, r: 4, max: 80, c: C.plum, life: 1 });
+          if (e.kind === "burrow" || e.kind === "steal") this.burst(e.x, e.y + 2, 24, e.kind === "steal" ? C.yellow : "#8a6248", 70, -30);
+          if (e.kind === "heal") { this.burst(e.x, e.y - 8, 16, C.red, 40, -30); this.text(e.x, e.y - 30, '+', C.red, 2); }
+          if (e.kind === "cleanse") this.rings.push({ x: e.x, y: e.y - 8, r: 2, max: 26, c: C.cyan, life: 0.8 });
+          if (e.kind === "shuffle") { this.burst(e.x, e.y - 8, 20, C.orange, 60); this.burst(e.x, e.y - 8, 10, C.blue, 60); }
+          if (e.kind === "snipeHit") { this.burst(e.x, e.y - 10, 20, C.orange, 60); this.burst(e.x, e.y - 10, 10, C.yellow, 40); this.shake = Math.max(this.shake, 2); }
+        }
           if (e.kind === "dash") { this.burst(e.x, e.y + 4, 20, "#a8805e", 70, -10); this.text(e.x, e.y - 34, "!!", C.red, 2); this.shake = Math.max(this.shake, 3); }
           if (e.kind === "brood") { this.burst(e.x, e.y, 24, C.lime, 60, -20); this.rings.push({ x: e.x, y: e.y, r: 2, max: 20, c: C.green, life: 0.8 }); }
           if (e.kind === "magnet") { this.rings.push({ x: e.x, y: e.y - 8, r: 60, max: 4, c: C.silver, life: 1 }); this.burst(e.x, e.y - 8, 16, C.silver, 50); }
@@ -532,7 +547,8 @@ export class Renderer {
     const x = e.px + (e.x - e.px) * alpha;
     const y = e.py + (e.y - e.py) * alpha;
     const frozen = e.slowT > 0 && e.slowF === 0;
-    const spr = (e.flash > 0 ? FLASH : SPRITES)[e.type];
+    const bs = e.bk && e.type === "boss" ? bossSprites(e.bk, BOSSES[e.bk]) : null; // bosses with their own look
+    const spr = bs ? (e.flash > 0 ? bs.f : bs.n) : (e.flash > 0 ? FLASH : SPRITES)[e.type];
     const heavy = e.type === "boss" || e.type === "king";
     let bob;
     if (heavy) {
@@ -550,8 +566,17 @@ export class Renderer {
     const dx = Math.round(x - spr.width / 2), dy = Math.round(y - spr.height + 6 - bob);
     ellipse(g, Math.round(x), Math.round(y) + 6, Math.max(2, Math.round(spr.width / 2.6) - (heavy ? Math.floor(bob / 2) : 0)), heavy ? 3 : 2, heavy ? "rgba(0,0,0,0.45)" : "rgba(0,0,0,0.3)");
     if (hovered) ellipse(g, Math.round(x), Math.round(y) + 6, Math.round(spr.width / 2) + 2, 3, 'rgba(255,205,117,0.6)');
+    if (e.hideT > 0) { // burrowed: only a moving mound of earth
+      ellipse(g, Math.round(x), Math.round(y) + 4, 9, 4, "#8a6248"); ellipse(g, Math.round(x), Math.round(y) + 3, 6, 2, "#c28569");
+      if ((tick >> 1) % 2) this.parts.push({ x: x + Math.random() * 12 - 6, y: y + 2, vx: Math.random() * 30 - 15, vy: -30, life: 0.3, c: "#8a6248" });
+      return;
+    }
+    if (e.immuneT > 0) g.globalAlpha = 0.55 + 0.25 * Math.sin(tick / 2); // ghostly
     g.drawImage(spr, dx, dy);
-    if (frozen) g.drawImage(FROZEN[e.type], dx, dy);
+    g.globalAlpha = 1;
+    if (frozen) g.drawImage(bs ? bs.z : FROZEN[e.type], dx, dy);
+    if (e.shieldT > 0) { g.strokeStyle = (tick >> 1) % 2 ? C.white : C.silver; g.strokeRect(dx - 2.5, dy - 2.5, spr.width + 5, spr.height + 5); }
+    if (e.hasteT > 0 && (tick >> 1) % 2) this.parts.push({ x: x - 6 + Math.random() * 4, y: y + Math.random() * 6 - 4, vx: -40, vy: 0, life: 0.2, c: C.lime });
     if (e.wetT > 0 && (tick >> 2) % 3 === 0) { g.fillStyle = C.sky; g.fillRect(dx + 2 + (e.id % 9), dy + spr.height, 1, 3); }
     if (e.wetT > 0) { // status: a little droplet over the head = "wet", Tesla x2 / fire makes steam
       const wx = dx + (spr.width >> 1), wy = dy - 6 + ((tick >> 3) % 2);

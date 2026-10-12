@@ -148,7 +148,13 @@ export function step(s, cmds = [], advance = true) {
     const q = s.queue.shift();
     const e = spawn(s, q.type, q.lane, 0, q.hpMul);
     e.bossWave = s.wave;
-    if (ENEMIES[q.type].lives) { e.bk = q.bk || bossKey(s.wave); e.abT = BOSSES[e.bk].skill.every * T; }
+    if (ENEMIES[q.type].lives) {
+      e.bk = q.bk || bossKey(s.wave);
+      const bd = BOSSES[e.bk];
+      e.abT = bd.skill.every * T;
+      if (bd.hp) { e.hp = e.maxHp = Math.round(e.maxHp * bd.hp); }
+      if (bd.speed) e.speedMul *= bd.speed;
+    }
     if (ENEMIES[q.type].lives) s.events.push({ type: "bossSpawn", id: e.id, kind: q.type, wave: s.wave, bk: e.bk });
   }
 
@@ -218,7 +224,8 @@ function updateEnemy(s, e) {
   }
   if (e.bk) bossSkill(s, e);
   if (e.dead) return;
-  const speed = def.speed * e.speedMul * (e.slowT > 0 ? e.slowF : 1) * (e.dashT > 0 ? BOSSES[e.bk].skill.mult : 1);
+  if (e.hasteT > 0) e.hasteT--;
+  const speed = def.speed * e.speedMul * (e.slowT > 0 ? e.slowF : 1) * (e.dashT > 0 ? BOSSES[e.bk].skill.mult : 1) * (e.hasteT > 0 ? e.hasteF : 1);
   const next = posAt(s.map, e.lane, e.dist + speed / T);
   // Barricades stop enemies walking into them; enemies chew through the wall.
   const wall = s.walls.find((w) => w.hp > 0 && Math.hypot(next.x - w.x, next.y - w.y) < 16 && Math.hypot(next.x - w.x, next.y - w.y) < Math.hypot(e.x - w.x, e.y - w.y));
@@ -258,6 +265,9 @@ function bossSkill(s, e) {
   const sk = BOSSES[e.bk].skill;
   if (e.dashT > 0) e.dashT--;
   if (e.magnetT > 0) e.magnetT--;
+  if (e.hideT > 0) e.hideT--;
+  if (e.shieldT > 0 && --e.shieldT === 0) e.armor = ENEMIES[e.type].armor;
+  if (e.immuneT > 0) { e.immuneT--; e.slowT = 0; e.wetT = 0; e.burnT = 0; } // ghost: nothing sticks
   if (e.slowT > 0 && e.slowF === 0) return; // frozen bosses cannot act
   if (--e.abT > 0) return;
   e.abT = sk.every * T;
@@ -274,6 +284,56 @@ function bossSkill(s, e) {
     case "decree": // the King stuns towers around him
       for (const t of s.towers) if (Math.hypot(t.x - e.x, t.y - e.y) <= sk.range) t.stunT = Math.round(sk.stun * T);
       break;
+    case "summon": // calls a pack of `what` right behind
+      for (let i = 0; i < sk.count; i++) {
+        const m = spawn(s, sk.what, e.lane, Math.max(0, e.dist - 10 - i * 9), e.hpMul * 0.25);
+        m.lap = e.lap;
+      }
+      break;
+    case "blink": { // leaps forward along the road (never past the end)
+      const L = s.map.lanes[e.lane];
+      e.dist = L.loop ? e.dist + sk.dist : Math.min(L.total - 30, e.dist + sk.dist);
+      const p = posAt(s.map, e.lane, e.dist);
+      e.x = e.px = p.x; e.y = e.py = p.y;
+      break;
+    }
+    case "rally": // heals every enemy around
+      for (const o of s.enemies) if (!o.dead && o !== e && Math.hypot(o.x - e.x, o.y - e.y) <= sk.range) o.hp = Math.min(o.maxHp, o.hp + Math.round(o.maxHp * sk.pct));
+      break;
+    case "shield":
+      e.armor = ENEMIES[e.type].armor + sk.armor;
+      e.shieldT = Math.round(sk.dur * T);
+      break;
+    case "haste": // everyone around (and the boss) runs faster for a while
+      for (const o of s.enemies) if (!o.dead && Math.hypot(o.x - e.x, o.y - e.y) <= sk.range) { o.hasteT = Math.round(sk.dur * T); o.hasteF = sk.mult; }
+      break;
+    case "burrow": // underground: towers cannot target it
+      e.hideT = Math.round(sk.dur * T);
+      break;
+    case "steal":
+      for (const pl of s.players) pl.gold -= Math.min(pl.gold, sk.gold);
+      break;
+    case "heal":
+      e.hp = Math.min(e.maxHp, e.hp + Math.round(e.maxHp * sk.pct));
+      break;
+    case "cleanse":
+      e.immuneT = Math.round(sk.dur * T);
+      break;
+    case "shuffle": { // swaps places with the enemy furthest ahead on its lane
+      const lead = s.enemies.filter((o) => !o.dead && o !== e && o.lane === e.lane && o.dist > e.dist).sort((a, b) => b.dist - a.dist || a.id - b.id)[0];
+      if (!lead) break;
+      [e.dist, lead.dist] = [lead.dist, e.dist];
+      for (const o of [e, lead]) { const p = posAt(s.map, o.lane, o.dist); o.x = o.px = p.x; o.y = o.py = p.y; }
+      break;
+    }
+    case "snipe": { // spits at the strongest tower in range: stunned
+      const t = s.towers.filter((k) => !TOWERS[k.kind].support && Math.hypot(k.x - e.x, k.y - e.y) <= sk.range)
+        .sort((a, b) => b.spent - a.spent || a.id - b.id)[0];
+      if (!t) break;
+      t.stunT = Math.round(sk.stun * T);
+      s.events.push({ type: "bossSkill", kind: "snipeHit", id: e.id, x: t.x, y: t.y, r: 0 });
+      break;
+    }
   }
   s.events.push({ type: "bossSkill", kind: sk.type, id: e.id, x: e.x, y: e.y, r: sk.range || 0 });
 }
@@ -287,7 +347,7 @@ function updateZone(s, z) {
 }
 
 function inRange(s, x, y, range) {
-  return s.enemies.filter((e) => !e.dead && e.dist >= 0 && Math.hypot(e.x - x, e.y - y) <= range);
+  return s.enemies.filter((e) => !e.dead && e.dist >= 0 && !(e.hideT > 0) && Math.hypot(e.x - x, e.y - y) <= range);
 }
 
 function updateTower(s, t) {

@@ -8,7 +8,7 @@ import { TOWERS, TOWER_ORDER, BRANCHES, COLS, ROWS, CARDS, BRAWLS, brawlOf } fro
 import { ABILITIES } from '../src/sim/data.js';
 import * as Meta from '../src/meta.js';
 import { sellRatioOf, abilityMax, stateHash } from '../src/sim/sim.js';
-import { VERSION } from '../src/sim/data.js';
+import { VERSION, BOSSES, BOSS_POOL } from '../src/sim/data.js';
 Meta.setPersist(false); // tests never write the player's real save
 
 const lines = [];
@@ -554,6 +554,38 @@ try {
   for (let i = 0; i < 400 && !firstShot; i++) { step(ml); if (ml.projs.length) firstShot = ml.projs.length; }
   check('Подвійний залп: one arrow shot targets two enemies', firstShot === 2, `projs=${firstShot}`);
 
+  // Boss roster: every boss has a valid 8x8 look (if any) and a working skill
+  for (const k of BOSS_POOL) {
+    const d = BOSSES[k];
+    if (d.map) check(`boss ${k}: sprite is 8x8`, d.map.length === 8 && d.map.every((r) => r.length === 8 && /^[0-9a-f.]+$/.test(r)), d.map.join('|'));
+    const bg = createGame(21, { bonusGold: 3000 });
+    const [bx, by] = free(bg, 1)[0];
+    step(bg, [{ type: 'place', kind: 'arrow', tx: bx, ty: by, p: 0 }]);
+    bg.queue = [{ type: 'boss', bk: k, lane: 0, at: bg.tick + 1, hpMul: 3 }, { type: 'slime', lane: 0, at: bg.tick + 1, hpMul: 3 }, { type: 'slime', lane: 0, at: bg.tick + 30, hpMul: 3 }];
+    let used = 0, err = '';
+    try { for (let i = 0; i < 20 * 20 && !bg.over; i++) { step(bg); used += bg.events.filter((ev) => ev.type === 'bossSkill').length; } } catch (e) { err = e.message; }
+    check(`boss ${k} (${d.name}): skill "${d.skill.type}" fires without errors`, !err && used > 0, err || `used=${used}`);
+  }
+  // random draw: a run meets different bosses, no repeats until the pool is exhausted, the King is wave 20
+  const rb = createGame(5, { bonusGold: 99999 });
+  const met = [];
+  rb.lives = 1e6;
+  for (let w = 1; w <= 20; w++) {
+    rb.countdown = 1; step(rb);
+    for (const q of rb.queue) if (q.bk) met.push(String(q.bk));
+    rb.queue = []; rb.enemies = [];
+  }
+  check('random bosses: waves 5/10/15 are three different bosses', new Set(met.slice(0, 3)).size === 3 && met.slice(0, 3).every((k) => BOSS_POOL.includes(k)), met.join(','));
+  check('random bosses: wave 20 is the King', met[3] === '20', met.join(','));
+  const rc = createGame(6);
+  rc.lives = 1e6;
+  const met2 = [];
+  for (let w = 1; w <= 15; w++) { rc.countdown = 1; step(rc); for (const q of rc.queue) if (q.bk) met2.push(String(q.bk)); rc.queue = []; }
+  check('random bosses: another seed meets other bosses', met2.join() !== met.slice(0, 3).join(), met2.join());
+  const camp = createGame(1, { mode: 'campaign', mission: 4 });
+  camp.wave = 9; camp.countdown = 1; step(camp);
+  check('campaign generals stay fixed (mission 4: Grok on wave 10)', camp.queue.some((q) => q.bk === 5), camp.queue.filter((q) => q.bk).map((q) => q.bk).join());
+
   // co-op: a disconnected player's gold goes to the partners, their towers keep earning for the team
   const lv = createGame(11, { players: 2 });
   lv.players[0].gold = 100; lv.players[1].gold = 301;
@@ -574,7 +606,7 @@ try {
 
   // Golden replay: a fixed bot run must give the same fingerprint until VERSION is bumped.
   // When you change src/sim on purpose: VERSION++ and paste the new hash printed below.
-  const GOLDEN = { version: 41, hash: 193004491 };
+  const GOLDEN = { version: 42, hash: 2616498659 };
   const gh = stateHash(runBot(4242, 6).s);
   if (VERSION === GOLDEN.version) check('golden replay: sim unchanged at this VERSION (else bump VERSION)', gh === GOLDEN.hash, `got ${gh}`);
   else log(`NOTE golden replay: VERSION ${VERSION} — set GOLDEN = { version: ${VERSION}, hash: ${gh} }`);

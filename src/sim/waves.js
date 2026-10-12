@@ -1,5 +1,5 @@
 // Wave planning and composition (enemy packs, bosses, goblin thief).
-import { ENEMIES, UNLOCKS, MODES, CONFIG, TICK_RATE as T } from './data.js';
+import { ENEMIES, UNLOCKS, MODES, CONFIG, BOSS_POOL, TICK_RATE as T } from './data.js';
 import { rand, randInt } from './rng.js';
 import { player } from './queries.js';
 
@@ -75,7 +75,8 @@ export function startWave(s) {
     kind = () => (w === s.winWave ? "king" : "boss");
   }
   for (let i = 0; i < bosses; i++) {
-    s.queue.push({ type: kind(i), lane: lanes[i % lanes.length], at: s.tick + 3 * T + i * 2 * T, hpMul: bossHp });
+    const type = kind(i);
+    s.queue.push({ type, bk: type === "king" ? 20 : drawBoss(s), lane: lanes[i % lanes.length], at: s.tick + 3 * T + i * 2 * T, hpMul: bossHp });
   }
   // campaign: the mission names its generals by wave (one per player)
   const mk = s.mission && s.mission.bosses && s.mission.bosses[w];
@@ -86,4 +87,14 @@ export function startWave(s) {
   s.countdown = CONFIG.waveDelay * T;
   s.events.push({ type: "wave", wave: w, boss: over20 ? over20 % MODES.circle.endlessBossEvery === 0 : w % 5 === 0, final: w === s.winWave, lanes });
   s.plan = planLanes(s);
+}
+
+// A random boss from the pool, without repeats until every one has been met in this run.
+function drawBoss(s) {
+  const seen = s.bossSeen || (s.bossSeen = []);
+  let pool = BOSS_POOL.filter((k) => !seen.includes(k));
+  if (!pool.length) { seen.length = 0; pool = [...BOSS_POOL]; }
+  const k = pool[randInt(s, pool.length)];
+  seen.push(k);
+  return k;
 }
