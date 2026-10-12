@@ -36,8 +36,8 @@ export async function setNick(n) {
   return nick;
 }
 
-export async function scores(mode) {
-  return (await call('scores', null, '&mode=' + encodeURIComponent(mode))).scores;
+export async function scores(mode, week = 0) {
+  return (await call("scores", null, "&mode=" + encodeURIComponent(mode) + "&week=" + week)).scores;
 }
 
 export async function addScore(row) {

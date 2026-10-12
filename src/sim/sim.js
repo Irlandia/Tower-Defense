@@ -3,7 +3,7 @@
 // Every command carries `p` = player index (0 = host/solo, 1 = guest); each player has own gold, talents, abilities.
 import {
   TILE, COLS, ROWS, TICK_RATE as T, CONFIG, TOWERS, ENEMIES, UNLOCKS, CARDS,
-  MAPGEN, SEASONS, SEASON_ORDER, MODES, BARREL, OBSTACLES, COIN, ABILITIES, AURA, BRANCHES, RARITY, BOSSES, bossKey,
+  MAPGEN, SEASONS, SEASON_ORDER, MODES, TOWER_ORDER, brawlOf, BARREL, OBSTACLES, COIN, ABILITIES, AURA, BRANCHES, RARITY, BOSSES, bossKey,
 } from './data.js';
 import { rand, randInt } from './rng.js';
 
@@ -198,12 +198,14 @@ function newPlayer(opts, i = 0) {
   const k = (opts.perks && opts.perks[i]) || {};
   const dmg = { arrow: 1, cannon: 1, frost: 1, tesla: 1, fire: 1 };
   for (const f in k.dmg || {}) dmg[f] = (dmg[f] || 1) * k.dmg[f];
+  const BR = opts.brawlRules || {};
+  if (BR.towerDmg) for (const f in dmg) dmg[f] *= BR.towerDmg;
   return {
-    gold: CONFIG.startGold + (k.bonusGold ?? (i === 0 ? opts.bonusGold || 0 : 0)),
+    gold: (opts.brawlRules && opts.brawlRules.startGold) || CONFIG.startGold + (k.bonusGold ?? (i === 0 ? opts.bonusGold || 0 : 0)),
     mods: {
       dmg,
-      rate: 1, range: 1, chain: k.chain || 0, burn: k.burn || 1, wet: k.wet || 0, steam: k.steam || 1, gold: 1, interest: 0, crit: 0.1 + (k.crit || 0),
-      meteorCd: k.meteorCd || opts.meteorCd || 1, wall: 1,
+      rate: 1, range: BR.towerRange || 1, chain: k.chain || 0, burn: k.burn || 1, wet: k.wet || 0, steam: k.steam || 1, gold: 1, interest: 0, crit: 0.1 + (k.crit || 0),
+      meteorCd: (k.meteorCd || opts.meteorCd || 1) * (BR.meteorCd || 1), wall: 1,
       critMul: 2, aura: k.aura || 1, moveCd: k.moveCd || 1, novaCd: k.novaCd || 1, barrel: 1, lapDmg: 0, hunter: 0, thief: 0,
       towerRate: { ...(k.rate || {}) }, towerRange: { ...(k.range || {}) }, splash: k.splash || 1, discount: { ...(k.discount || {}) },
       cards: k.cards || opts.cards || 3,
@@ -217,11 +219,17 @@ function newPlayer(opts, i = 0) {
 
 // opts come from meta-progression + difficulty (see src/meta.js); in co-op the host sends them to the guest.
 export function createGame(seed, opts = {}) {
-  const o = { hpMul: 1, cards: 3, locked: [], mode: 'classic', players: 1, ...opts };
+  const o = { hpMul: 1, cards: 3, locked: [], mode: "classic", players: 1, ...opts };
+  // Weekly Brawl: a ruleset on top of a normal board; the same towers are open for everyone
+  const B = o.mode === "brawl" ? brawlOf(o.week || 0) : null;
+  if (B && B.towers) { const lock = TOWER_ORDER.filter((k) => !B.towers.includes(k)); o.locked = lock; o.lockedBy = Array.from({ length: o.players }, () => lock); }
+  if (B && !B.towers) o.lockedBy = Array.from({ length: o.players }, () => []); // brawls open every tower
+  if (B) o.brawlRules = B;
   const s = {
     rngState: seed >>> 0,
     opts: o,
-    mode: o.mode,
+    mode: B ? B.map : o.mode,
+    brawl: B,
     won: false,
     lapSpeedMul: 1,
     tick: 0,
@@ -638,10 +646,11 @@ function startWave(s) {
   }
   const lanes = s.plan;
   const over20 = Math.max(0, w - CONFIG.winWave);
-  const hpMul = (1 + 0.22 * (w - 1) + 0.017 * (w - 1) * (w - 1)) * s.opts.hpMul * MODES.circle.endlessHpGrowth ** over20;
-  const pool = Object.keys(UNLOCKS).filter((k) => UNLOCKS[k] <= w);
+  const B = s.brawl || {};
+  const hpMul = (B.hp || 1) * (1 + 0.22 * (w - 1) + 0.017 * (w - 1) * (w - 1)) * s.opts.hpMul * MODES.circle.endlessHpGrowth ** over20;
+  const pool = B.pool || Object.keys(UNLOCKS).filter((k) => UNLOCKS[k] <= w);
   // co-op: a bit more enemies so two players still have to work
-  const budget = (8 + w * 6) * (1 + 0.5 * (s.players.length - 1)); // +50% per extra player
+  const budget = (B.budget || 1) * (8 + w * 6) * (1 + 0.5 * (s.players.length - 1)); // +50% per extra player
   // Every planned lane gets its own stream starting at the same moment (two entries = two
   // simultaneous attacks, not alternating packs); the wave budget is split between them.
   for (const lane of lanes) {
@@ -666,13 +675,13 @@ function startWave(s) {
     s.queue.push({ type: 'goblin', lane: lanes[randInt(s, lanes.length)], at: mid, hpMul });
     s.queue.sort((a, b) => a.at - b.at);
   }
-  const bossHp = (1 + (w / 5 - 1) * 0.9) * s.opts.hpMul * MODES.circle.endlessHpGrowth ** over20;
+  const bossHp = (B.bossHp || 1) * (1 + Math.max(0, w / 5 - 1) * 0.9) * s.opts.hpMul * MODES.circle.endlessHpGrowth ** over20;
   // Bosses: one per player, arriving 3 s into the wave (right with the announcement), staggered by 2 s
   // and spread over the lanes. Endless: every couple of waves, more of them the deeper you go.
   let bosses = 0, kind = () => "boss";
   if (over20 > 0) {
     if (over20 % MODES.circle.endlessBossEvery === 0) { bosses = (1 + Math.floor(over20 / 6)) * s.players.length; kind = (i) => (i % 2 ? "king" : "boss"); }
-  } else if (w % 5 === 0) {
+  } else if (w % (B.bossEvery || 5) === 0) {
     bosses = s.players.length;
     kind = () => (w === CONFIG.winWave ? "king" : "boss");
   }
@@ -690,7 +699,7 @@ function spawn(s, type, lane, dist, hpMul) {
   const p = posAt(s.map, lane, dist);
   const e = {
     id: s.nextId++, type, lane, hp, maxHp: hp, armor: ENEMIES[type].armor, hpMul,
-    dist, x: p.x, y: p.y, px: p.x, py: p.y, lap: 0, speedMul: 1,
+    dist, x: p.x, y: p.y, px: p.x, py: p.y, lap: 0, speedMul: (s.brawl && s.brawl.speed) || 1,
     slowT: 0, slowF: 1, wetT: 0, burnT: 0, burnDps: 0, burnAcc: 0, burnOwner: 0, flash: 0, dead: false, blocked: false,
   };
   s.enemies.push(e);
@@ -714,6 +723,10 @@ function updateEnemy(s, e) {
       damage(s, e, d, e.burnOwner, { pierce: true, quiet: true, src: e.burnSrc });
       if (e.dead) return;
     }
+  }
+  if (s.brawl) {
+    if (s.brawl.alwaysWet) e.wetT = Math.max(e.wetT, 2); // the storm keeps everyone soaked
+    if (s.brawl.regen && s.tick % T === 0) e.hp = Math.min(e.maxHp, e.hp + Math.round(e.maxHp * s.brawl.regen));
   }
   if (def.heal && s.tick % T === 0) {
     let healed = false;
@@ -982,7 +995,8 @@ function kill(s, e, owner) {
   e.dead = true;
   const def = ENEMIES[e.type];
   const pl = player(s, owner);
-  const gold = Math.round(def.gold * pl.mods.gold) + (e.lap >= 1 ? pl.mods.hunter : 0);
+  const killGold = s.brawl && s.brawl.killGold !== undefined ? s.brawl.killGold : 1;
+  const gold = Math.round(def.gold * pl.mods.gold * killGold) + (e.lap >= 1 ? pl.mods.hunter : 0);
   pl.gold += gold;
   pl.kills++;
   s.kills++;
@@ -995,15 +1009,17 @@ function kill(s, e, owner) {
     }
   }
   // Coins drop on the map and must be picked up with the mouse (by anyone).
-  const n = def.coins || (rand(s) < COIN.chance ? 1 : 0);
+  const n = def.coins || (rand(s) < ((s.brawl && s.brawl.coinChance) || COIN.chance) ? 1 : 0);
   for (let i = 0; i < n; i++) {
     s.coins.push({
       id: s.nextId++, x: e.x + (rand(s) * 24 - 12), y: e.y + (rand(s) * 18 - 9),
-      value: COIN.base + Math.floor(s.wave / 2), life: COIN.life * T,
+      value: Math.round((COIN.base + Math.floor(s.wave / 2)) * ((s.brawl && s.brawl.coinValue) || 1)), life: COIN.life * T,
     });
   }
   if (def.splits) {
-    for (const off of [-7, 7]) {
+    const parts = (s.brawl && s.brawl.split) || 2;
+    for (let pi = 0; pi < parts; pi++) {
+      const off = (pi - (parts - 1) / 2) * 9;
       const m = spawn(s, def.splits, e.lane, Math.max(0, e.dist + off), e.hpMul);
       m.lap = e.lap; m.speedMul = e.speedMul;
     }

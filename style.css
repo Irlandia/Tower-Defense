@@ -217,3 +217,7 @@ body.side #ui { align-self: center; }
 .tree-node.blocked { opacity: .55; }
 
 #roster { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 15px; padding: 6px 8px; background: rgba(26,28,44,.5); }
+
+#modes .brawl { grid-column: 1 / -1; background: #3b2350; box-shadow: inset -3px -3px 0 var(--ink), inset 3px 3px 0 #8a4fb3; }
+#modes .brawl.active { background: #8a4fb3; }
+#modes .brawl small { display: block; font-size: 11px; color: #d9a8ff; margin-top: 2px; }

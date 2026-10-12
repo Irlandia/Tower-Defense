@@ -311,7 +311,7 @@ export class Renderer {
   // ---------- draw ----------
   draw(s, alpha, ui, dt) {
     const g = this.g;
-    if (this.mapRef !== s.map) { this.mapRef = s.map; this.bg = this.makeBackground(s.map, s.season); this.critters.reset(s.map, s.season); this.season = s.season; }
+    if (this.mapRef !== s.map) { this.mapRef = s.map; this.bg = this.makeBackground(s.map, s.season); this.critters.reset(s.map, s.season); this.season = s.season; this.weather = s.brawl && s.brawl.weather; }
     this.critters.update(Math.min(dt, 0.1), s.enemies);
     this.updateFx(dt);
     g.save();
@@ -435,6 +435,7 @@ export class Renderer {
     }
     for (const p of this.parts) {
       g.fillStyle = p.c;
+      if (p.streak) { g.globalAlpha = 0.5; g.fillRect(Math.round(p.x), Math.round(p.y), 1, 4); g.globalAlpha = 1; continue; } // rain
       g.fillRect(Math.round(p.x), Math.round(p.y), p.s || 1, p.s || 1);
     }
     for (const t of this.texts) {
@@ -759,6 +760,7 @@ export class Renderer {
     const W2 = COLS * TILE, H2 = ROWS * TILE;
     const sea = this.season;
     if (sea === "winter" && Math.random() < dt * 40) this.parts.push({ x: Math.random() * W2, y: -2, vx: Math.random() * 8 - 4, vy: 18 + Math.random() * 14, life: 14, c: C.white, s: Math.random() < 0.3 ? 2 : 1, keep: true });
+    if (this.weather === "rain") for (let i = 0; i < 3; i++) if (Math.random() < dt * 30) this.parts.push({ x: Math.random() * W2, y: -4, vx: -40, vy: 260, life: 3, c: "#73eff7", s: 1, keep: true, streak: true });
     if (sea === "autumn" && Math.random() < dt * 6) this.parts.push({ x: Math.random() * W2, y: -2, vx: 10 + Math.random() * 10, vy: 14 + Math.random() * 8, life: 14, c: [C.orange, C.red, C.yellow][Math.floor(Math.random() * 3)], s: 2, keep: true, sway: Math.random() * 6 });
     if (sea === "spring" && Math.random() < dt * 5) this.parts.push({ x: Math.random() * W2, y: -2, vx: 12 + Math.random() * 8, vy: 10 + Math.random() * 6, life: 16, c: Math.random() < 0.7 ? "#f4b6d2" : C.white, s: 1, keep: true, sway: Math.random() * 6 });
     if (sea === "summer" && this.mapRef && this.mapRef.water.size && Math.random() < dt * 3) {

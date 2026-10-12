@@ -1,6 +1,6 @@
 // Client entry: menu/lobby, fixed-tick loop (solo / co-op host / co-op guest), input, DOM UI.
 // All game rules live in ./sim; meta-progression in ./meta; networking in ./net; nick + leaderboard in ./api.
-import { TILE, TICK_RATE, TOWERS, TOWER_ORDER, BRANCHES, CARDS, CONFIG, ABILITIES, MODES, VERSION, BOSSES, bossFor, AURA, ENEMIES, RARITY, SEASONS, SEASON_ORDER } from './sim/data.js';
+import { TILE, TICK_RATE, TOWERS, TOWER_ORDER, BRANCHES, CARDS, CONFIG, ABILITIES, MODES, VERSION, BOSSES, bossFor, AURA, ENEMIES, RARITY, SEASONS, SEASON_ORDER, brawlWeek, brawlOf } from './sim/data.js';
 import {
   createGame, step, canPlace, towerAt, obstacleAt, barrelAt, towerStats, upgradeCost, canEvolve, sellValue, clearCost,
   enemyAt, abilityMax, isRoad, canMove, hasWall, auraCost, isLocked, placeCost,
@@ -46,7 +46,7 @@ const P = () => state.players[me()] || state.players[0];
 // ---------- game lifecycle ----------
 function startGame(seed, opts) {
   state = createGame(seed, opts);
-  setTimeout(() => banner(SEASONS[state.season].name.toUpperCase(), "gold", "сезон", 1800), 200);
+  setTimeout(() => (state.brawl ? banner(`${state.brawl.icon} ${state.brawl.name.toUpperCase()}`, "boss intro", state.brawl.desc, 3200) : banner(SEASONS[state.season].name.toUpperCase(), "gold", "сезон", 1800)), 200);
   endShown = false;
   game = { seed, opts };
   cmdLog = [];
@@ -72,6 +72,7 @@ function newRun() {
   for (const k in slotIdx) delete slotIdx[k];
   guests.forEach((g, i) => { g.idx = i + 1; slotIdx[g.slot] = i + 1; });
   const opts = Meta.gameOpts(meta, diff, mode, 1 + guests.length, season, guests.map((g) => g.perks));
+  if (mode === "brawl") opts.week = brawlWeek(Date.now()); // every peer plays the host's week
   for (const g of guests) net.sendTo(g.slot, { t: "start", seed, opts, v: VERSION, idx: g.idx });
   if (net.role === "host") broadcastRoster();
   startGame(seed, opts);
@@ -517,7 +518,7 @@ function updateUI() {
   const n = pl.drafts.length;
   $('talent').classList.toggle('off', !n); // keep its slot so the panel never jumps
   $('talent').textContent = `✦ Талант${n > 1 ? ' x' + n : ''} [T]`;
-  $('waveInfo').textContent = `${MODES[state.mode].name} · Хвиля ${state.wave} / ${CONFIG.winWave}`;
+  $("waveInfo").textContent = `${state.brawl ? state.brawl.icon + " " + state.brawl.name : MODES[state.mode].name} · Хвиля ${state.wave} / ${CONFIG.winWave}`;
   $('waveBar').style.width = (100 * state.wave) / CONFIG.winWave + '%';
   const coop = state.players.length > 1;
   $('coopInfo').classList.toggle('hidden', !coop);
@@ -550,10 +551,11 @@ function updateUI() {
     key = 'a' + ui.ability;
     html = `<b>${a.name}</b><br>${a.desc}<br><span class="hint">ПКМ — скасувати</span>`;
   } else {
-    key = 'h' + state.mode;
+    key = "h" + state.mode + (state.brawl ? state.brawl.id : "");
     html = state.mode === 'circle'
       ? `<b>Коло</b><br>Вороги не доходять до замку — вони крутяться по колу і з кожним колом швидшають. Живих більше <b>${state.limit}</b> — поразка.`
       : '<b>Порада</b><br>Крига робить ворогів <span class="wet">мокрими</span>: Тесла бʼє їх x2, а Вогонь викликає вибух пари.';
+    if (state.brawl) html = `<b>${state.brawl.icon} Бійка: ${state.brawl.name}</b><br>${state.brawl.desc}`;
     html += state.mode === "circle"
       ? "<br><span class=\"hint\">🌳 дерева — скарби · монети — наводь мишку. Удвох: кожен тримає свій вхід (печери зліва і справа).</span>"
       : "<br><span class=\"hint\">🛢 бочки — вибух · 🌳 дерева — скарби · монети — наводь мишку · стрілки показують, звідки піде хвиля.</span>";
@@ -631,7 +633,7 @@ function showEnd(won) {
   if ($("endless")) $("endless").addEventListener("click", () => send({ type: "continue" }));
   $('menuBtn').addEventListener('click', openMenu);
   if (nick) {
-    Api.addScore({ mode: state.mode, diff: state.opts.diff, wave: state.wave, kills: state.kills, won, coop: state.players.length > 1, partner: others() })
+    Api.addScore({ mode: state.opts.mode === "brawl" ? "brawl" : state.mode, week: state.opts.week, diff: state.opts.diff, wave: state.wave, kills: state.kills, won, coop: state.players.length > 1, partner: others() })
       .then((r) => { $('scoreMsg').textContent = `Результат у таблиці лідерів: ${r.score} очок`; })
       .catch((e) => { $('scoreMsg').textContent = 'Таблиця лідерів недоступна: ' + e.message; });
   }
@@ -695,6 +697,17 @@ function renderMenu() {
     b.addEventListener('click', () => { mode = id; renderMenu(); });
     ml.append(b);
   }
+  // Weekly Brawl: this week's special ruleset, rotates every Monday
+  {
+    const wk = brawlWeek(Date.now()), br = brawlOf(wk);
+    const msLeft = Date.UTC(2024, 0, 1) + (wk + 1) * 7 * 86400000 - Date.now();
+    const left = msLeft > 86400000 ? `${Math.ceil(msLeft / 86400000)} дн.` : `${Math.ceil(msLeft / 3600000)} год.`;
+    const b = document.createElement('button');
+    b.className = 'diff brawl' + (mode === 'brawl' ? ' active' : '');
+    b.innerHTML = `<b>${br.icon} Тижнева бійка: ${br.name}</b><span>${br.desc}</span><small>${br.map === 'circle' ? 'Коло' : 'Класика'} · нова бійка через ${left}</small>`;
+    b.addEventListener('click', () => { mode = 'brawl'; renderMenu(); });
+    ml.append(b);
+  }
   const dl = $('diffs');
   dl.innerHTML = '';
   for (const d of Meta.DIFFS) {
@@ -747,7 +760,7 @@ async function loadBoard() {
   const el = $('board');
   el.innerHTML = '<p class="hint">Завантаження…</p>';
   try {
-    const rows = await Api.scores(boardMode);
+    const rows = await Api.scores(boardMode, brawlWeek(Date.now()));
     if (!rows.length) { el.innerHTML = '<p class="hint">Ще ніхто не зіграв у цьому режимі. Стань першим!</p>'; return; }
     el.innerHTML = '<table><tr><th>#</th><th>Гравець</th><th>Хвиля</th><th>Склад.</th><th>Очки</th></tr>' + rows.map((r, i) => `
       <tr class="${r.nick === nick ? 'me' : ''}"><td>${i + 1}</td>
@@ -987,8 +1000,10 @@ if (new URLSearchParams(location.search).has('demo')) {
   // debug: start immediately with a few towers to check rendering
   const dm = new URLSearchParams(location.search).get('demo');
   season = new URLSearchParams(location.search).get('season') || 'random';
-  mode = dm && dm.startsWith('circle') ? 'circle' : 'classic';
-  startGame(12345, Meta.gameOpts(meta, diff, mode, dm === 'circle2' ? 2 : dm === 'circle4' ? 4 : 1, season));
+  mode = dm === 'brawl' ? 'brawl' : dm && dm.startsWith('circle') ? 'circle' : 'classic';
+  const dOpts = Meta.gameOpts(meta, diff, mode, dm === 'circle2' ? 2 : dm === 'circle4' ? 4 : 1, season);
+  if (mode === 'brawl') dOpts.week = +(new URLSearchParams(location.search).get('week') || brawlWeek(Date.now()));
+  startGame(12345, dOpts);
   state.players[0].gold = 2000;
   state.opts.locked = []; state.opts.lockedBy = null;
   // put each tower type on a free tile next to the road

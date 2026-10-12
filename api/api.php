@@ -62,8 +62,11 @@ switch ($action) {
 
     case 'scores':
         $mode = $_GET['mode'] ?? 'classic';
+        $week = (int)($_GET['week'] ?? 0);
         $all = with_json('scores', fn(&$d) => $d);
-        $list = array_values(array_filter($all, fn($r) => ($r['mode'] ?? 'classic') === $mode));
+        // brawl results only count for the current week's ruleset
+        $list = array_values(array_filter($all, fn($r) => ($r['mode'] ?? 'classic') === $mode
+            && ($mode !== 'brawl' || (int)($r['week'] ?? -1) === $week)));
         usort($list, fn($a, $b) => [$b['won'], $b['score'], $b['wave']] <=> [$a['won'], $a['score'], $a['wave']]);
         $top = array_map(function ($r) { unset($r['ip']); return $r; }, array_slice($list, 0, 20));
         echo json_encode(['scores' => $top]);
@@ -75,14 +78,14 @@ switch ($action) {
         $nick = $nicks[$ipKey]['nick'] ?? '';
         if ($nick === '') fail('Спершу введи нік');
         $diffs = ['normal' => 1, 'hard' => 1.4, 'nightmare' => 1.9];
-        $mode = in_array($body['mode'] ?? '', ['classic', 'circle'], true) ? $body['mode'] : 'classic';
+        $mode = in_array($body['mode'] ?? '', ['classic', 'circle', 'brawl'], true) ? $body['mode'] : 'classic';
         $diff = isset($diffs[$body['diff'] ?? '']) ? $body['diff'] : 'normal';
         $wave = max(0, min(500, (int)($body['wave'] ?? 0)));
         $kills = max(0, min(100000, (int)($body['kills'] ?? 0)));
         $won = !empty($body['won']) && $wave >= 20;
         $row = [
             'nick' => $nick, 'mode' => $mode, 'diff' => $diff, 'wave' => $wave, 'kills' => $kills,
-            'won' => $won, 'coop' => !empty($body['coop']), 'partner' => clean_nick($body['partner'] ?? ''),
+            'week' => (int)($body['week'] ?? 0), 'won' => $won, 'coop' => !empty($body['coop']), 'partner' => clean_nick($body['partner'] ?? ''),
             'score' => (int)round(($wave * 100 + $kills + ($won ? 1000 : 0)) * $diffs[$diff]),
             't' => time(),
         ];

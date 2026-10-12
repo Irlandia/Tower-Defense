@@ -6,7 +6,7 @@ export const COLS = 26;
 export const ROWS = 14;
 export const TICK_RATE = 20;
 // Bump on every change to sim/data: co-op peers refuse to play with a different version.
-export const VERSION = 31;
+export const VERSION = 33;
 
 export const CONFIG = {
   startGold: 160,
@@ -182,3 +182,26 @@ export function bossKey(w) {
 export function bossFor(w) {
   return BOSSES[bossKey(w)];
 }
+
+// Weekly Brawl: a special ruleset that rotates every week (the same for everyone that week).
+// map: which board it uses; towers: the only towers allowed (they are unlocked for everyone);
+// the rest are modifiers read by the simulation.
+export const BRAWLS = [
+  { id: 'storm', icon: '⛈', name: 'Гроза', map: 'classic', weather: 'rain',
+    desc: 'Злива: усі вороги завжди мокрі. Доступні лише Лучник, Тесла й Тотем.', towers: ['arrow', 'tesla', 'totem'], alwaysWet: true },
+  { id: 'greed', icon: '💰', name: 'Золота лихоманка', map: 'classic',
+    desc: '400 золота на старті, за вбивства — 0, зате монети сиплються з кожного третього ворога.', startGold: 400, killGold: 0, coinChance: 0.35, coinValue: 2 },
+  { id: 'slime', icon: '🟢', name: 'Ніч слизу', map: 'circle',
+    desc: 'Лише слизи й ділильники — їх у 1.5 рази більше, ділильники розпадаються на трьох.', pool: ['slime', 'splitter'], budget: 1.5, hp: 0.8, split: 3 },
+  { id: 'bossrush', icon: '👑', name: 'Бос-раш', map: 'classic',
+    desc: 'Бос кожні 2 хвилі (слабший), дрібноти вдвічі менше, за вбивства +50% золота.', bossEvery: 2, bossHp: 0.6, budget: 0.5, killGold: 1.5 },
+  { id: 'rush', icon: '⚡', name: 'Швидкі й люті', map: 'classic',
+    desc: 'Вороги на 60% швидші, але на третину крихкіші. Метеор заряджається вдвічі швидше.', speed: 1.6, hp: 0.65, meteorCd: 0.5 },
+  { id: 'undying', icon: '💀', name: 'Невмирущі', map: 'circle',
+    desc: 'Вороги відновлюють 3% здоровʼя щосекунди. Вежі: +35% шкоди, +20% радіусу.', regen: 0.03, towerDmg: 1.35, towerRange: 1.2 },
+];
+// Week number since a Monday epoch (UTC); the brawl of the week is BRAWLS[week % length].
+export function brawlWeek(now) {
+  return Math.floor((now - Date.UTC(2024, 0, 1)) / (7 * 24 * 3600 * 1000));
+}
+export const brawlOf = (week) => BRAWLS[((week % BRAWLS.length) + BRAWLS.length) % BRAWLS.length];

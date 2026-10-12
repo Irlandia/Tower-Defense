@@ -3,8 +3,8 @@
 <title>Sim tests</title>
 <pre id="out">running…</pre>
 <script type="module">
-import { createGame, step, canPlace, canEvolve, isRoad, posAt, towerStats, vsMult, pickCards, placeCost } from '../src/sim/sim.js';
-import { TOWERS, TOWER_ORDER, BRANCHES, COLS, ROWS, CARDS } from '../src/sim/data.js';
+import { createGame, step, canPlace, canEvolve, isRoad, posAt, towerStats, vsMult, pickCards, placeCost, isLocked } from '../src/sim/sim.js';
+import { TOWERS, TOWER_ORDER, BRANCHES, COLS, ROWS, CARDS, BRAWLS, brawlOf } from '../src/sim/data.js';
 
 const lines = [];
 let failed = 0;
@@ -385,6 +385,24 @@ try {
     if (fg.obstacles.some((o) => f.tiles.has(o.tx + "," + o.ty)) || fg.barrels.some((b) => f.tiles.has(b.tx + "," + b.ty))) { farmOk = false; farmMsg = `objects on farm ${md} ${seed}`; }
   }
   check("farm: placed on most maps, off road/water, unbuildable", farmOk && farms >= 90, `${farms}/120 ${farmMsg}`);
+
+  // weekly brawl: each ruleset changes the game
+  const brawlGame = (id) => { const wk = BRAWLS.findIndex((b) => b.id === id); return createGame(5, { mode: "brawl", week: wk }); };
+  const stormG = brawlGame("storm");
+  check("brawl storm: only archer/tesla/totem, enemies always wet", isLocked(stormG, 0, "cannon") && !isLocked(stormG, 0, "tesla") && (step(stormG, [{ type: "nextWave", p: 0 }]), [...Array(80)].forEach(() => step(stormG)), stormG.enemies.every((e) => e.wetT > 0)));
+  const greedG = brawlGame("greed");
+  check("brawl greed: 400 start gold, no kill gold", greedG.players[0].gold === 400);
+  const slimeG = brawlGame("slime");
+  step(slimeG, [{ type: "nextWave", p: 0 }]);
+  check("brawl slime: circle board, only slimes/splitters", slimeG.mode === "circle" && slimeG.queue.every((q) => q.type === "slime" || q.type === "splitter"));
+  const bossG = brawlGame("bossrush");
+  step(bossG, [{ type: "nextWave", p: 0 }]); bossG.queue = []; bossG.enemies = [];
+  step(bossG, [{ type: "nextWave", p: 0 }]);
+  check("brawl bossrush: a boss on wave 2", bossG.wave === 2 && bossG.queue.some((q) => q.type === "boss"));
+  const rushG = brawlGame("rush");
+  step(rushG, [{ type: "nextWave", p: 0 }]); for (let i = 0; i < 40; i++) step(rushG);
+  check("brawl rush: enemies faster", rushG.enemies.length > 0 && rushG.enemies.every((e) => e.speedMul >= 1.6));
+  check("brawl week rotation covers all rulesets", new Set([...Array(12)].map((_, i) => brawlOf(i).id)).size === BRAWLS.length);
 
   // co-op: separate wallets, talents and ownership
   const co = createGame(9, { players: 2 });
