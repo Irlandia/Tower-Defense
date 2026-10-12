@@ -52,7 +52,7 @@ export const app = {
 };
 
 /** Pointer / selection state of the local player. */
-export const ui = { build: null, selected: null, hover: null, mouse: null, ability: null, hoverEnemy: null, partners: {}, me: 0, moving: null };
+export const ui = { build: null, selected: null, hover: null, mouse: null, ability: null, hoverEnemy: null, partners: {}, me: 0, moving: null, pendingPlace: [] };
 
 /** Coin ids already sent for collection (avoids duplicate commands while the tick is pending). */
 export const collected = new Set();

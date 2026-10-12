@@ -1,6 +1,6 @@
 // Heads-up display around the canvas: build bar, ability buttons, wave/gold counters, info panel.
 // Every dynamic block is rebuilt only when its cache key changes.
-import { TOWERS, TOWER_ORDER, ABILITIES, CONFIG, MODES, ENEMIES, TICK_RATE } from '../../sim/data.js';
+import { TOWERS, TOWER_ORDER, ABILITIES, CONFIG, MODES, ENEMIES, TICK_RATE, UNLOCKS } from '../../sim/data.js';
 import { placeCost, isLocked, abilityMax, hasWall } from '../../sim/sim.js';
 import { PLAYER_COLORS } from '../../render.js';
 import * as Meta from '../../meta.js';
@@ -138,6 +138,23 @@ function infoContent(s) {
   return { key, html };
 }
 
+// What the next wave brings, so "call it early" is an informed choice: entries, a new enemy type, a boss.
+const ENEMY_TIPS = {
+  runner: 'швидкий — Лучник', splitter: 'ділиться — Гармата', knight: 'броня 4 — Гармата, Тесла', healer: 'лікує інших — Лучник',
+};
+let nextKey = null;
+function nextInfo(s) {
+  if (s.queue.length || s.over || s.wave >= s.winWave) return '';
+  const w = s.wave + 1, B = s.brawl || {}, parts = [];
+  const lanes = (s.plan || []).length;
+  if (lanes > 1) parts.push(`<b>${lanes}</b> входи одночасно`);
+  const fresh = B.pool ? [] : Object.keys(UNLOCKS).filter((k) => UNLOCKS[k] === w);
+  for (const k of fresh) parts.push(`новий: <b>${ENEMIES[k].name}</b>${ENEMY_TIPS[k] ? ` <i>(${ENEMY_TIPS[k]})</i>` : ''}`);
+  const boss = (s.mission && s.mission.bosses && s.mission.bosses[w]) || (w <= s.winWave && w % (B.bossEvery || 5) === 0);
+  if (boss) parts.push(`<span class="ni-boss">${w === s.winWave ? 'ФІНАЛЬНИЙ БОС' : 'БОС'}</span>`);
+  return parts.length ? `<small>Хвиля ${w}:</small> ${parts.join(' · ')}` : '';
+}
+
 /** Per-frame refresh of every HUD element (cheap: DOM is touched only when a value changed). */
 export function updateUI() {
   const s = app.state;
@@ -156,6 +173,8 @@ export function updateUI() {
   const last = s.wave >= s.winWave;
   $('next').textContent = last ? 'Фінал!' : s.queue.length ? 'Хвиля йде…' : early ? `Хвиля ▶ +${early}●` : 'Почати ▶';
   $('next').disabled = s.queue.length > 0 || last;
+  const nk = nextInfo(s);
+  if (nk !== nextKey) { nextKey = nk; $('nextInfo').innerHTML = nk; }
   const n = pl.drafts.length;
   $('talent').classList.toggle('off', !n); // keep its slot so the panel never jumps
   $('talent').textContent = `✦ Талант${n > 1 ? ' x' + n : ''} [T]`;

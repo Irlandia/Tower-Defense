@@ -21,6 +21,8 @@ check('validate: cmd with known type', validate({ t: 'cmd', cmd: { type: 'place'
 check('validate: cmd with unknown type dropped', validate({ t: 'cmd', cmd: { type: 'hack' } }) === null);
 check('validate: cmd prototype keys dropped', validate({ t: 'cmd', cmd: { type: 'constructor' } }) === null && validate({ t: 'cmd', cmd: { type: '__proto__' } }) === null);
 check('validate: tick needs cmds array', validate({ t: 'tick' }) === null && validate({ t: 'tick', cmds: [] })?.t === 'tick');
+check('validate: hash needs integer tick and h', validate({ t: 'hash', tick: 100, h: 5 })?.h === 5 && validate({ t: 'hash', tick: 'x', h: 5 }) === null && validate({ t: 'hash', tick: 1 }) === null);
+check('validate: desync', validate({ t: 'desync', tick: 200 })?.tick === 200 && validate({ t: 'desync' })?.tick === 0);
 check('validate: too many cmds dropped', validate({ t: 'tick', cmds: Array.from({ length: 65 }, () => ({})) }) === null);
 check('validate: cursor needs finite numbers', validate({ t: 'cursor', x: NaN, y: 1 }) === null && validate({ t: 'cursor', x: 5, y: 6 })?.x === 5);
 check('validate: nick truncated', validate({ t: 'hello', nick: 'x'.repeat(100), v: 1 }).nick.length === 16);

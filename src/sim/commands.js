@@ -17,6 +17,18 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const own = (s, pi, id) => s.towers.find((k) => k.id === id && k.owner === pi);
 
 export const COMMANDS = {
+  // co-op: a player disconnected (sent by the host). Their towers keep shooting; their gold goes to the partners.
+  leave(s, pl, pi) {
+    const others = s.players.filter((q, i) => i !== pi && !q.left);
+    if (pl.left || !others.length) return;
+    pl.left = true;
+    const share = Math.floor(pl.gold / others.length);
+    for (const q of others) q.gold += share;
+    s.events.push({ type: 'leave', p: pi, gold: share });
+    pl.gold -= share * others.length;
+  },
+  rejoin(s, pl) { pl.left = false; }, // host: the player is back in their seat
+
   pick(s, pl, pi, c) {
     const draft = pl.drafts[0];
     const card = draft && CARDS.find((k) => k.id === draft[c.index]);

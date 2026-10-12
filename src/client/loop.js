@@ -1,6 +1,6 @@
 // Fixed-step game loop (20 Hz) for solo / co-op host / co-op guest, plus the background ticker.
 // Draws through the renderer and publishes `sim:events` and `frame` on the bus; owns no game rules.
-import { step } from '../sim/sim.js';
+import { step, stateHash } from '../sim/sim.js';
 import { TICK_RATE } from '../sim/data.js';
 import { app, bus, net, renderer, ui } from './app.js';
 import { finishRun, resumeEndless } from './session.js';
@@ -29,11 +29,26 @@ function dispatch(events, quiet) {
   bus.emit('sim:events', events, quiet);
 }
 
+// guest: the host's fingerprint arrives in order right after its tick, so our state must be at the same tick
+let lastDesyncAsk = -1e9;
+function checkHash(m) {
+  const s = app.state;
+  if (s.tick !== m.tick || stateHash(s) === m.h) return;
+  const now = performance.now();
+  if (now - lastDesyncAsk < 10000) return; // a resync is already on its way
+  lastDesyncAsk = now;
+  console.warn('desync at tick', m.tick);
+  net.send({ t: 'desync', tick: m.tick });
+  bus.emit('net:status', 'Розсинхрон — підтягуємо гру з хоста…', 'bad');
+}
+
 function tick(cmds, advance = true, quiet = false) {
   const s = app.state;
   step(s, cmds, advance);
   if (net.role === 'host') {
     net.send({ t: advance ? 'tick' : 'cmds', cmds });
+    // every 5 s a fingerprint of the state: a guest that computed something else asks for a resync
+    if (advance && s.tick % 100 === 0) net.send({ t: 'hash', tick: s.tick, h: stateHash(s) });
     if (cmds.length) app.cmdLog.push([s.tick - (advance ? 1 : 0), advance, cmds]);
   }
   dispatch(s.events, quiet);
@@ -55,6 +70,7 @@ export function simulate(now) {
     let n = 0;
     while (net.inbox.length && n++ < 60) {
       const m = net.inbox.shift();
+      if (m.t === 'hash') { checkHash(m); continue; }
       step(app.state, m.cmds, m.t === 'tick');
       dispatch(app.state.events, quiet || backlog > 10);
       if (m.t === 'tick') lastTickAt = now;

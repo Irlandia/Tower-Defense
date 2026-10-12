@@ -40,6 +40,8 @@ export class Renderer {
     this.mapRef = null;
     this.parts = [];
     this.texts = [];
+    this.labels = []; // short HTML callouts (combo names) that float up
+    this.comboAt = {}; // kind -> time of the last callout, so combos are announced, not spammed
     this.zaps = [];
     this.rings = [];
     this.chests = [];
@@ -226,7 +228,13 @@ export class Renderer {
       switch (e.type) {
         case 'hit':
           // colour = effectiveness vs this enemy type: green weak spot, grey resisted
-          this.text(e.x, e.y - 18, e.dmg, e.crit ? C.yellow : e.eff > 0 ? C.lime : e.eff < 0 ? C.slate : C.white, e.crit || e.eff > 0 ? 2 : 1);
+          {
+            const c = e.crit ? C.yellow : e.eff > 0 ? C.lime : e.eff < 0 ? C.slate : C.white, sc = e.crit || e.eff > 0 ? 2 : 1;
+            // rapid hits on one enemy (inferno, chains) add up into one rising number instead of noise
+            const prev = !e.crit && e.id !== undefined && this.texts.find((t) => t.hid === e.id && t.life > 0.5);
+            if (prev) { prev.sum += e.dmg; prev.str = prev.sum; prev.x = e.x; prev.life = 0.8; prev.y = Math.min(prev.y, e.y - 18); }
+            else { this.text(e.x, e.y - 18, e.dmg, c, sc); const t = this.texts[this.texts.length - 1]; if (!e.crit) { t.hid = e.id; t.sum = e.dmg; } }
+          }
           this.burst(e.x, e.y - 6, 3, C.white, 40);
           break;
         case 'death': {
@@ -244,6 +252,7 @@ export class Renderer {
           this.shake = Math.max(this.shake, 2);
           break;
         case 'steam':
+          this.combo('steam', e.x, e.y, 'Мокрий + вогонь: ПАРА!', '#f4f4f4');
           this.rings.push({ x: e.x, y: e.y, r: 2, max: CONFIG.steamRadius, c: C.white, life: 1 });
           this.burst(e.x, e.y, 18, C.silver, 60, -30);
           this.text(e.x, e.y - 28, 'x2', C.cyan, 2);
@@ -262,6 +271,7 @@ export class Renderer {
           break;
         case 'zap':
           this.zaps.push({ pts: e.pts, life: 0.18 });
+          if (e.wet) this.combo('shock', e.pts[1].x, e.pts[1].y, 'Мокрий + блискавка ×2', '#73eff7');
           if (e.over >= 2) this.burst(e.pts[1].x, e.pts[1].y, 10, C.orange, 60);
           for (const p of e.pts.slice(1)) this.burst(p.x, p.y, 4, C.cyan, 50);
           break;
@@ -390,6 +400,14 @@ export class Renderer {
     }
   }
 
+  // Name a synergy when it fires (at most every few seconds per kind) so players learn the combos.
+  combo(kind, x, y, text, color) {
+    const now = performance.now();
+    if (now - (this.comboAt[kind] || -1e9) < 4000) return;
+    this.comboAt[kind] = now;
+    this.labels.push({ x, y: y - 26, text, color, life: 1.4 });
+  }
+
   text(x, y, str, c, scale) {
     this.texts.push({ x: x + (Math.random() * 8 - 4), y, str, c, scale, life: 0.8 });
   }
@@ -497,6 +515,16 @@ export class Renderer {
       drawTower(g, mover.kind, ui.hover.tx * TILE, ui.hover.ty * TILE, TOWERS[mover.kind].from ? 4 : mover.level, mover.aim, s.tick);
       g.globalAlpha = 1;
     }
+    // co-op guest: towers just ordered but not yet confirmed by the host
+    if (ui.pendingPlace && ui.pendingPlace.length) {
+      const now = performance.now();
+      ui.pendingPlace = ui.pendingPlace.filter((q) => now - q.at < 1500 && canPlace(s, q.tx, q.ty));
+      for (const q of ui.pendingPlace) {
+        g.globalAlpha = 0.45 + 0.15 * Math.sin(now / 90);
+        drawTower(g, q.kind, q.tx * TILE, q.ty * TILE, 1, 0, s.tick);
+        g.globalAlpha = 1;
+      }
+    }
     // ghost tower
     if (ui.build && ui.hover) {
       const { tx, ty } = ui.hover;
@@ -529,6 +557,7 @@ export class Renderer {
       if (p.streak) { g.globalAlpha = 0.5; g.fillRect(Math.round(p.x), Math.round(p.y), 1, 4); g.globalAlpha = 1; continue; } // rain
       g.fillRect(Math.round(p.x), Math.round(p.y), p.s || 1, p.s || 1);
     }
+    for (const l of this.labels) say(l.x, l.y, l.text, "bar combo", l.color);
     for (const t of this.texts) {
       g.globalAlpha = Math.min(1, t.life * 3);
       drawNum(g, t.str, t.x - numWidth(t.str, t.scale) / 2, t.y, t.c, t.scale, C.ink);
@@ -691,6 +720,11 @@ export class Renderer {
     g.drawImage(spr, dx, dy);
     if (frozen) g.drawImage(FROZEN[e.type], dx, dy);
     if (e.wetT > 0 && (tick >> 2) % 3 === 0) { g.fillStyle = C.sky; g.fillRect(dx + 2 + (e.id % 9), dy + spr.height, 1, 3); }
+    if (e.wetT > 0) { // status: a little droplet over the head = "wet", Tesla x2 / fire makes steam
+      const wx = dx + (spr.width >> 1), wy = dy - 6 + ((tick >> 3) % 2);
+      g.fillStyle = C.ink; g.fillRect(wx - 2, wy, 5, 4); g.fillRect(wx - 1, wy - 2, 3, 2);
+      g.fillStyle = C.sky; g.fillRect(wx - 1, wy, 3, 3); g.fillRect(wx, wy - 1, 1, 1); g.fillStyle = C.white; g.fillRect(wx - 1, wy, 1, 1);
+    }
     if (e.slowT > 0 && !frozen) { g.fillStyle = C.cyan; g.fillRect(dx, dy + spr.height - 1, spr.width, 1); }
     if (e.burnT > 0 && Math.random() < 0.6) this.parts.push({ x: x + Math.random() * 10 - 5, y: dy + 4, vx: 0, vy: -24, life: 0.3, c: Math.random() < 0.5 ? C.orange : C.yellow, s: 2 });
     if (e.blocked && (tick >> 2) % 2) this.parts.push({ x: x + Math.random() * 8 - 4, y: y + 4, vx: Math.random() * 20 - 10, vy: -10, life: 0.3, c: '#c28569' });
@@ -897,6 +931,8 @@ export class Renderer {
     this.parts = this.parts.filter((p) => p.life > 0);
     if (this.parts.length > 2000) this.parts.splice(0, this.parts.length - 2000);
     for (const t of this.texts) { t.y -= 22 * dt; t.life -= dt; }
+    for (const l of this.labels) { l.y -= 14 * dt; l.life -= dt; }
+    this.labels = this.labels.filter((l) => l.life > 0);
     this.texts = this.texts.filter((t) => t.life > 0);
     for (const ch of this.chests) ch.life -= dt;
     this.chests = this.chests.filter((c) => c.life > 0);

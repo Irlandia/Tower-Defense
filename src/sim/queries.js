@@ -124,3 +124,14 @@ export function missionStars(s) {
 export function vsMult(type, src) {
   return (src && ENEMIES[type].vs && ENEMIES[type].vs[src]) || 1;
 }
+
+/** Cheap fingerprint of everything that matters for lockstep (co-op desync detector, golden replay test). */
+export function stateHash(s) {
+  let h = 0x811c9dc5;
+  const mix = (v) => { h = Math.imul(h ^ (Math.round(v * 1000) | 0), 0x01000193) >>> 0; };
+  mix(s.tick); mix(s.rngState); mix(s.wave); mix(s.lives); mix(s.kills); mix(s.enemies.length); mix(s.towers.length);
+  for (const p of s.players) mix(p.gold);
+  for (const e of s.enemies) { mix(e.id); mix(e.hp); mix(e.dist); }
+  for (const t of s.towers) { mix(t.id); mix(t.tx * 100 + t.ty); mix(t.level); }
+  return h;
+}

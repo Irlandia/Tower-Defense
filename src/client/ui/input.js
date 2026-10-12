@@ -74,6 +74,8 @@ canvas.addEventListener('mousedown', (ev) => {
     const cost = placeCost(s, me(), ui.build);
     if (canPlace(s, m.tx, m.ty) && P().gold >= cost) {
       send({ type: 'place', kind: ui.build, tx: m.tx, ty: m.ty });
+      // guest: show the tower at once while the host confirms it (hides the network round-trip)
+      if (net.role === 'guest') ui.pendingPlace.push({ kind: ui.build, tx: m.tx, ty: m.ty, at: performance.now() });
       if (!ev.shiftKey && P().gold - cost < cost) ui.build = null;
     }
     return;

@@ -531,3 +531,9 @@ details.camp-brief summary::-webkit-details-marker { display: none; }
 .tv-tier.top .tv-tier-label { color: #d9a8ff; }
 .tv-tier .tv-node { width: 100%; }
 .tv-root { align-self: center; margin-top: 12px; font-size: 11px; color: #94b0c2; border: 2px solid #566c86; padding: 2px 10px; background: #262d47; }
+#sayLayer .say.combo { font-size: 12px; font-weight: 800; }
+/* next wave preview under the call button */
+#nextInfo { font-size: 12px; line-height: 1.35; color: #c9d6de; margin: -2px 0 6px; min-height: 33px; } /* fixed height: the panel must not jump */
+#nextInfo small { color: #94b0c2; }
+#nextInfo i { color: #94b0c2; font-style: normal; }
+#nextInfo .ni-boss { color: #ffcd75; font-weight: 800; background: #b13e53; padding: 0 5px; }

@@ -9,6 +9,7 @@ import { broadcastRoster } from './roster.js';
 
 
 const status = (text, kind = '') => bus.emit('net:status', text, kind);
+const desyncAt = {}; // slot -> last resync sent because of a desync report
 
 // Different code on two machines would silently desync, so refuse to play.
 function mismatch(v) {
@@ -37,7 +38,10 @@ net.onLeave = (slot) => {
   app.roster = app.roster.filter((k) => k.slot !== slot);
   if (r && r.idx !== undefined) delete ui.partners[r.idx];
   status(`${(r && r.nick) || 'Гравець'} відключився. Кімната відкрита`, 'bad');
-  if (app.running && r) bus.emit('banner', `${r.nick || 'Гравець'} відключився`, 'boss'); // their towers keep shooting
+  if (app.running && r) {
+    bus.emit('banner', `${r.nick || 'Гравець'} відключився`, 'boss', 'Його вежі стріляють далі, золото — вам'); // their towers keep shooting
+    if (r.idx !== undefined && !app.state.over) app.pending.push({ type: 'leave', p: r.idx });
+  }
   broadcastRoster();
 };
 
@@ -65,10 +69,20 @@ net.onMessage = (raw, slot) => {
       // a returning player gets their old seat back in the running game
       if (app.running && !app.state.over && app.slotIdx[slot] !== undefined && app.slotIdx[slot] < app.state.players.length) {
         entry.idx = app.slotIdx[slot];
+        app.pending.push({ type: 'rejoin', p: entry.idx });
         net.sendTo(slot, { t: 'resync', ...app.game, log: app.cmdLog, tick: app.state.tick, v: VERSION, idx: entry.idx });
         status(`${entry.nick} повернувся`, 'good');
       }
       broadcastRoster();
+      break;
+    }
+    case 'desync': {
+      // a guest's state fingerprint differed from ours: send it the full replay (at most every 10 s per guest)
+      if (net.role !== 'host' || !app.running || app.state.over) break;
+      const idx = app.slotIdx[slot], now = performance.now();
+      if (idx === undefined || now - (desyncAt[slot] || -1e9) < 10000) break;
+      desyncAt[slot] = now;
+      net.sendTo(slot, { t: 'resync', ...app.game, log: app.cmdLog, tick: app.state.tick, v: VERSION, idx });
       break;
     }
     case 'cmd':
@@ -90,7 +104,7 @@ net.onMessage = (raw, slot) => {
     case 'roster': app.roster = m.list; bus.emit('roster:changed'); break;
     case 'start': if (m.v === VERSION) { app.myIdx = m.idx; startGame(m.seed, m.opts); } else mismatch(m.v); break;
     case 'resync': if (m.v === VERSION) resync(m); else mismatch(m.v); break;
-    case 'tick': case 'cmds': if (net.role === 'guest') net.inbox.push(m); break;
+    case 'tick': case 'cmds': case 'hash': if (net.role === 'guest') net.inbox.push(m); break;
     case 'lobby': if (net.role === 'guest') { enterLobby(true); status('Хост у меню — чекаємо нову гру', 'good'); } break;
     // explicit end-of-game from the host: guests must see it even if their replay lagged or missed the event
     case 'end': if (net.role === 'guest' && !app.endShown) finishRun(m.won); break;

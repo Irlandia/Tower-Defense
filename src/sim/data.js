@@ -6,7 +6,7 @@ export const COLS = 26;
 export const ROWS = 14;
 export const TICK_RATE = 20;
 // Bump on every change to sim/data: co-op peers refuse to play with a different version.
-export const VERSION = 39;
+export const VERSION = 41;
 
 export const CONFIG = {
   startGold: 160,
@@ -64,9 +64,9 @@ Object.assign(TOWERS, {
     desc: 'Величезний радіус, бʼє найсильнішого, ігнорує броню.' },
   ranger: { from: 'arrow', name: 'Рейнджер', cost: 140, range: 96, rate: 2.4, dmg: 9, proj: 'arrow', speed: 450, multi: 3,
     desc: 'Стріляє одразу в 3 цілі.' },
-  mortar: { from: 'cannon', name: 'Мортира', cost: 170, range: 156, rate: 0.45, dmg: 45, proj: 'ball', speed: 180, splash: 45,
+  mortar: { from: 'cannon', name: 'Мортира', cost: 170, range: 156, rate: 0.5, dmg: 70, proj: 'ball', speed: 180, splash: 45,
     desc: 'Бʼє через пів карти, величезний вибух.' },
-  cluster: { from: 'cannon', name: 'Касетна', cost: 160, range: 84, rate: 0.7, dmg: 26, proj: 'ball', speed: 240, splash: 30, bomblets: 4,
+  cluster: { from: 'cannon', name: 'Касетна', cost: 150, range: 84, rate: 0.9, dmg: 34, proj: 'ball', speed: 240, splash: 30, bomblets: 4,
     desc: 'Вибух розкидає 4 міні-бомби.' },
   blizzard: { from: 'frost', name: 'Хуртовина', cost: 150, range: 66, rate: 0.8, dmg: 4, pulse: true, slow: 0.45, slowTime: 1.2, wetTime: 5,
     desc: 'Хвилі холоду: всі навколо сповільнені й мокрі.' },
@@ -76,10 +76,10 @@ Object.assign(TOWERS, {
     desc: 'Блискавка стрибає по 7 цілях.' },
   overload: { from: "tesla", name: "Перевантаження", cost: 150, range: 72, rate: 1.2, dmg: 14, chain: 0, chainRange: 0, overcharge: 0.4, overMax: 3,
     desc: "Одна ціль: кожен удар поспіль по ній +40% (до x3). Вбивця босів." },
-  inferno: { from: 'fire', name: 'Пекло', cost: 170, range: 54, rate: 4, dmg: 3, pulse: true, burn: 10, burnTime: 2,
+  inferno: { from: 'fire', name: 'Пекло', cost: 170, range: 60, rate: 4, dmg: 5, pulse: true, burn: 10, burnTime: 2,
     desc: 'Безперервне полумʼя по всіх навколо.' },
   magma: { from: 'fire', name: 'Магма', cost: 160, range: 78, rate: 0.8, dmg: 8, proj: 'fire', speed: 225, burn: 8, burnTime: 3,
-    puddle: { r: 21, dps: 16, time: 4 }, desc: 'Залишає на дорозі калюжі лави.' },
+    puddle: { r: 21, dps: 12, time: 4 }, desc: 'Залишає на дорозі калюжі лави.' },
 });
 // Support tower: never shoots, gives auras to towers in range; each aura is upgraded separately.
 TOWERS.totem = {

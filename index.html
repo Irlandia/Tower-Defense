@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=Nunito:wght@500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
-  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <script src="vendor/peerjs.min.js"></script> <!-- PeerJS 1.5.4, vendored (no third-party CDN at runtime) -->
 </head>
 <body>
   <main id="layout">
@@ -105,6 +105,7 @@
       <div id="abilities"></div>
       <button id="talent" class="off">✦ Талант [T]</button>
       <button id="next" class="primary">Почати ▶</button>
+      <div id="nextInfo"></div>
       <div class="controls">
         <button id="speed" title="Швидкість [F]">x1</button>
         <button id="pause" title="Пауза [P]">❚❚</button>

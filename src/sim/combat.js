@@ -63,7 +63,7 @@ export function damage(s, e, amount, owner, { pierce = false, crit = false, big 
   d = Math.max(1, Math.round(d));
   e.hp -= d;
   e.flash = 2;
-  if (!quiet) s.events.push({ type: "hit", x: e.x, y: e.y, dmg: d, crit: crit || big, eff: mult > 1 ? 1 : mult < 1 ? -1 : 0 });
+  if (!quiet) s.events.push({ type: "hit", id: e.id, x: e.x, y: e.y, dmg: d, crit: crit || big, eff: mult > 1 ? 1 : mult < 1 ? -1 : 0 });
   if (ENEMIES[e.type].lives && !e.raged && e.hp > 0 && e.hp < e.maxHp / 2) {
     e.raged = true;
     // the King splits when wounded
@@ -77,7 +77,8 @@ export function damage(s, e, amount, owner, { pierce = false, crit = false, big 
 export function kill(s, e, owner) {
   e.dead = true;
   const def = ENEMIES[e.type];
-  const pl = player(s, owner);
+  let pl = player(s, owner);
+  if (pl.left) pl = s.players.find((q) => !q.left) || pl; // a disconnected player's towers earn for the team
   const killGold = s.brawl && s.brawl.killGold !== undefined ? s.brawl.killGold : 1;
   const gold = Math.round(def.gold * pl.mods.gold * killGold) + (e.lap >= 1 ? pl.mods.hunter : 0);
   pl.gold += gold;

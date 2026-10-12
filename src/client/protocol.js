@@ -3,7 +3,7 @@
 import { COMMANDS } from '../sim/commands.js';
 
 const MAX_CMDS = 64; // per tick
-const MSG_TYPES = new Set(['hello', 'cmd', 'cursor', 'ping', 'welcome', 'mismatch', 'full', 'roster', 'start', 'resync', 'tick', 'cmds', 'lobby', 'end']);
+const MSG_TYPES = new Set(['hello', 'cmd', 'cursor', 'ping', 'welcome', 'mismatch', 'full', 'roster', 'start', 'resync', 'tick', 'cmds', 'lobby', 'end', 'hash', 'desync']);
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isInt = (v) => Number.isInteger(v);
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -39,6 +39,10 @@ export function validate(m) {
         ? { t: 'resync', seed: m.seed, opts: m.opts, log: m.log, tick: m.tick, idx: m.idx, v: m.v } : null;
     case 'end':
       return { t: 'end', won: !!m.won };
+    case 'hash':
+      return isInt(m.tick) && isInt(m.h) ? { t: 'hash', tick: m.tick, h: m.h } : null;
+    case 'desync':
+      return { t: 'desync', tick: isInt(m.tick) ? m.tick : 0 };
     default:
       return { t: m.t, v: m.v };
   }

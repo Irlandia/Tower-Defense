@@ -370,7 +370,7 @@ function zap(s, t, first, st, def) {
     const wet = e.wetT > 0;
     damage(s, e, st.dmg * (wet ? 2 : 1) * (e === first ? over : 1), t.owner, { big: wet || over >= 2, src: family(t.kind) });
   }
-  s.events.push({ type: "zap", pts, over });
+  s.events.push({ type: "zap", pts, over, wet: hit.some((e) => e.wetT > 0) });
 }
 
 function updateProj(s, p) {

@@ -7,7 +7,8 @@ import { createGame, step, canPlace, canEvolve, isRoad, posAt, towerStats, vsMul
 import { TOWERS, TOWER_ORDER, BRANCHES, COLS, ROWS, CARDS, BRAWLS, brawlOf } from '../src/sim/data.js';
 import { ABILITIES } from '../src/sim/data.js';
 import * as Meta from '../src/meta.js';
-import { sellRatioOf, abilityMax } from '../src/sim/sim.js';
+import { sellRatioOf, abilityMax, stateHash } from '../src/sim/sim.js';
+import { VERSION } from '../src/sim/data.js';
 Meta.setPersist(false); // tests never write the player's real save
 
 const lines = [];
@@ -552,6 +553,71 @@ try {
   let firstShot = 0;
   for (let i = 0; i < 400 && !firstShot; i++) { step(ml); if (ml.projs.length) firstShot = ml.projs.length; }
   check('Подвійний залп: one arrow shot targets two enemies', firstShot === 2, `projs=${firstShot}`);
+
+  // co-op: a disconnected player's gold goes to the partners, their towers keep earning for the team
+  const lv = createGame(11, { players: 2 });
+  lv.players[0].gold = 100; lv.players[1].gold = 301;
+  step(lv, [{ type: 'leave', p: 1 }]);
+  check('leave: gold moves to the partner', lv.players[0].gold === 401 && lv.players[1].gold === 0 && lv.players[1].left, `${lv.players.map((q) => q.gold)}`);
+  step(lv, [{ type: 'leave', p: 1 }]);
+  check('leave: twice does nothing', lv.players[0].gold === 401);
+  const solo = createGame(11); solo.players[0].gold = 50; step(solo, [{ type: 'leave', p: 0 }]);
+  check('leave: last player keeps their gold', solo.players[0].gold === 50 && !solo.players[0].left);
+  step(lv, [{ type: 'rejoin', p: 1 }]);
+  check('rejoin: player is back', !lv.players[1].left);
+
+  // state fingerprint: equal for equal runs, sensitive to any difference
+  const h1 = runBot(77, 4).s, h2 = runBot(77, 4).s;
+  check('stateHash: same run, same hash', stateHash(h1) === stateHash(h2));
+  h2.players[0].gold += 1;
+  check('stateHash: one gold differs', stateHash(h1) !== stateHash(h2));
+
+  // Golden replay: a fixed bot run must give the same fingerprint until VERSION is bumped.
+  // When you change src/sim on purpose: VERSION++ and paste the new hash printed below.
+  const GOLDEN = { version: 41, hash: 193004491 };
+  const gh = stateHash(runBot(4242, 6).s);
+  if (VERSION === GOLDEN.version) check('golden replay: sim unchanged at this VERSION (else bump VERSION)', gh === GOLDEN.hash, `got ${gh}`);
+  else log(`NOTE golden replay: VERSION ${VERSION} — set GOLDEN = { version: ${VERSION}, hash: ${gh} }`);
+
+  // Training dummy: one level-3 tower vs stationary enemies next to it, 20 s.
+  // "crowd" = 8 slimes, "single" = one armored knight, "boss" = one boss. Damage per 100 gold spent.
+  const bench = (kind, scene) => {
+    const b = createGame(7, { mode: 'classic' });
+    b.players[0].gold = 99999; b.queue = []; b.countdown = 1e9;
+    const lane = b.map.lanes[0], mid = lane.segs[Math.floor(lane.segs.length / 2)];
+    const at = mid.start + mid.len / 2, c = posAt(b.map, 0, at);
+    const spot = spots(b).filter((p) => Math.hypot(p.tx * 24 + 12 - c.x, p.ty * 24 + 12 - c.y) < 40)[0];
+    const base = TOWERS[kind].from || kind;
+    step(b, [{ type: 'place', kind: base, tx: spot.tx, ty: spot.ty, p: 0 }]);
+    const t = b.towers[0];
+    step(b, [{ type: 'upgrade', id: t.id, p: 0 }]); step(b, [{ type: 'upgrade', id: t.id, p: 0 }]);
+    if (kind !== base) step(b, [{ type: 'evolve', id: t.id, kind, p: 0 }]);
+    const types = scene === 'crowd' ? Array(8).fill('slime') : [scene === 'boss' ? 'boss' : 'knight'];
+    const foes = types.map((ty, i) => { const e = spawnAt(b, ty, at + (i - 3.5) * 6); return e; });
+    for (let i = 0; i < 400; i++) step(b);
+    const dealt = foes.reduce((a, e) => a + (e.maxHp - Math.max(0, e.hp)), 0);
+    return Math.round(dealt / t.spent * 100);
+  };
+  function spawnAt(b, type, dist) {
+    b.queue.push({ type, lane: 0, at: b.tick + 1, hpMul: 1000 });
+    step(b);
+    const e = b.enemies[b.enemies.length - 1];
+    e.dist = dist; const p = posAt(b.map, 0, dist); e.x = e.px = p.x; e.y = e.py = p.y; e.speedMul = 0;
+    return e;
+  }
+  log('');
+  log('Tower bench (damage per 100 gold over 20 s: crowd / single armored / boss):');
+  const B = {};
+  for (const base of Object.keys(BRANCHES)) for (const k of [base, ...BRANCHES[base]]) {
+    B[k] = ['crowd', 'single', 'boss'].map((sc) => bench(k, sc));
+    log(`  ${k.padEnd(9)} ${B[k].join(' / ')}`);
+  }
+  // A branch must not beat its sibling in every scene by a wide margin (= no real choice).
+  for (const base of Object.keys(BRANCHES)) {
+    const [a, b2] = BRANCHES[base];
+    const dom = (x, y) => B[x].every((v, i) => v > B[y][i] * 1.25);
+    check(`branches ${a}/${b2}: neither dominates in every scene`, !dom(a, b2) && !dom(b2, a), `${a}=${B[a]} ${b2}=${B[b2]}`);
+  }
 
   log('');
   log('Balance bot (seed, wave reached, lanes, towers):');

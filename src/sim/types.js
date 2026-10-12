@@ -14,6 +14,7 @@
  *   {type:'barrel', id:number} |
  *   {type:'collect', id:number} |
  *   {type:'nextWave'} |
+ *   {type:'leave'} | {type:'rejoin'} |
  *   {type:'meteor', x:number, y:number} |
  *   {type:'nova'} |
  *   {type:'wall', tx:number, ty:number} |

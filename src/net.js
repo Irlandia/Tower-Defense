@@ -43,7 +43,7 @@ export class Net {
       this.role = 'host';
       this.peer = new window.Peer(PREFIX + code);
       this.peer.on('open', () => { this.status('Чекаємо гравців…'); resolve(code); });
-      this.peer.on('error', (e) => { this.status('Помилка: ' + e.type, 'bad'); reject(e); });
+      this.peer.on('error', (e) => { this.status(errText(e), 'bad'); reject(e); });
       this.peer.on('connection', (conn) => {
         let slot = 0;
         for (let s = 1; s <= MAX_GUESTS; s++) if (!this.slots[s]) { slot = s; break; }
@@ -62,13 +62,21 @@ export class Net {
       this.role = 'guest';
       this.peer = new window.Peer();
       this.peer.on('error', (e) => {
-        this.status(e.type === 'peer-unavailable' ? 'Кімнату не знайдено' : 'Помилка: ' + e.type, 'bad');
+        clearTimeout(this.joinTimer);
+        this.status(errText(e), 'bad');
         reject(e);
       });
       this.peer.on('open', () => {
         const conn = this.peer.connect(PREFIX + code.trim().toUpperCase(), { reliable: true });
         this.conn = conn;
-        conn.on('open', () => { this.status('Підключено до кімнати', 'good'); resolve(); });
+        // a direct WebRTC link can silently fail behind strict NAT / firewalls: tell the player instead of hanging
+        this.joinTimer = setTimeout(() => {
+          if (conn.open) return;
+          this.status("Не вдалося з'єднатися напряму (фаєрвол або сувора NAT). Спробуй іншу мережу чи нехай кімнату створить друг", 'bad');
+          try { conn.close(); } catch { /* never opened */ }
+          reject(new Error('timeout'));
+        }, 15000);
+        conn.on('open', () => { clearTimeout(this.joinTimer); this.status('Підключено до кімнати', 'good'); resolve(); });
         conn.on('data', (m) => { if (this.onMessage) this.onMessage(m, 0); });
         conn.on('close', () => { if (this.onLeave) this.onLeave(0); });
       });
@@ -102,4 +110,18 @@ export class Net {
     if (this.peer) this.peer.destroy();
     this.peer = null; this.conn = null; this.slots = {}; this.role = 'solo'; this.inbox = [];
   }
+}
+
+// PeerJS error types -> a sentence a player understands.
+function errText(e) {
+  const t = e && e.type;
+  return {
+    'peer-unavailable': 'Кімнату не знайдено — перевір код (або хост уже вийшов)',
+    network: "Немає з'єднання із сервером кімнат. Перевір інтернет",
+    'server-error': 'Сервер кімнат недоступний. Спробуй за хвилину',
+    'socket-error': "Обірвалося з'єднання із сервером кімнат",
+    'unavailable-id': 'Такий код уже зайнятий — створи кімнату ще раз',
+    'browser-incompatible': 'Цей браузер не підтримує WebRTC — спробуй Chrome чи Firefox',
+    webrtc: "Помилка WebRTC — спробуй іншу мережу",
+  }[t] || 'Помилка мережі: ' + (t || e);
 }
