@@ -64,13 +64,15 @@ export function simulate(now) {
   const quiet = document.hidden; // nobody is watching: skip effects/sounds (they would pile up)
   const s = app.state;
   // the guest also keeps applying host messages on the end screen (e.g. the host's 'continue')
-  if ((app.running || s.over) && net.role === 'guest') {
+  // (also after the end screen is up: the host may still choose 'continue' in circle mode)
+  if ((app.running || s.over || app.endShown) && net.role === 'guest') {
     // replay the host's ticks; after a long gap catch up fast and silently
     const backlog = net.inbox.length;
     let n = 0;
     while (net.inbox.length && n++ < 60) {
       const m = net.inbox.shift();
       if (m.t === 'hash') { checkHash(m); continue; }
+      if (m.t === 'end') { if (!app.endShown) finishRun(m.won); continue; } // explicit end, in order with the ticks
       step(app.state, m.cmds, m.t === 'tick');
       dispatch(app.state.events, quiet || backlog > 10);
       if (m.t === 'tick') lastTickAt = now;

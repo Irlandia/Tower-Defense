@@ -107,7 +107,8 @@ net.onMessage = (raw, slot) => {
     case 'tick': case 'cmds': case 'hash': if (net.role === 'guest') net.inbox.push(m); break;
     case 'lobby': if (net.role === 'guest') { enterLobby(true); status('Хост у меню — чекаємо нову гру', 'good'); } break;
     // explicit end-of-game from the host: guests must see it even if their replay lagged or missed the event
-    case 'end': if (net.role === 'guest' && !app.endShown) finishRun(m.won); break;
+    // queued in order with the ticks: handled immediately it could overtake ticks still in the inbox and stop the replay
+    case 'end': if (net.role === 'guest') net.inbox.push(m); break;
   }
 };
 
