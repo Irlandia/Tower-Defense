@@ -166,14 +166,20 @@ function planLanes(s) {
   return out.sort();
 }
 
-function newPlayer(opts) {
+// i = player index; opts.perks[i] is that player's talent tree (src/meta.js perks()), applied once at start.
+function newPlayer(opts, i = 0) {
+  const k = (opts.perks && opts.perks[i]) || {};
+  const dmg = { arrow: 1, cannon: 1, frost: 1, tesla: 1, fire: 1 };
+  for (const f in k.dmg || {}) dmg[f] = (dmg[f] || 1) * k.dmg[f];
   return {
-    gold: CONFIG.startGold + (opts.bonusGold || 0),
+    gold: CONFIG.startGold + (k.bonusGold ?? (i === 0 ? opts.bonusGold || 0 : 0)),
     mods: {
-      dmg: { arrow: 1, cannon: 1, frost: 1, tesla: 1, fire: 1 },
-      rate: 1, range: 1, chain: 0, burn: 1, wet: 0, steam: 1, gold: 1, interest: 0, crit: 0.1,
-      meteorCd: opts.meteorCd || 1, wall: 1,
-      critMul: 2, aura: 1, moveCd: 1, novaCd: 1, barrel: 1, lapDmg: 0, hunter: 0, thief: 0,
+      dmg,
+      rate: 1, range: 1, chain: k.chain || 0, burn: k.burn || 1, wet: k.wet || 0, steam: k.steam || 1, gold: 1, interest: 0, crit: 0.1 + (k.crit || 0),
+      meteorCd: k.meteorCd || opts.meteorCd || 1, wall: 1,
+      critMul: 2, aura: k.aura || 1, moveCd: k.moveCd || 1, novaCd: k.novaCd || 1, barrel: 1, lapDmg: 0, hunter: 0, thief: 0,
+      towerRate: { ...(k.rate || {}) }, towerRange: { ...(k.range || {}) }, splash: k.splash || 1, discount: { ...(k.discount || {}) },
+      cards: k.cards || opts.cards || 3,
     },
     picked: {}, // talent id -> times taken (cards have a max)
     cds: { meteor: 0, nova: 0, wall: 0 },
@@ -198,7 +204,7 @@ export function createGame(seed, opts = {}) {
     countdown: CONFIG.firstWaveDelay * T,
     map: null,
     plan: [],
-    players: Array.from({ length: o.players }, () => newPlayer(o)),
+    players: Array.from({ length: o.players }, (_, i) => newPlayer(o, i)),
     enemies: [],
     towers: [],
     projs: [],
@@ -306,15 +312,25 @@ export function towerStats(s, t) {
   const lv = def.from ? 0 : t.level - 1;
   const aura = auraOf(s, t);
   return {
-    range: (def.range + lv * CONFIG.rangePerLevel) * m.range,
+    range: (def.range + lv * CONFIG.rangePerLevel) * m.range * (m.towerRange[family(t.kind)] || 1),
     dmg: def.dmg * (1 + 0.6 * lv) * (m.dmg[family(t.kind)] || 1) * (1 + aura.dmg),
-    period: Math.max(1, Math.round(T / (def.rate * m.rate * (1 + aura.rate)))),
+    period: Math.max(1, Math.round(T / (def.rate * m.rate * (m.towerRate[family(t.kind)] || 1) * (1 + aura.rate)))),
     buff: aura.dmg + aura.rate,
     aura,
   };
 }
 
 // 0 = no plain upgrade available (max level or evolved; at level 3 evolution is offered instead).
+// Towers locked for this player (each co-op player unlocks towers in their own talent tree).
+export function isLocked(s, p, kind) {
+  return ((s.opts.lockedBy && s.opts.lockedBy[p]) || s.opts.locked || []).includes(kind);
+}
+// Build price for this player (talent tree discounts, e.g. cheaper totems).
+export function placeCost(s, p, kind) {
+  const d = (player(s, p).mods.discount || {})[kind] || 0;
+  return Math.round(TOWERS[kind].cost * (1 - d));
+}
+
 export function upgradeCost(t) {
   if (TOWERS[t.kind].from || TOWERS[t.kind].support || t.level >= CONFIG.maxLevel) return 0;
   return Math.floor(TOWERS[t.kind].cost * 0.8 * t.level);
@@ -409,9 +425,10 @@ function applyCmd(s, c) {
     }
     case 'place': {
       const def = TOWERS[c.kind];
-      if (!def || def.from || s.opts.locked.includes(c.kind) || !canPlace(s, c.tx, c.ty) || pl.gold < def.cost) return;
-      pl.gold -= def.cost;
-      const t = { id: s.nextId++, owner: pi, kind: c.kind, tx: c.tx, ty: c.ty, ...center(c.tx, c.ty), level: 1, cd: 0, spent: def.cost, aim: 0, fired: 0 };
+      const cost = def ? placeCost(s, pi, c.kind) : 0;
+      if (!def || def.from || isLocked(s, pi, c.kind) || !canPlace(s, c.tx, c.ty) || pl.gold < cost) return;
+      pl.gold -= cost;
+      const t = { id: s.nextId++, owner: pi, kind: c.kind, tx: c.tx, ty: c.ty, ...center(c.tx, c.ty), level: 1, cd: 0, spent: cost, aim: 0, fired: 0 };
       if (def.support) t.aura = { dmg: 0, rate: 0 };
       s.towers.push(t);
       s.events.push({ type: 'build', x: t.x, y: t.y, p: pi });
@@ -556,7 +573,7 @@ function applyCmd(s, c) {
 
 // Weighted draw without repeats from the cards valid for this mode and not maxed out by this player.
 export function pickCards(s, n, pl, guaranteeRare = false) {
-  const pool = CARDS.filter((c) => (!c.modes || c.modes.includes(s.mode)) && !(c.needs && s.opts.locked.includes(c.needs)) && !(c.coop && s.players.length < 2) && (pl.picked[c.id] || 0) < c.max);
+  const pool = CARDS.filter((c) => (!c.modes || c.modes.includes(s.mode)) && !(c.needs && isLocked(s, s.players.indexOf(pl), c.needs)) && !(c.coop && s.players.length < 2) && (pl.picked[c.id] || 0) < c.max);
   const out = [];
   if (guaranteeRare) {
     const rares = pool.filter((c) => c.rarity === "rare");
@@ -866,7 +883,7 @@ function hit(s, p, target) {
       if (target) damage(s, target, p.dmg, p.owner, { pierce: def.pierce, crit: rand(s) < m.crit, src });
       break;
     case 'ball':
-      explode(s, p.x, p.y + 6, def.splash, p.dmg, p.owner, src);
+      explode(s, p.x, p.y + 6, def.splash * m.splash, p.dmg, p.owner, src);
       for (let i = 0; i < (def.bomblets || 0); i++) {
         const a = rand(s) * Math.PI * 2, r = 15 + rand(s) * 21;
         explode(s, p.x + Math.cos(a) * r, p.y + 6 + Math.sin(a) * r, 18, p.dmg * 0.4, p.owner, src);
@@ -944,7 +961,7 @@ function kill(s, e, owner) {
   // Talents come only from bosses: every player gets a personal choice (never pauses co-op)
   if (def.lives) {
     for (let i = 0; i < s.players.length; i++) {
-      s.players[i].drafts.push(pickCards(s, s.opts.cards, s.players[i], true));
+      s.players[i].drafts.push(pickCards(s, s.players[i].mods.cards, s.players[i], true));
       s.events.push({ type: "draft", p: i });
     }
   }

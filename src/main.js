@@ -3,7 +3,7 @@
 import { TILE, TICK_RATE, TOWERS, TOWER_ORDER, BRANCHES, CARDS, CONFIG, ABILITIES, MODES, VERSION, BOSSES, bossFor, AURA, ENEMIES, RARITY, SEASONS, SEASON_ORDER } from './sim/data.js';
 import {
   createGame, step, canPlace, towerAt, obstacleAt, barrelAt, towerStats, upgradeCost, canEvolve, sellValue, clearCost,
-  enemyAt, abilityMax, isRoad, canMove, hasWall, auraCost,
+  enemyAt, abilityMax, isRoad, canMove, hasWall, auraCost, isLocked, placeCost,
 } from './sim/sim.js';
 import { Renderer, W, H, MX, MY, PLAYER_COLORS } from './render.js';
 import { drawTower, C } from './sprites.js';
@@ -27,8 +27,10 @@ let pending = [];
 let diff = 'normal';
 let mode = "classic";
 let season = "random";
+let treeBranch = "general";
 let nick = '';
 let partnerNick = '';
+let partnerPerks = null;
 const ui = { build: null, selected: null, hover: null, mouse: null, ability: null, hoverEnemy: null, partner: null, me: 0, moving: null };
 let speed = 1;
 let paused = false;
@@ -66,7 +68,7 @@ function startGame(seed, opts) {
 
 function newRun() {
   const seed = (Math.random() * 2 ** 32) >>> 0;
-  const opts = Meta.gameOpts(meta, diff, mode, net.connected ? 2 : 1, season);
+  const opts = Meta.gameOpts(meta, diff, mode, net.connected ? 2 : 1, season, partnerPerks);
   if (net.role === 'host') net.send({ t: 'start', seed, opts, v: VERSION });
   startGame(seed, opts);
 }
@@ -118,7 +120,7 @@ function partnerLost() {
 }
 net.onStatus = (text, kind) => {
   netStatus(text, kind);
-  if (kind === 'good') { partnerAlive = true; lastMsgAt = performance.now(); net.send({ t: 'hello', nick, v: VERSION }); }
+  if (kind === 'good') { partnerAlive = true; lastMsgAt = performance.now(); net.send({ t: "hello", nick, v: VERSION, perks: Meta.perks(meta) }); }
   if (kind === 'bad' && net.conn) partnerLost();
 };
 net.onMessage = (m) => {
@@ -134,7 +136,8 @@ net.onMessage = (m) => {
     // explicit end-of-game from the host: the guest must see it even if its replay lagged or missed the event
     case "end": if (net.role === "guest" && !endShown) showEnd(m.won); break;
     case "hello":
-      partnerNick = m.nick || 'Друг';
+      partnerNick = m.nick || "Друг";
+      partnerPerks = m.perks || null; // the partner plays with their own talent tree
       if (m.v !== VERSION) { mismatch(m.v); break; }
       if (net.role === 'host') {
         // partner joined: start together, or bring a reconnecting partner up to date without restarting
@@ -245,7 +248,7 @@ canvas.addEventListener('mousedown', (ev) => {
   // poke the wildlife (decoration only)
   if (!ui.build && renderer.critters.poke(m.x, m.y)) return;
   if (ui.build) {
-    const cost = TOWERS[ui.build].cost;
+    const cost = placeCost(state, me(), ui.build);
     if (canPlace(state, m.tx, m.ty) && P().gold >= cost) {
       send({ type: 'place', kind: ui.build, tx: m.tx, ty: m.ty });
       if (!ev.shiftKey && P().gold - cost < cost) ui.build = null;
@@ -267,7 +270,7 @@ const selObstacle = () => ui.selected && ui.selected[0] === 'o' ? state.obstacle
 
 function selectBuild(kind) {
   sfx.unlock();
-  if (state.opts.locked.includes(kind)) return;
+  if (isLocked(state, me(), kind)) return;
   ui.ability = null;
   ui.selected = null;
   ui.build = ui.build === kind ? null : kind;
@@ -318,7 +321,7 @@ function buildToolbar() {
   bar.innerHTML = '';
   TOWER_ORDER.forEach((kind, i) => {
     const def = TOWERS[kind];
-    const locked = state.opts.locked.includes(kind);
+    const locked = isLocked(state, me(), kind);
     const b = document.createElement('button');
     b.className = 'tower-btn' + (locked ? ' locked' : '');
     b.dataset.kind = kind;
@@ -326,7 +329,7 @@ function buildToolbar() {
     b.append(towerIcon(kind));
     const label = document.createElement('span');
     label.className = 'label';
-    label.innerHTML = `<b>${def.name}</b><span class="cost">${locked ? '🔒' : '● ' + def.cost}</span>`;
+    label.innerHTML = `<b>${def.name}</b><span class="cost">${locked ? "🔒" : "● " + placeCost(state, me(), kind)}</span>`;
     b.append(label);
     const key = document.createElement('span');
     key.className = 'key';
@@ -450,7 +453,7 @@ function updateUI() {
   const pl = P();
   for (const b of document.querySelectorAll('.tower-btn')) {
     b.classList.toggle('active', ui.build === b.dataset.kind);
-    b.classList.toggle('poor', pl.gold < TOWERS[b.dataset.kind].cost);
+    b.classList.toggle("poor", pl.gold < placeCost(state, me(), b.dataset.kind));
   }
   for (const id of Object.keys(ABILITIES)) {
     const b = $('ab-' + id);
@@ -572,7 +575,7 @@ function showEnd(won) {
   const m = $('modal');
   m.innerHTML = `<h2 class="${won ? 'win' : ''}">${title}</h2>
     <p>Хвиля <b>${state.wave}</b>${state.endless ? " (нескінченний)" : " / " + CONFIG.winWave} · Вбито <b>${state.kills}</b>${state.players.length > 1 ? ` (ти: ${P().kills})` : ''}${record ? ' · <span class="rec">Новий рекорд!</span>' : ''}</p>
-    <p class="crys">+${earned} 💎 <span>(усього ${meta.crystals})</span></p>
+    <p class="crys">+${earned} ✦ досвіду <span>(усього ${meta.xp})</span></p>
     <p id="scoreMsg">${nick ? 'Надсилаємо результат…' : 'Введи нік у меню, щоб потрапити в таблицю лідерів'}</p>
     <div class="row">${canContinue ? '<button id="endless" class="big primary">Продовжити ∞</button>' : ""}${net.role === "guest" ? (won && state.mode === "circle" ? "<p>Хост вирішує: продовжити чи ні…</p>" : "<p>Чекаємо, поки хост почне нову гру…</p>") : '<button id="again" class="big">Ще раз</button>'}<button id="menuBtn" class="big">Меню</button></div>`;
   m.classList.remove('hidden');
@@ -634,7 +637,7 @@ function updatePlayButton() {
 }
 
 function renderMenu() {
-  $('crystals').textContent = meta.crystals;
+  $("crystals").textContent = meta.xp;
   const ml = $('modes');
   ml.innerHTML = '';
   for (const [id, md] of Object.entries(MODES)) {
@@ -665,16 +668,35 @@ function renderMenu() {
     b.addEventListener('click', () => { diff = d.id; renderMenu(); });
     dl.append(b);
   }
+  // talent tree: branch tabs, then the branch's nodes top to bottom (each needs the previous one)
   const shop = $('shop');
   shop.innerHTML = '';
-  for (const it of Meta.SHOP) {
-    const lv = Meta.level(meta, it.id);
-    const max = lv >= it.cost.length;
+  const tabs = document.createElement('div');
+  tabs.className = 'tree-tabs';
+  for (const br of Meta.BRANCHES) {
+    const t = document.createElement('button');
+    const got = Meta.TREE.filter((n) => n.branch === br.id && Meta.level(meta, n.id)).length;
+    t.className = 'tree-tab' + (treeBranch === br.id ? ' active' : '');
+    t.title = br.name;
+    t.innerHTML = `${br.icon}<small>${got}/${Meta.TREE.filter((n) => n.branch === br.id).length}</small>`;
+    t.addEventListener('click', () => { treeBranch = br.id; renderMenu(); });
+    tabs.append(t);
+  }
+  shop.append(tabs);
+  const title = document.createElement('div');
+  title.className = 'tree-title';
+  title.textContent = Meta.BRANCHES.find((b) => b.id === treeBranch).name;
+  shop.append(title);
+  for (const n of Meta.TREE.filter((k) => k.branch === treeBranch)) {
+    const lv = Meta.level(meta, n.id);
+    const max = lv >= n.cost.length;
+    const reqOk = !n.req || Meta.level(meta, n.req) > 0;
     const b = document.createElement('button');
-    b.className = 'shop-item' + (max ? ' max' : '');
-    b.disabled = max || meta.crystals < it.cost[lv];
-    b.innerHTML = `<b>${it.name}</b><span>${it.desc}</span><i>${max ? 'КУПЛЕНО' : it.cost[lv] + ' 💎'}${it.cost.length > 1 ? ` · ${lv}/${it.cost.length}` : ''}</i>`;
-    b.addEventListener('click', () => { if (Meta.buy(meta, it.id)) { sfx.unlock(); sfx.play('card'); renderMenu(); } });
+    b.className = 'shop-item tree-node' + (max ? ' max' : '') + (lv ? ' owned' : '') + (reqOk ? '' : ' blocked');
+    b.disabled = max || !Meta.canBuy(meta, n);
+    const price = max ? 'ВИВЧЕНО' : reqOk ? `${n.cost[lv]} ✦` : `🔒 ${Meta.nodeOf(n.req).name}`;
+    b.innerHTML = `<b>${n.name}</b><span>${n.desc}</span><i>${price}${n.cost.length > 1 ? ` · ${lv}/${n.cost.length}` : ''}</i>`;
+    b.addEventListener('click', () => { if (Meta.buy(meta, n.id)) { sfx.unlock(); sfx.play('card'); renderMenu(); } });
     shop.append(b);
   }
   for (const b of document.querySelectorAll('[data-board]')) b.classList.toggle('active', b.dataset.board === boardMode);
@@ -707,7 +729,7 @@ async function saveNick() {
     nick = await Api.setNick(v);
     $('nick').value = nick;
     $('nickMsg').textContent = '✓ збережено';
-    net.send({ t: 'hello', nick });
+    net.send({ t: "hello", nick, v: VERSION, perks: Meta.perks(meta) });
   } catch (e) { $('nickMsg').textContent = e.message; }
 }
 $('nickSave').addEventListener('click', saveNick);
@@ -925,7 +947,7 @@ if (new URLSearchParams(location.search).has('demo')) {
   mode = dm && dm.startsWith('circle') ? 'circle' : 'classic';
   startGame(12345, Meta.gameOpts(meta, diff, mode, dm === 'circle2' ? 2 : 1, season));
   state.players[0].gold = 2000;
-  state.opts.locked = [];
+  state.opts.locked = []; state.opts.lockedBy = null;
   // put each tower type on a free tile next to the road
   const spots = [];
   for (let ty = 0; ty < 14 && spots.length < 5; ty++) for (let tx = 2; tx < 24 && spots.length < 5; tx += 3) {
