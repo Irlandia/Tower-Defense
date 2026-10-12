@@ -148,10 +148,10 @@ function genCircle(s, players = 1) {
   return { lanes, tiles, water: genPonds(s, tiles), castle: null, spawns, ring: [x0, y0, x1, y1] };
 }
 
-// A small farm near the map centre: 2x2 house, a yard tile and a 3x3 field. No towers on it.
+// A small farm near the map centre: 1-tile house, a yard tile above it and a 2x2 field. No towers on it.
 // Searched outward from the centre (no randomness), so every peer places it identically.
 function placeFarm(map) {
-  const W = 5, H = 3;
+  const W = 3, H = 2;
   const cand = [];
   for (let y = 0; y + H <= ROWS; y++) for (let x = 0; x + W <= COLS; x++) cand.push([x, y, Math.hypot(x + W / 2 - COLS / 2, y + H / 2 - ROWS / 2)]);
   cand.sort((a, b) => a[2] - b[2] || a[1] - b[1] || a[0] - b[0]);
@@ -164,7 +164,7 @@ function placeFarm(map) {
     if (!ok) continue;
     const tiles = new Set();
     for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) tiles.add(key(x + i, y + j));
-    return { x, y, w: W, h: H, house: [x, y + 1], field: [x + 2, y, 3, 3], tiles };
+    return { x, y, w: W, h: H, house: [x, y + 1], field: [x + 1, y, 2, 2], tiles };
   }
   return null;
 }

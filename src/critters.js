@@ -442,9 +442,9 @@ Object.assign(Critters.prototype, {
     const [fx, fy, fw, fh] = f.field;
     // work spots: along the field rows (in winter: in front of the house, shovelling)
     const spots = [];
-    if (this.season === 'winter') for (let i = 0; i < 4; i++) spots.push({ x: f.house[0] * T + 8 + i * 10, y: (f.house[1] + 2) * T + 6 });
-    else for (let r = 0; r < 3; r++) for (let i = 0; i < 3; i++) spots.push({ x: fx * T + 10 + i * ((fw * T - 20) / 2), y: fy * T + 12 + r * ((fh * T - 20) / 2) });
-    const home = { x: f.house[0] * T + 24, y: (f.house[1] + 2) * T + 4 };
+    if (this.season === "winter") for (let i = 0; i < 4; i++) spots.push({ x: f.house[0] * T + 2 + i * 9, y: (f.house[1] + 1) * T + 5 });
+    else for (let r = 0; r < 2; r++) for (let i = 0; i < 3; i++) spots.push({ x: fx * T + 8 + i * ((fw * T - 16) / 2), y: fy * T + 12 + r * (fh * T - 22) });
+    const home = { x: f.house[0] * T + 12, y: (f.house[1] + 1) * T + 4 };
     this.farm = {
       spots, home, sparks: [],
       farmer: { x: home.x, y: home.y, tx: home.x, ty: home.y, state: 'idle', t: rnd(1, 3), dir: 1, say: null, sayT: 0 },

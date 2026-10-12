@@ -132,7 +132,7 @@ export class Renderer {
       // farm yard: trodden earth under the house, the field with its fence
       const f = map.farm;
       g.fillStyle = season === "winter" ? "#d3e2ec" : "#a8805e";
-      g.fillRect(f.x * TILE + 2, f.y * TILE + 2, 2 * TILE - 4, f.h * TILE - 4);
+      g.fillRect(f.x * TILE + 2, f.y * TILE + 2, TILE - 4, f.h * TILE - 4);
       drawField(g, f.field[0], f.field[1], f.field[2], f.field[3], season, TILE);
     }
     for (const sp of map.spawns) {
@@ -369,7 +369,7 @@ export class Renderer {
     for (const w of s.walls) items.push({ y: w.y, w });
     for (const e of s.enemies) items.push({ y: e.py + (e.y - e.py) * alpha, e });
     if (s.map.castle) items.push({ y: s.map.castle[1] * TILE + 12, castle: true });
-    if (s.map.farm) items.push({ y: (s.map.farm.house[1] + 2) * TILE - 4, house: true });
+    if (s.map.farm) items.push({ y: (s.map.farm.house[1] + 1) * TILE - 2, house: true });
     for (const k of this.critters.farmItems()) items.push(k);
     for (const c of this.critters.list) items.push({ y: c.y, critter: c });
     items.sort((a, b) => a.y - b.y);

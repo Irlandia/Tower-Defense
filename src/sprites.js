@@ -468,35 +468,69 @@ export function drawIcon(g, name, x, y) {
   }
 }
 
-// Farm house on a 2x2 tile area (x, y = top-left of that area). Plank walls, gable roof
-// (snow-covered in winter), lit window, door and a chimney.
+// Small detailed farm house on one tile (x, y = tile top-left; the model rises above it, 3/4 view):
+// stone footing, shaded plank walls, shingled gable roof, brick chimney, curtained window with
+// a flower box, plank door with a handle, a porch lantern. Winter: snowy roof and icicles.
 export function drawFarmHouse(g, x, y, season, tick) {
-  const bx = x + 4, base = y + 44, w = 40;
-  ellipse(g, bx + w / 2 + 2, base, w / 2 + 4, 4, 'rgba(0,0,0,0.3)');
-  box(g, bx, base, w, 18, 6, ['#c28569', '#8a6248', '#5a3e2c']);
-  for (let i = 0; i < 4; i++) R(g, bx, base - 4 - i * 4, w - 2, 1, '#5a3e2c'); // planks
-  // gable roof
-  const roof = season === 'winter' ? [C.white, '#dfeef5', C.silver] : [C.orange, C.red, C.plum];
-  for (let i = 0; i < 14; i++) {
-    const half = Math.round((w / 2 + 3) * (i + 1) / 14);
-    R(g, bx + w / 2 - half, base - 24 - 14 + i, half, 1, roof[0]);
-    R(g, bx + w / 2, base - 24 - 14 + i, half, 1, roof[1]);
+  const winter = season === 'winter';
+  const L = x + 2, base = y + 22, w = 20;
+  ellipse(g, L + w / 2 + 1, base + 1, w / 2 + 3, 2, 'rgba(0,0,0,0.3)');
+  // stone footing
+  R(g, L - 1, base - 3, w + 2, 3, C.slate);
+  for (let i = 0; i < w + 2; i += 4) R(g, L - 1 + i, base - 3, 1, 3, C.dark);
+  R(g, L - 1, base - 3, w + 2, 1, C.silver);
+  // plank walls: light left, dark right edge, plank seams
+  const wallTop = base - 14;
+  R(g, L, wallTop, w, 11, '#c28569');
+  R(g, L, wallTop, 2, 11, '#d9a07a');
+  R(g, L + w - 2, wallTop, 2, 11, '#8a6248');
+  for (let j = 2; j < 11; j += 3) R(g, L + 2, wallTop + j, w - 4, 1, '#a8705a');
+  // door with handle and a step
+  R(g, L + 3, base - 10, 5, 7, '#5a3e2c');
+  R(g, L + 4, base - 9, 1, 5, '#6b4a36'); R(g, L + 6, base - 9, 1, 5, '#6b4a36');
+  R(g, L + 7, base - 6, 1, 1, C.yellow);
+  R(g, L + 2, base - 3, 7, 1, C.silver);
+  // window: frame, glass glow, cross bars, curtains
+  R(g, L + 11, base - 11, 7, 6, '#5a3e2c');
+  R(g, L + 12, base - 10, 5, 4, (tick >> 5) % 9 ? C.yellow : C.orange);
+  R(g, L + 14, base - 10, 1, 4, '#5a3e2c'); R(g, L + 12, base - 8, 5, 1, '#5a3e2c');
+  R(g, L + 12, base - 10, 1, 4, C.red); R(g, L + 16, base - 10, 1, 4, C.red);
+  // flower box under the window (snow in winter)
+  R(g, L + 11, base - 5, 7, 2, '#8a6248');
+  if (winter) R(g, L + 11, base - 6, 7, 1, C.white);
+  else for (let i = 0; i < 3; i++) R(g, L + 12 + i * 2, base - 6, 1, 1, [C.red, C.yellow, '#f4b6d2'][i]);
+  // porch lantern
+  R(g, L + 1, base - 11, 1, 2, C.dark);
+  R(g, L, base - 9, 2, 2, (tick >> 3) % 2 ? C.yellow : C.orange);
+  // brick chimney (drawn before the roof so the roof overlaps its base)
+  const chX = L + 14, chTop = wallTop - 13;
+  R(g, chX, chTop, 4, 9, '#b13e53');
+  for (let j = 1; j < 9; j += 2) R(g, chX + ((j >> 1) % 2), chTop + j, 3, 1, '#7a2a3a');
+  R(g, chX - 1, chTop, 6, 1, C.dark);
+  // shingled gable roof
+  const roof = winter ? ['#f4f4f4', '#dfeef5', '#94b0c2'] : ['#ef7d57', '#b13e53', '#5d275d'];
+  const rows = 9;
+  for (let i = 0; i < rows; i++) {
+    const half = Math.round(((w / 2 + 3) * (i + 1)) / rows);
+    const ry = wallTop - rows + i;
+    R(g, L + w / 2 - half, ry, half, 1, roof[0]);
+    R(g, L + w / 2, ry, half, 1, roof[1]);
+    if (!winter && i % 2 === 1) for (let k = -half + 1; k < half; k += 3) R(g, L + w / 2 + k, ry, 1, 1, roof[2]); // shingle gaps
   }
-  R(g, bx - 3, base - 25, w + 6, 2, roof[2]);
-  // chimney + smoke when it is cold
-  R(g, bx + w - 10, base - 40, 5, 10, C.dark); R(g, bx + w - 10, base - 40, 5, 1, C.slate);
-  if (season === 'autumn' || season === 'winter') {
+  R(g, L - 3, wallTop, w + 6, 1, roof[2]); // eave
+  R(g, L + w / 2 - 1, wallTop - rows - 1, 2, 1, roof[2]); // ridge cap
+  if (winter) {
+    for (let i = 0; i < w + 4; i += 3) R(g, L - 2 + i, wallTop + 1, 1, 1 + ((i * 7) % 3), C.cyan); // icicles
+  }
+  // smoke when it is cold
+  if (season === 'autumn' || winter) {
     for (let i = 0; i < 4; i++) {
-      const k = ((tick * 0.6 + i * 12) % 48);
-      g.globalAlpha = 0.6 * (1 - k / 48);
-      ellipse(g, bx + w - 8 + Math.sin((tick + i * 20) * 0.05) * 3, base - 42 - k * 0.5, 2 + k / 16, 2 + k / 16, '#dfeef5');
+      const k = (tick * 0.5 + i * 10) % 40;
+      g.globalAlpha = 0.6 * (1 - k / 40);
+      ellipse(g, chX + 2 + Math.sin((tick + i * 20) * 0.05) * 2, chTop - 2 - k * 0.5, 1 + k / 14, 1 + k / 14, '#dfeef5');
       g.globalAlpha = 1;
     }
   }
-  // door and a warm window
-  R(g, bx + 8, base - 13, 8, 13, '#5a3e2c'); R(g, bx + 14, base - 7, 1, 1, C.yellow);
-  R(g, bx + 24, base - 13, 9, 7, C.ink); R(g, bx + 25, base - 12, 7, 5, (tick >> 5) % 7 ? C.yellow : C.orange);
-  R(g, bx + 28, base - 12, 1, 5, C.ink); R(g, bx + 25, base - 10, 7, 1, C.ink);
 }
 
 // Field soil and crops for one season, drawn into the static background. fx, fy, fw, fh in tiles.
