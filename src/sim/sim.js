@@ -214,6 +214,11 @@ function updateEnemy(s, e) {
   const L = s.map.lanes[e.lane];
   e.px = e.x; e.py = e.y;
   if (e.flash > 0) e.flash--;
+  if (def.phase) { // Привидик: blinks out of the towers' sight every few seconds
+    if (e.hideT > 0) e.hideT--;
+    e.phT = (e.phT ?? def.phase.every * T) - 1;
+    if (e.phT <= 0) { e.hideT = Math.round(def.phase.dur * T); e.phT = Math.round(def.phase.every * T); }
+  }
   if (e.slowT > 0) e.slowT--;
   if (e.wetT > 0) e.wetT--;
   if (e.burnT > 0) {
@@ -260,7 +265,7 @@ function updateEnemy(s, e) {
   if (back && nd <= L.loopStart) nd += L.loopLen;
   const next = posAt(s.map, e.lane, nd);
   // Barricades stop enemies walking into them; enemies chew through the wall.
-  const wall = s.walls.find((w) => w.hp > 0 && Math.hypot(next.x - w.x, next.y - w.y) < 16 && Math.hypot(next.x - w.x, next.y - w.y) < Math.hypot(e.x - w.x, e.y - w.y));
+  const wall = !def.flying && s.walls.find((w) => w.hp > 0 && Math.hypot(next.x - w.x, next.y - w.y) < 16 && Math.hypot(next.x - w.x, next.y - w.y) < Math.hypot(e.x - w.x, e.y - w.y));
   e.blocked = !!wall;
   if (wall) {
     wall.hp -= (def.lives || 1) * 0.5;
@@ -442,6 +447,7 @@ function pulse(s, t, def, st, targets) {
 }
 
 function applyCold(e, def, m) {
+  if (ENEMIES[e.type].dry) return; // Губка: soaks it all up, never wet or slowed
   const boss = !!ENEMIES[e.type].lives;
   e.slowT = Math.round(def.slowTime * T * (boss && def.freeze ? 0.4 : 1));
   e.slowF = def.slow;

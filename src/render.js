@@ -1,5 +1,5 @@
 // Canvas renderer + visual juice. Reads sim state, never mutates it.
-import { TILE, COLS, ROWS, TICK_RATE, TOWERS, CONFIG, ABILITIES, BARREL, BOSSES, bossFor, DAY } from './sim/data.js';
+import { TILE, COLS, ROWS, TICK_RATE, TOWERS, CONFIG, ABILITIES, BARREL, BOSSES, bossFor, DAY, ENEMIES } from './sim/data.js';
 import { towerStats, canPlace, posAt, isRoad, canMove, dayPhase, family } from './sim/sim.js';
 import {
   C, SPRITES, FLASH, FROZEN, ENEMY_COLOR, drawTower, drawCastle, drawCave, drawNum, numWidth, drawIcon,
@@ -162,6 +162,11 @@ export class Renderer {
         case 'wallbreak':
           this.burst(e.x, e.y, 24, '#c28569', 80, -20);
           this.shake = Math.max(this.shake, 3);
+          break;
+        case 'pop': // Пухир popped: a sticky green cloud that stuns towers nearby
+          this.rings.push({ x: e.x, y: e.y, r: 2, max: e.r, c: C.lime, life: 0.8 });
+          this.burst(e.x, e.y - 6, 26, C.lime, 80, -10);
+          this.shake = Math.max(this.shake, 2);
           break;
         case 'master': // the final upgrade: a bigger golden burst
           this.rings.push({ x: e.x, y: e.y, r: 2, max: 56, c: C.orange, life: 1.2 });
@@ -637,9 +642,11 @@ export class Renderer {
     } else {
       bob = frozen || e.blocked ? 0 : e.type === "runner" ? ((tick >> 1) % 2) * 2 : (((tick + e.id * 3) >> 2) % 2) * 2;
     }
-    const dx = Math.round(x - spr.width / 2), dy = Math.round(y - spr.height + 6 - bob);
+    const fly = ENEMIES[e.type] && ENEMIES[e.type].flying ? 9 + Math.round(Math.sin((tick + e.id * 5) / 3) * 2) : 0; // flyers hover above their shadow
+    const dx = Math.round(x - spr.width / 2), dy = Math.round(y - spr.height + 6 - bob - fly);
     ellipse(g, Math.round(x), Math.round(y) + 6, Math.max(2, Math.round(spr.width / 2.6) - (heavy ? Math.floor(bob / 2) : 0)), heavy ? 3 : 2, heavy ? "rgba(0,0,0,0.45)" : "rgba(0,0,0,0.3)");
     if (hovered) ellipse(g, Math.round(x), Math.round(y) + 6, Math.round(spr.width / 2) + 2, 3, 'rgba(255,205,117,0.6)');
+    if (e.hideT > 0 && ENEMIES[e.type] && ENEMIES[e.type].phase) { g.globalAlpha = 0.25; g.drawImage(spr, dx, dy); g.globalAlpha = 1; return; } // Привидик: see-through, towers lose it
     if (e.hideT > 0) { // burrowed: only a moving mound of earth
       ellipse(g, Math.round(x), Math.round(y) + 4, 9, 4, "#8a6248"); ellipse(g, Math.round(x), Math.round(y) + 3, 6, 2, "#c28569");
       if ((tick >> 1) % 2) this.parts.push({ x: x + Math.random() * 12 - 6, y: y + 2, vx: Math.random() * 30 - 15, vy: -30, life: 0.3, c: "#8a6248" });

@@ -43,6 +43,7 @@ export function runDemoIfRequested() {
       else if (t.aura) { t.aura.dmg = 3; send({ type: 'master', id: t.id }); }
     }
   }, 400);
+  if (q.has('enemies')) ['bat', 'ant', 'ant', 'shell', 'toad', 'ghost', 'sponge', 'bloater'].forEach((type, i) => s.queue.push({ type, lane: 0, at: s.tick + 5 + i * 8, hpMul: 20 })); // &enemies: one of each new type
   if (q.has('time')) s.dayStart = Math.max(0, DAY.phases.findIndex((p) => p.id === q.get('time'))); // &time=day|evening|night|dawn
   // put each tower type on a free tile next to the road
   const spots = [];

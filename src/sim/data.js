@@ -6,7 +6,7 @@ export const COLS = 26;
 export const ROWS = 14;
 export const TICK_RATE = 20;
 // Bump on every change to sim/data: co-op peers refuse to play with a different version.
-export const VERSION = 53;
+export const VERSION = 54;
 // Spores: at most this many new infections per tick across the whole map (chain reactions stay readable and cheap).
 export const SPORE_CAP = 6;
 
@@ -160,11 +160,20 @@ export const ENEMIES = {
   healer: { name: 'Цілитель', hp: 35, speed: 30, armor: 0, gold: 6, cost: 3, heal: 5, healRange: 45, vs: { arrow: 1.3, frost: 0.5 } },
   mini: { name: 'Слизик', hp: 10, speed: 45, armor: 0, gold: 1, cost: 0.5, vs: { cannon: 1.5 } },
   goblin: { name: 'Гоблін-злодій', hp: 30, speed: 63, armor: 0, gold: 8, cost: 0, coins: 4, steal: 20, vs: { frost: 1.3, fire: 0.75 } },
+  // more types (each asks for a different tower): flying (walls don't stop it, explosions hit it for 30%), phase (blinks out of sight),
+  // deathStun (popping stuns towers around), sporeImmune (no infection), dry (never wet or slowed)
+  bat: { name: 'Кажан', hp: 18, speed: 58, armor: 0, gold: 3, cost: 1.3, flying: true, vs: { arrow: 1.4, tesla: 1.3, cannon: 0.5 } },
+  ant: { name: 'Мураха', hp: 7, speed: 48, armor: 0, gold: 1, cost: 0.35, vs: { fire: 1.6, spore: 1.5, cannon: 1.3, arrow: 0.8 } },
+  shell: { name: 'Панцирник', hp: 70, speed: 20, armor: 8, gold: 8, cost: 3, vs: { spore: 1.5, cannon: 1.3, arrow: 0.6, fire: 0.8 } },
+  toad: { name: 'Мухоморчик', hp: 40, speed: 30, armor: 0, gold: 5, cost: 2, sporeImmune: true, vs: { fire: 1.6, spore: 0.2 } },
+  ghost: { name: 'Привидик', hp: 30, speed: 36, armor: 0, gold: 5, cost: 2, phase: { every: 3, dur: 1 }, vs: { frost: 1.4, tesla: 1.3, arrow: 0.8 } },
+  sponge: { name: 'Губка', hp: 55, speed: 28, armor: 0, gold: 6, cost: 2.5, dry: true, vs: { fire: 1.4, frost: 0.5, tesla: 0.8 } },
+  bloater: { name: 'Пухир', hp: 45, speed: 26, armor: 0, gold: 6, cost: 2.5, deathStun: { r: 36, time: 1.5 }, vs: { arrow: 1.4, spore: 1.2 } },
   boss: { name: 'Бос', hp: 340, speed: 18, armor: 3, gold: 60, cost: 0, lives: 10, vs: { tesla: 1.2, frost: 0.7 } },
   king: { name: 'Король слизу', hp: 1400, speed: 14, armor: 5, gold: 0, cost: 0, lives: 20, heal: 20, healRange: 60, vs: { cannon: 1.2, fire: 0.7 } },
 };
 // Wave from which an enemy type can appear.
-export const UNLOCKS = { slime: 1, runner: 2, splitter: 3, knight: 4, healer: 6 };
+export const UNLOCKS = { slime: 1, runner: 2, splitter: 3, knight: 4, bat: 5, healer: 6, ant: 7, shell: 8, toad: 9, ghost: 10, sponge: 12, bloater: 13 };
 
 // Talents: after every boss kill each player picks one card from a personal draft (never pauses co-op).
 // Three rarities: common (solid stat), rare (changes how a tower plays), epic (builds a run around it, max 1).

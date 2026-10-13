@@ -145,6 +145,8 @@ function infoContent(s) {
 // What the next wave brings, so "call it early" is an informed choice: entries, a new enemy type, a boss.
 const ENEMY_TIPS = {
   runner: 'швидкий — Лучник', splitter: 'ділиться — Гармата', knight: 'броня 4 — Гармата, Тесла', healer: 'лікує інших — Лучник',
+  bat: 'летить над барикадами, вибухи майже не чіпають — Лучник, Тесла', ant: 'юрба крихіток — Вогонь, Грибниця', shell: 'броня 8 — Грибниця, Гармата',
+  toad: 'не бере спор — Вогонь', ghost: 'зникає з очей веж — Крига, Тесла', sponge: 'не мокне й не сповільнюється — Вогонь', bloater: 'лопаючись, оглушує вежі — бий здалеку',
 };
 let nextKey = null;
 function nextInfo(s) {

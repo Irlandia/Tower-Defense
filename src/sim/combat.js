@@ -47,7 +47,7 @@ export function spawn(s, type, lane, dist, hpMul) {
 
 export function explode(s, x, y, r, dmg, owner, src = null) {
   for (const e of s.enemies) {
-    if (!e.dead && Math.hypot(e.x - x, e.y - y) <= r) damage(s, e, dmg, owner, { pierce: true, src });
+    if (!e.dead && Math.hypot(e.x - x, e.y - y) <= r) damage(s, e, ENEMIES[e.type].flying ? dmg * 0.3 : dmg, owner, { pierce: true, src }); // flyers: only grazed
   }
   s.events.push({ type: 'explode', x, y, r });
 }
@@ -65,7 +65,7 @@ export function ignite(s, e, dps, time, owner, src = null) {
 // Spores: poison stacks (ignores armour). A tower gives generation 0; spread from a dying neighbour is generation + 1.
 // A fresh infection starts at its generation; re-hits only add a stack and refresh the timer.
 export function infect(s, e, cfg, owner, mul, gen) {
-  if (e.dead) return;
+  if (e.dead || ENEMIES[e.type].sporeImmune) return; // Мухоморчик: spores do not take
   const m = player(s, owner).mods;
   if (!(e.sporeT > 0)) { e.sporeStacks = 0; e.sporeGen = gen; }
   e.sporeStacks = Math.min(cfg.stacks, e.sporeStacks + 1);
@@ -152,6 +152,10 @@ export function kill(s, e, owner, src = null) {
   pl.kills++;
   s.kills++;
   s.events.push({ type: 'death', x: e.x, y: e.y, kind: e.type, bk: e.bk, by: src, gold, p: s.players[owner] ? owner : 0 });
+  if (def.deathStun) { // Пухир: popping stuns the towers around it
+    for (const t of s.towers) if (Math.hypot(t.x - e.x, t.y - e.y) <= def.deathStun.r) t.stunT = Math.max(t.stunT || 0, Math.round(def.deathStun.time * T));
+    s.events.push({ type: 'pop', x: e.x, y: e.y, r: def.deathStun.r });
+  }
   // Talents come only from bosses: every player gets a personal choice (never pauses co-op)
   if (def.lives) {
     for (let i = 0; i < s.players.length; i++) {

@@ -280,11 +280,18 @@ const MAPS = {
   healer: ['...00...', '..0cc0..', '.0c22c0.', '0c2222c0', '0cc22cc0', '.0cccc0.', '..0000..', '........'],
   mini: ['.000.', '06560', '0c6c0', '06660', '.000.'],
   goblin: ['..0..0..', '.050050.', '.055550.', '.5c55c5.', '0455554.', '04444440', '.044440.', '..0..0..'],
+  bat: ['........', '0......0', '0f.00.f0', 'ff0110ff', 'f012210f', '.f0110f.', '...00...', '........'],
+  ant: ['0...0', '.000.', '0f2f0', '.0f0.', '0.0.0'],
+  shell: ['..0000..', '.07d7d0.', '07d7d7d0', '0d7d7d70', '00000000', '06c00c60', '.066660.', '.6....6.'],
+  toad: ['..0000..', '.022c20.', '02c22c20', '00000000', '.0cccc0.', '.0c0c00.', '.0cccc0.', '..0..0..'],
+  ghost: ['..0000..', '.0cccc0.', '0c0cc0c0', '0cccccc0', '0cccccc0', '0cccccc0', '0c0cc0c0', '.0.00.0.'],
+  sponge: ['.000000.', '04444440', '04c44c40', '04044040', '04434440', '04444340', '04444440', '.000000.'],
+  bloater: ['..0000..', '.055550.', '05c55c50', '05055050', '05555550', '05522550', '.055550.', '..0000..'],
   boss: ['..0000..', '.022220.', '02c22c20', '02022020', '02222220', '02344320', '.022220.', '0.0..0.0'],
   king: ['.4.44.4.', '.444444.', '02222220', '02c22c20', '02022020', '02344320', '.022220.', '0.0..0.0'],
 };
 export const ENEMY_COLOR = {
-  slime: C.green, runner: C.orange, splitter: C.plum, knight: C.silver, healer: C.white, mini: C.lime, goblin: C.yellow, boss: C.red, king: C.red,
+  slime: C.green, runner: C.orange, splitter: C.plum, knight: C.silver, healer: C.white, mini: C.lime, goblin: C.yellow, bat: C.plum, ant: C.dark, shell: C.teal, toad: C.red, ghost: C.white, sponge: C.yellow, bloater: C.lime, boss: C.red, king: C.red,
 };
 const SCALE = { boss: 3, king: 4 };
 
