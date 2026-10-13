@@ -276,7 +276,7 @@ export class Renderer {
   draw(s, alpha, ui, dt) {
     SAY.length = 0; // HTML labels are re-queued every frame
     const g = this.g;
-    if (this.mapRef !== s.map) { this.mapRef = s.map; this.bg = makeBackground(s.map, s.season); this.ent = null; this.entWait = undefined; this.critters.taken = new Set([...(s.barrels || []), ...(s.obstacles || [])].map((o) => o.tx + "," + o.ty)); this.critters.reset(s.map, s.season, s.mission && s.mission.npc); this.season = s.season; this.weather = s.brawl && s.brawl.weather; }
+    if (this.mapRef !== s.map) { this.mapRef = s.map; this.bg = makeBackground(s.map, s.season); this.ents = []; this.entWait = this.entDemo ? 0.5 : undefined; this.critters.taken = new Set([...(s.barrels || []), ...(s.obstacles || [])].map((o) => o.tx + "," + o.ty)); this.critters.reset(s.map, s.season, s.mission && s.mission.npc); this.season = s.season; this.weather = s.brawl && s.brawl.weather; }
     this.critters.update(Math.min(dt, 0.1), s.enemies);
     this.updateEnt(s, Math.min(dt, 0.1));
     this.updateFx(dt);
@@ -350,7 +350,7 @@ export class Renderer {
     const hov = (tx, ty) => ui.hover && ui.hover.tx === tx && ui.hover.ty === ty;
     for (const it of items) {
       if (it.o) {
-        if (this.ent && this.ent.id === it.o.id) this.drawEnt(g, it.o, s.season); // a tree that woke up for a stroll
+        if (this.entOf(it.o.id)) this.drawEnt(g, it.o, s.season); // a tree that woke up for a stroll
         else drawObstacle(g, it.o, it.o.tx * TILE, it.o.ty * TILE, s.season);
         if (hov(it.o.tx, it.o.ty)) this.outline(it.o.tx * TILE, it.o.ty * TILE);
       } else if (it.b) {
@@ -796,61 +796,81 @@ export class Renderer {
   // neighbouring tile, looks around and walks back to dig into its own spot. The real tree never moves,
   // so building and clearing are unaffected.
   updateEnt(s, dt) {
-    const E = this.ent;
-    if (!E) {
+    this.ents = this.ents || [];
+    if (!this.ents.length) {
       this.entWait = (this.entWait ?? 20 + Math.random() * 20) - dt;
       if (this.entWait > 0 || !s.obstacles) return;
-      this.entWait = 25 + Math.random() * 35;
+      // ?demo&ent: every 5 s, four trees at once, each in another season's look
+      this.entWait = this.entDemo ? 5 : 25 + Math.random() * 35;
       const busy = (x, y) => s.map.tiles.has(x + ',' + y) || s.map.water.has(x + ',' + y) || s.obstacles.some((o) => o.tx === x && o.ty === y)
         || s.towers.some((t) => t.tx === x && t.ty === y) || (s.barrels || []).some((b) => b.tx === x && b.ty === y) || x < 0 || y < 0 || x >= COLS || y >= ROWS;
-      const trees = s.obstacles.filter((o) => o.kind === 'tree');
-      for (let k = 0; k < 8 && trees.length; k++) {
-        const o = trees[Math.floor(Math.random() * trees.length)];
-        const n = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dy]) => !busy(o.tx + dx, o.ty + dy));
+      const trees = s.obstacles.filter((o) => o.kind === 'tree').sort(() => Math.random() - 0.5);
+      const want = this.entDemo ? 4 : 1, seasons = ['spring', 'summer', 'autumn', 'winter'];
+      for (const o of trees) {
+        if (this.ents.length >= want) break;
+        const n = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dy]) => !busy(o.tx + dx, o.ty + dy)
+          && !this.ents.some((e) => e.tx === o.tx + dx && e.ty === o.ty + dy));
         if (!n.length) continue;
         const [dx, dy] = n[Math.floor(Math.random() * n.length)];
-        this.ent = { id: o.id, dx, dy, phase: 'wake', t: 0.9, x: 0, y: 0, lift: 0, say: null };
-        return;
+        this.ents.push({ id: o.id, tx: o.tx + dx, ty: o.ty + dy, dx, dy, phase: 'wake', t: 0.9, x: 0, y: 0, lift: 0, say: null,
+          season: this.entDemo ? seasons[this.ents.length] : null });
       }
       return;
     }
-    const o = s.obstacles.find((k) => k.id === E.id);
-    if (!o) { this.ent = null; return; } // cleared by a player: the walk is over
-    E.t -= dt;
     const WALK = 1.8, next = { wake: ['walk', WALK], walk: ['look', 1.8], look: ['back', WALK], back: ['sink', 0.9], sink: [null, 0] };
-    if (E.phase === 'wake') E.lift = 5 * (1 - E.t / 0.9);
-    if (E.phase === 'sink') E.lift = 5 * (E.t / 0.9);
-    if (E.phase === 'walk') { const p = 1 - E.t / WALK; E.x = E.dx * TILE * p; E.y = E.dy * TILE * p; }
-    if (E.phase === 'back') { const p = E.t / WALK; E.x = E.dx * TILE * p; E.y = E.dy * TILE * p; }
-    if (E.phase === 'look' && !E.said) { E.said = true; E.say = ['Хм…', 'Ох, ноги затерпли', 'Гарна днина', 'Тут теж непогано', 'Шшш…'][Math.floor(Math.random() * 5)]; }
-    if ((E.phase === 'wake' || E.phase === 'sink') && Math.random() < 0.5) this.parts.push({ x: o.tx * TILE + 6 + Math.random() * 12, y: o.ty * TILE + 22, vx: Math.random() * 30 - 15, vy: -30, life: 0.4, c: '#8a6248' });
-    if (E.t <= 0) {
-      const [ph, time] = next[E.phase];
-      if (!ph) { this.ent = null; return; }
-      E.phase = ph; E.t = time;
+    for (const E of this.ents) {
+      const o = s.obstacles.find((k) => k.id === E.id);
+      if (!o) { E.done = true; continue; } // cleared by a player: the walk is over
+      E.t -= dt;
+      if (E.phase === 'wake') E.lift = 5 * (1 - E.t / 0.9);
+      if (E.phase === 'sink') E.lift = 5 * (E.t / 0.9);
+      if (E.phase === 'walk') { const p = 1 - E.t / WALK; E.x = E.dx * TILE * p; E.y = E.dy * TILE * p; }
+      if (E.phase === 'back') { const p = E.t / WALK; E.x = E.dx * TILE * p; E.y = E.dy * TILE * p; }
+      if (E.phase === 'look' && !E.said) { E.said = true; E.say = ['Хм…', 'Ох, ноги затерпли', 'Гарна днина', 'Тут теж непогано', 'Шшш…'][Math.floor(Math.random() * 5)]; }
+      if ((E.phase === 'wake' || E.phase === 'sink') && Math.random() < 0.5) this.parts.push({ x: o.tx * TILE + 6 + Math.random() * 12, y: o.ty * TILE + 22, vx: Math.random() * 30 - 15, vy: -30, life: 0.4, c: '#8a6248' });
+      if (E.t <= 0) {
+        const [ph, time] = next[E.phase];
+        if (!ph) E.done = true;
+        else { E.phase = ph; E.t = time; }
+      }
     }
+    this.ents = this.ents.filter((E) => !E.done);
   }
 
+  entOf(id) { return this.ents && this.ents.find((E) => E.id === id); }
+
   drawEnt(g, o, season) {
-    const E = this.ent, x = o.tx * TILE + Math.round(E.x), y = o.ty * TILE + Math.round(E.y);
+    const E = this.entOf(o.id), x = o.tx * TILE + Math.round(E.x), y = o.ty * TILE + Math.round(E.y);
+    const look = E.season || season;
     const walking = E.phase === 'walk' || E.phase === 'back';
     const step = walking ? Math.floor(performance.now() / 150) % 2 : 0;
-    const lift = Math.round(E.lift) + (walking ? 5 : E.phase === 'look' ? 5 : 0);
-    const sway = walking ? (step ? 1 : -1) : E.phase === 'wake' || E.phase === 'sink' ? Math.round(Math.sin(performance.now() / 40)) : 0;
-    ellipse(g, x + 12, y + 22, 8, 2, 'rgba(0,0,0,0.3)');
-    // little root legs
-    if (lift > 1) {
+    const up = E.phase === 'wake' || E.phase === 'sink' ? E.lift / 5 : 1; // 0..1 how far it stood up
+    const lift = Math.round(4 * up);
+    // gentle body sway while walking (every other step), a shiver while (un)rooting
+    const sway = walking ? step : (E.phase === 'wake' || E.phase === 'sink') ? Math.floor(performance.now() / 60) % 2 : 0;
+    ellipse(g, x + 12, y + 22, 9, 2, 'rgba(0,0,0,0.3)'); // its shadow stays on the ground
+    // the tree sprite has its ground shadow baked into its bottom 6 px: cut them off while lifted
+    const base = y + 23 - lift; // where the sprite's bottom is now
+    g.save();
+    if (lift > 0) { g.beginPath(); g.rect(x - 12, y - 60, TILE + 24, base - 6 - (y - 60)); g.clip(); }
+    drawObstacle(g, o, x + sway, y - lift, look);
+    g.restore();
+    // little root legs grow out of the trunk: they share the sway and step in turns
+    if (lift > 0) {
+      const lx = x + sway + 10, top = base - 8;
+      const l1 = walking && step ? 1 : 0, l2 = walking && !step ? 1 : 0; // the lifted foot
       g.fillStyle = '#5a3e2c';
-      g.fillRect(x + 9, y + 23 - lift + (step ? 1 : 0), 2, lift - (step ? 1 : 0));
-      g.fillRect(x + 13, y + 23 - lift + (step ? 0 : 1), 2, lift - (step ? 0 : 1));
-      g.fillStyle = '#8a6248'; g.fillRect(x + 8, y + 22, 3, 1); g.fillRect(x + 13, y + 22, 3, 1);
+      g.fillRect(lx, top, 2, y + 23 - top - l1);
+      g.fillRect(lx + 3, top, 2, y + 23 - top - l2);
+      g.fillStyle = '#8a6248'; // feet
+      g.fillRect(lx - 1, y + 22 - l1, 3, 1);
+      g.fillRect(lx + 3, y + 22 - l2, 3, 1);
     }
-    drawObstacle(g, o, x + sway, y - lift, season);
     // sleepy eyes on the trunk (open while it is up and about)
-    const ey = y + 15 - lift, ex = x + 10 + sway;
+    const ey = base - 11, ex = x + 9 + sway;
     const blink = E.phase === 'look' && Math.floor(performance.now() / 700) % 4 === 0;
-    g.fillStyle = '#1a1c2c'; g.fillRect(ex, ey, 2, blink ? 1 : 2); g.fillRect(ex + 3, ey, 2, blink ? 1 : 2);
-    if (!blink) { g.fillStyle = '#f4f4f4'; g.fillRect(ex, ey, 1, 1); g.fillRect(ex + 3, ey, 1, 1); }
+    g.fillStyle = '#1a1c2c'; g.fillRect(ex, ey, 2, blink ? 1 : 2); g.fillRect(ex + 4, ey, 2, blink ? 1 : 2);
+    if (!blink) { g.fillStyle = '#f4f4f4'; g.fillRect(ex, ey, 1, 1); g.fillRect(ex + 4, ey, 1, 1); }
     if (E.phase === 'look' && E.say) say(x + 12, y - lift - 18, E.say, '', '#a7f070');
   }
 

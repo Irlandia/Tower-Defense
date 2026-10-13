@@ -44,7 +44,7 @@ export function runDemoIfRequested() {
     }
   }, 400);
   if (q.has('enemies')) ['bat', 'ant', 'ant', 'shell', 'toad', 'ghost', 'sponge', 'bloater'].forEach((type, i) => s.queue.push({ type, lane: 0, at: s.tick + 5 + i * 8, hpMul: 20 })); // &enemies: one of each new type
-  if (q.has('ent')) renderer.entWait = 0.2; // &ent: a tree wakes up right away
+  if (q.has('ent')) { renderer.entDemo = true; renderer.entWait = 0.5; } // &ent: every 5 s four trees wake up, one per season look
   if (q.has('mermaid')) setTimeout(() => { const m = renderer.critters.mermaid; if (m) { m.state = 'sit'; m.t = 999; } }, 300); // &mermaid: she is out on the shore
   if (q.has('time')) s.dayStart = Math.max(0, DAY.phases.findIndex((p) => p.id === q.get('time'))); // &time=day|evening|night|dawn
   // put each tower type on a free tile next to the road

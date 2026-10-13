@@ -70,7 +70,7 @@ try {
   r.draw(se, 0.5, { me: 0 }, 0.016);
   const tree = se.obstacles.find((o) => o.kind === 'tree');
   for (const phase of ['wake', 'walk', 'look', 'back', 'sink']) {
-    r.ent = { id: tree.id, dx: 1, dy: 0, phase, t: 0.5, x: 6, y: 0, lift: 3, say: 'Хм…' };
+    r.ents = [{ id: tree.id, dx: 1, dy: 0, phase, t: 0.5, x: 6, y: 0, lift: 3, say: 'Хм…', season: 'winter' }];
     r.draw(se, 0.5, { me: 0 }, 0.016);
   }
   const m = r.critters.mermaid;
