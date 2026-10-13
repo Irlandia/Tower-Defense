@@ -448,7 +448,8 @@ Object.assign(Critters.prototype, {
     for (const p of F.sparks) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += (p.heart ? -10 : 50) * dt; p.life -= dt; }
     F.sparks = F.sparks.filter((p) => p.life > 0);
     this.updateKid(dt);
-    // farmer: walk to a spot, work there, repeat (sometimes a break at home)
+    // farmer: walk to a spot, work there, repeat (sometimes a break at home); now and then goes fishing
+    if (!this.updateFishing(dt)) {
     fm.t -= dt;
     if (fm.state === 'walk') {
       const dx = fm.tx - fm.x, dy = fm.ty - fm.y, d = Math.hypot(dx, dy);
@@ -458,6 +459,7 @@ Object.assign(Critters.prototype, {
       this.workFx(fm, dt);
       if (fm.t <= 0) this.nextSpot(fm);
     } else if (fm.t <= 0) this.nextSpot(fm);
+    }
     // dog: eats at the bowl, else trots after the farmer, sometimes sits and sniffs
     if (dog.jump > 0) dog.jump -= dt;
     if (F.bowl) {
@@ -575,13 +577,15 @@ Object.assign(Critters.prototype, {
       const x = Math.round(fm.x - 3), y = Math.round(fm.y - spr.height);
       g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(x, Math.round(fm.y), 7, 2);
       g.drawImage(spr, x, y);
-      // the season's tool in hand
+      // the season's tool in hand (or the fishing rod at the pond)
+      if (!this.drawFishing(g, x, y)) {
       const hx = fm.dir > 0 ? x + 7 : x - 3, hy = y + 6;
       const s = this.season;
       if (s === 'spring') { g.fillStyle = '#c28569'; g.fillRect(hx, hy, 3, 3); }
       if (s === 'summer') { g.fillStyle = '#41a6f6'; g.fillRect(hx, hy, 4, 3); g.fillRect(hx + (fm.dir > 0 ? 4 : -1), hy - 1, 1, 1); }
       if (s === 'autumn') { g.fillStyle = '#8a6248'; g.fillRect(hx - 1, hy + 1, 5, 3); g.fillStyle = '#ef7d57'; g.fillRect(hx, hy, 3, 1); }
       if (s === 'winter') { g.fillStyle = '#94b0c2'; g.fillRect(hx, hy - 4, 1, 8); g.fillRect(hx - 1, hy + 4, 3, 2); }
+      }
       fm.sayAt = [fm.x, y - 3]; // text is drawn later, above the night overlay (drawFarmSay)
       for (const p of F.sparks) {
         const px = Math.round(p.x), py = Math.round(p.y);
@@ -856,13 +860,15 @@ Object.assign(Critters.prototype, {
   updateKid(dt) {
     const F = this.farm;
     if (!F) return;
-    const door = { x: F.home.x, y: F.home.y + 1 };
+    // the doorstep: the bottom of the house tile itself (the tile below the house can be a road)
+    const door = { x: F.home.x, y: F.home.y - 5 };
     F.kidWait = (F.kidWait ?? (this.kidDemo ? 10 : 40 + Math.random() * 30)) - dt; // demo: first escape after 10 s
     if (!F.kid && F.kidWait <= 0) {
-      // crawl towards the side with more grass (never onto a road where monsters walk, or into the water)
-      const room = (d) => { let n = 0; while (n < 40 && !this.offGrass(door.x + d * (n + 4), door.y)) n++; return n; };
-      const dir = room(1) === room(-1) ? (Math.random() < 0.5 ? -1 : 1) : room(1) > room(-1) ? 1 : -1;
-      F.kid = { x: door.x, y: door.y, dir, t: 0, say: KID_SAY[Math.floor(Math.random() * KID_SAY.length)], sayT: 1.2 };
+      // crawl where there is most grass: 8 directions except straight up (into the house); never onto roads or water
+      const room = (vx, vy) => { let n = 0; while (n < 40 && !this.offGrass(door.x + vx * (n + 4), door.y + vy * (n + 4))) n++; return n; };
+      const dirs = [[1, 0], [-1, 0], [0, 1], [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7]].map(([vx, vy]) => ({ vx, vy, n: room(vx, vy) + Math.random() }));
+      const best = dirs.sort((a, b) => b.n - a.n)[0];
+      F.kid = { x: door.x, y: door.y, vx: best.vx, vy: best.vy, dir: best.vx >= 0 ? 1 : -1, t: 0, say: KID_SAY[Math.floor(Math.random() * KID_SAY.length)], sayT: 1.2 };
       F.mom = null;
       F.kidWait = this.kidDemo ? 5 : 55 + Math.random() * 15; // about once a minute (demo: every 5 s)
     }
@@ -870,24 +876,28 @@ Object.assign(Critters.prototype, {
     if (!kid) return;
     kid.t += dt; kid.sayT -= dt;
     // a determined little crawl, stopping short of roads and water
-    if (!kid.carried && !this.offGrass(kid.x + kid.dir * 4, kid.y)) kid.x += kid.dir * 7 * dt;
+    if (!kid.carried && !this.offGrass(kid.x + kid.vx * 4, kid.y + kid.vy * 4)) { kid.x += kid.vx * 7 * dt; kid.y += kid.vy * 7 * dt; }
     if (!F.mom && kid.t >= 4) F.mom = { x: door.x, y: door.y, dir: kid.dir, state: 'run', say: MOM_SHOUT[Math.floor(Math.random() * MOM_SHOUT.length)], sayT: 2.4 };
     const mom = F.mom;
     if (!mom) return;
     mom.sayT -= dt;
+    const go = (tx, ty, speed) => { // walk towards a point; true when there
+      const dx = tx - mom.x, dy = ty - mom.y, d = Math.hypot(dx, dy);
+      if (Math.abs(dx) > 0.5) mom.dir = dx >= 0 ? 1 : -1;
+      if (d < 1.5) return true;
+      const k = Math.min(d, speed * dt) / d;
+      mom.x += dx * k; mom.y += dy * k;
+      return false;
+    };
     if (mom.state === 'run') {
-      const dx = kid.x - mom.x;
-      mom.dir = dx >= 0 ? 1 : -1;
-      mom.x += Math.sign(dx) * Math.min(Math.abs(dx), 34 * dt);
-      if (Math.abs(dx) < 3) { mom.state = 'carry'; kid.carried = true; kid.say = null; }
+      if (go(kid.x, kid.y, 34)) { mom.state = 'carry'; kid.carried = true; kid.say = null; }
     } else if (mom.state === 'carry') {
-      const dx = door.x - mom.x;
-      mom.dir = dx >= 0 ? 1 : -1;
-      mom.x += Math.sign(dx) * Math.min(Math.abs(dx), 20 * dt);
+      const home = go(door.x, door.y, 20);
       kid.x = mom.x; kid.y = mom.y;
-      if (Math.abs(dx) < 1) { F.kid = null; F.mom = null; } // back inside
+      if (home) { F.kid = null; F.mom = null; } // back inside
     }
   },
+
 
   drawKidScene(g, it) {
     const F = this.farm;
@@ -922,3 +932,87 @@ Critters.prototype.offGrass = function (x, y) {
   const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE);
   return tx < 0 || ty < 0 || tx >= COLS || ty >= ROWS || this.map.tiles.has(tx + ',' + ty) || this.map.water.has(tx + ',' + ty);
 };
+
+// ---------- fishing: now and then the farmer takes the dog to the nearest pond ----------
+// Decoration only. Picks the closest shore spot he can walk to without stepping on a road; casts a line,
+// the bobber bobs, sometimes something bites. Then they walk home.
+const CATCH = [['Ого, карась!', '#ef7d57'], ['Щука! Ну й зубища', '#38b764'], ['Знову чобіт…', '#5a3e2c'], ['Маленька… пливи, рости', '#94b0c2'], ['Рибка на юшку!', '#ffcd75']];
+Object.assign(Critters.prototype, {
+  // a grass point beside the water reachable in a straight line from home without touching roads/water
+  fishingSpot() {
+    const F = this.farm, W = this.map.water;
+    if (!W.size || this.season === 'winter') return null; // frozen in winter
+    let best = null, bd = Infinity;
+    for (const k of W) {
+      const [wx, wy] = k.split(',').map(Number);
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const gx = wx + dx, gy = wy + dy;
+        if (this.offGrass(gx * TILE + 12, gy * TILE + 12)) continue;
+        const sx = gx * TILE + 12 - dx * 7, sy = gy * TILE + 14 - dy * 7; // on the grass, at the water's edge
+        const d = Math.hypot(sx - F.home.x, sy - F.home.y);
+        if (d >= bd) continue;
+        let clear = true; // the straight walk there must stay on grass
+        for (let s = 12 / Math.max(12, d); s <= 1 && clear; s += 6 / Math.max(6, d)) if (this.offGrass(F.home.x + (sx - F.home.x) * s, F.home.y + (sy - F.home.y) * s)) clear = false;
+        if (clear) { bd = d; best = { x: sx, y: sy, bx: wx * TILE + 12 - dx * 2, by: wy * TILE + 12, dir: -dx || 1 }; }
+      }
+    }
+    return best;
+  },
+
+  // returns true while the fishing trip owns the farmer (his normal routine pauses)
+  updateFishing(dt) {
+    const F = this.farm, fm = F.farmer;
+    if (!F.fish) {
+      F.fishWait = (F.fishWait ?? (this.fishDemo ? 3 : 70 + Math.random() * 60)) - dt;
+      if (F.fishWait > 0 || fm.state === 'work') return false;
+      F.fishWait = this.fishDemo ? 30 : 90 + Math.random() * 90;
+      const spot = this.fishingSpot();
+      if (!spot) return false;
+      F.fish = { ...spot, phase: 'go', t: 0, biteT: rnd(3, 6), catch: null };
+      fm.say = 'Піду порибалю!'; fm.sayT = 2;
+    }
+    const f = F.fish;
+    const walk = (tx, ty) => {
+      const dx = tx - fm.x, dy = ty - fm.y, d = Math.hypot(dx, dy);
+      fm.state = 'walk';
+      if (d < 1) return true;
+      fm.x += (dx / d) * Math.min(d, 12 * dt); fm.y += (dy / d) * Math.min(d, 12 * dt); fm.dir = dx >= 0 ? 1 : -1;
+      return false;
+    };
+    if (f.phase === 'go' && walk(f.x, f.y)) { f.phase = 'fish'; f.t = this.fishDemo ? 14 : rnd(18, 28); fm.dir = f.bx >= fm.x ? 1 : -1; }
+    else if (f.phase === 'fish') {
+      fm.state = 'idle'; f.t -= dt; f.biteT -= dt;
+      if (f.catch) { f.catch.t -= dt; if (f.catch.t <= 0) f.catch = null; }
+      if (f.biteT <= 0) { // a bite: something comes out of the water
+        const [text, color] = CATCH[Math.floor(Math.random() * CATCH.length)];
+        f.catch = { t: 1.2, color };
+        fm.say = text; fm.sayT = 2;
+        if (Math.random() < 0.5) { F.dog.say = 'Гав!'; F.dog.sayT = 1; F.dog.jump = 0.4; }
+        f.biteT = rnd(4, 8);
+      }
+      if (f.t <= 0) { f.phase = 'back'; fm.say = 'Додому!'; fm.sayT = 1.5; }
+    } else if (f.phase === 'back' && walk(F.home.x, F.home.y)) { F.fish = null; fm.state = 'idle'; fm.t = rnd(1, 2); }
+    return true;
+  },
+
+  // rod, line and bobber (drawn with the farmer)
+  drawFishing(g, x, y) {
+    const f = this.farm.fish;
+    if (!f || f.phase !== 'fish') return false;
+    const fm = this.farm.farmer, t = performance.now() / 1000;
+    const hx = fm.dir > 0 ? x + 6 : x, hy = y + 5; // hand
+    const tipX = hx + fm.dir * 9, tipY = hy - 8;
+    g.fillStyle = '#8a6248';
+    for (let i = 0; i <= 9; i++) g.fillRect(Math.round(hx + fm.dir * i), Math.round(hy - i * 0.9), 1, 1); // the rod
+    const bite = f.biteT < 0.6;
+    const bx = f.bx, by = f.by + (bite ? 2 : Math.round(Math.sin(t * 3)));
+    g.strokeStyle = 'rgba(244,244,244,0.7)'; g.beginPath(); g.moveTo(tipX + 0.5, tipY + 0.5); g.quadraticCurveTo((tipX + bx) / 2, Math.max(tipY, by) + 4, bx + 0.5, by + 0.5); g.stroke();
+    g.fillStyle = '#b13e53'; g.fillRect(bx - 1, by - 2, 3, 2); g.fillStyle = '#f4f4f4'; g.fillRect(bx - 1, by, 3, 1); // bobber
+    if (bite) { g.strokeStyle = 'rgba(244,244,244,0.6)'; g.beginPath(); g.ellipse(bx + 0.5, by + 2, 5, 2, 0, 0, Math.PI * 2); g.stroke(); }
+    if (f.catch) { // the catch flips in the air above the water
+      const k = 1 - f.catch.t / 1.2, cx = bx + (tipX - bx) * k, cy = by - Math.sin(Math.PI * k) * 14 + (tipY - by) * k;
+      g.fillStyle = f.catch.color; g.fillRect(Math.round(cx) - 2, Math.round(cy) - 1, 5, 2); g.fillRect(Math.round(cx) + (fm.dir > 0 ? -3 : 3), Math.round(cy) - 2, 1, 4);
+    }
+    return true;
+  },
+});

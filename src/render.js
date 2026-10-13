@@ -591,13 +591,13 @@ export class Renderer {
     const g = this.g;
     for (const lane of s.plan) {
       const L = s.map.lanes[lane];
-      g.fillStyle = 'rgba(255,205,117,0.8)';
+      g.fillStyle = 'rgba(255,205,117,0.5)'; // small and see-through: a hint, not a highlight
       for (let d = (s.tick * 1.5) % 36; d < L.total; d += 36) {
         const p = posAt(s.map, lane, d), q = posAt(s.map, lane, d + 4);
         const a = Math.atan2(q.y - p.y, q.x - p.x);
-        for (let i = -3; i <= 3; i++) {
+        for (let i = -2; i <= 2; i++) {
           const k = Math.abs(i);
-          g.fillRect(Math.round(p.x - Math.cos(a) * k - Math.sin(a) * i), Math.round(p.y - Math.sin(a) * k + Math.cos(a) * i), 2, 2);
+          g.fillRect(Math.round(p.x - Math.cos(a) * k - Math.sin(a) * i), Math.round(p.y - Math.sin(a) * k + Math.cos(a) * i), 1, 1);
         }
       }
       const sp = s.map.spawns[lane] || s.map.spawns[0];

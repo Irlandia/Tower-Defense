@@ -107,7 +107,10 @@ try {
     F.mom = t >= 2 ? { x: F.home.x + 3, y: F.home.y + 1, dir: 1, state: carried ? 'carry' : 'run', say: 'Кирилло!', sayT: 1 } : null;
     r.draw(se, 0.5, { me: 0 }, 0.016);
   }
-  out.push(`PASS decor: farm kid scene, ent (5 phases) and mermaid (${m ? 'all states' : 'no pond spot on this map'}) draw`);
+  const spotF = r.critters.fishingSpot();
+  if (F && spotF) for (const phase of ['go', 'fish', 'back']) { F.fish = { ...spotF, phase, t: 5, biteT: 0.3, catch: { t: 0.5, color: '#ef7d57' } }; r.draw(se, 0.5, { me: 0 }, 0.016); }
+  if (F) F.fish = null;
+  out.push(`PASS decor: fishing trip, farm kid scene, ent (5 phases) and mermaid (${m ? 'all states' : 'no pond spot on this map'}) draw`);
 } catch (e) { failed++; out.push('FAIL decor ' + e.stack); }
 
 // talent tree screen (src/treeui.js): renders the tree as DOM, buying and refunding redraws it
