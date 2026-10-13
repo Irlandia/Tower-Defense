@@ -47,8 +47,9 @@ bus.on('sim:events', (events) => {
   const mine = (e) => e.p === undefined || e.p === me();
   for (const e of events) {
     switch (e.type) {
-      case 'shoot': sfx.play(e.kind); break;
-      case 'zap': sfx.play('zap'); break;
+      case 'shoot': sfx.shot(e.tower || e.kind); break;
+      case 'zap': sfx.shot(e.tower || 'tesla'); break;
+      case 'pulse': sfx.shot(e.kind); break; // blizzard / inferno waves
       case 'hit': sfx.play('hit'); break;
       case 'death': sfx.play('death'); if (e.kind === 'boss' || e.kind === 'king') app.freezeUntil = performance.now() + 150; break;
       case 'explode': case 'steam': case 'barrel': sfx.play('explode'); break;

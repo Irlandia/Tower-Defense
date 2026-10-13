@@ -13,6 +13,26 @@ const PRESETS = {
   click: { type: 'square', f0: 600, f1: 600, d: 0.03, v: 0.03 },
 };
 
+// Tower shots: every tower and evolution has its own short, soft 8-bit voice built from layers.
+// tone layer: [wave, f0, f1, dur, vol, delay]; noise layer: ['noise', filterFreq, dur, vol, delay, 'highpass'|'lowpass'|'bandpass'].
+export const SHOTS = {
+  arrow: [['square', 1250, 720, 0.035, 0.016], ['triangle', 640, 520, 0.05, 0.02]], // bow twang
+  sniper: [['noise', 4000, 0.025, 0.03, 0, 'highpass'], ['square', 2100, 380, 0.07, 0.014], ['triangle', 300, 200, 0.08, 0.02]], // crack + ping
+  ranger: [['triangle', 1150, 900, 0.025, 0.02], ['triangle', 1300, 1000, 0.025, 0.018, 0.035], ['triangle', 1450, 1100, 0.025, 0.016, 0.07]], // tik-tik-tik
+  cannon: [['triangle', 150, 45, 0.18, 0.07], ['noise', 500, 0.12, 0.05, 0, 'lowpass']], // boom
+  mortar: [['sine', 95, 32, 0.32, 0.09], ['noise', 300, 0.2, 0.06, 0, 'lowpass'], ['sine', 1300, 650, 0.28, 0.008, 0.05]], // thoomp + whistle up
+  cluster: [['triangle', 170, 55, 0.14, 0.06], ['square', 900, 900, 0.02, 0.01, 0.09], ['square', 1100, 1100, 0.02, 0.01, 0.13]], // boom, pop-pop
+  frost: [['sine', 1560, 1150, 0.08, 0.03], ['sine', 2340, 2300, 0.12, 0.008, 0.01]], // ting + sparkle
+  glacier: [['triangle', 880, 700, 0.1, 0.03], ['sine', 1760, 1740, 0.22, 0.012, 0.02], ['sine', 2640, 2620, 0.18, 0.006, 0.05]], // ice bell
+  blizzard: [['noise', 3000, 0.22, 0.02, 0, 'highpass'], ['sine', 1900, 1500, 0.2, 0.008]], // cold whoosh
+  tesla: [['square', 720, 640, 0.06, 0.012], ['square', 745, 660, 0.06, 0.012], ['sawtooth', 1600, 320, 0.07, 0.01]], // bzzt
+  storm: [['sawtooth', 1900, 260, 0.1, 0.012], ['square', 520, 480, 0.09, 0.014], ['noise', 2500, 0.08, 0.02, 0, 'highpass']], // thunder-zap
+  overload: [['square', 380, 1250, 0.07, 0.014], ['triangle', 760, 2400, 0.07, 0.01]], // rising wee-u
+  fire: [['noise', 900, 0.09, 0.03, 0, 'bandpass'], ['sawtooth', 170, 115, 0.07, 0.008]], // fwoosh
+  inferno: [['noise', 1300, 0.06, 0.018, 0, 'bandpass'], ['noise', 700, 0.05, 0.012, 0.03, 'bandpass']], // crackle
+  magma: [['sine', 320, 120, 0.11, 0.04], ['sine', 480, 900, 0.06, 0.015, 0.06]], // blorp + bubble
+};
+
 export class Sfx {
   constructor() {
     this.ctx = null;
@@ -47,6 +67,35 @@ export class Sfx {
     if (name === 'gameover') return [392, 330, 262, 196].forEach((f, i) => this.tone({ type: 'square', f0: f, f1: f * 0.98, d: 0.2, v: 0.05 }, i * 0.2));
     const p = PRESETS[name];
     if (p) this.tone(p, 0);
+  }
+
+  // A tower's shot. Pitch wanders a little so a row of towers never drones, and the more shots in the
+  // last moment the quieter each one gets (a big defence stays pleasant to listen to).
+  shot(kind) {
+    const S = SHOTS[kind];
+    if (!this.ctx || this.muted || !S) return;
+    const now = this.ctx.currentTime;
+    if (this.last['shot_' + kind] && now - this.last['shot_' + kind] < 0.07) return;
+    this.last['shot_' + kind] = now;
+    this.busy = Math.max(0, (this.busy || 0) - (now - (this.busyAt || now)) * 6) + 1;
+    this.busyAt = now;
+    const damp = 1 / Math.sqrt(Math.max(1, this.busy / 2));
+    const pitch = 1 + (Math.random() * 2 - 1) * 0.04;
+    for (const L of S) {
+      if (L[0] === 'noise') this.noiseLayer(L[1] * pitch, L[2], L[3] * damp, L[4] || 0, L[5]);
+      else this.tone({ type: L[0], f0: L[1] * pitch, f1: L[2] * pitch, d: L[3], v: L[4] * damp }, L[5] || 0);
+    }
+  }
+
+  noiseLayer(freq, d, v, delay, type = 'bandpass') {
+    if (!this.noiseBuf) return;
+    const t = this.ctx.currentTime + delay;
+    const src = this.ctx.createBufferSource(), f = this.ctx.createBiquadFilter(), gn = this.ctx.createGain();
+    src.buffer = this.noiseBuf; src.loop = true;
+    f.type = type; f.frequency.setValueAtTime(freq, t);
+    gn.gain.setValueAtTime(0.0001, t); gn.gain.exponentialRampToValueAtTime(v, t + 0.004); gn.gain.exponentialRampToValueAtTime(0.0001, t + d);
+    src.connect(f).connect(gn).connect(this.ctx.destination);
+    src.start(t); src.stop(t + d + 0.02);
   }
 
   tone(p, delay) {
