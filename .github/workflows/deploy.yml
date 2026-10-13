@@ -44,6 +44,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Every release gets its own id: build.json (polled by src/client/update.js), the page's
+      # <meta name="build"> and ?v= on the entry script and stylesheet, so no stale copy survives.
+      - name: Stamp the build id
+        run: |
+          BUILD="$(git rev-parse --short HEAD)-$(date +%s)"
+          printf '{ "build": "%s" }\n' "$BUILD" > build.json
+          sed -i "s#<meta name=\"build\" content=\"dev\">#<meta name=\"build\" content=\"$BUILD\">#" index.html
+          sed -i "s#src=\"src/main.js\"#src=\"src/main.js?v=$BUILD\"#; s#href=\"style.css\"#href=\"style.css?v=$BUILD\"#; s#src=\"vendor/peerjs.min.js\"#src=\"vendor/peerjs.min.js?v=$BUILD\"#" index.html
+          # an import map gives every module its own ?v=, so nested imports can never come from an old cache
+          MAP=$(find src -name '*.js' | sort | awk -v b="$BUILD" '{ printf "%s\"./%s\": \"./%s?v=%s\"", (NR > 1 ? "," : ""), $0, $0, b }')
+          sed -i "s#<script type=\"module\" src=\"src/main.js#<script type=\"importmap\">{ \"imports\": { $MAP } }</script>\n  <script type=\"module\" src=\"src/main.js#" index.html
+          grep -c "importmap" index.html
+          grep -n "$BUILD" build.json
+
       - name: Upload via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:

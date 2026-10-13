@@ -583,3 +583,11 @@ details.camp-brief summary::-webkit-details-marker { display: none; }
 #pop .pa.pa-master:disabled { opacity: .55; }
 #pop .pa.pa-master small { color: #ffcd75; }
 .pop-stats.master-done span { color: #ffcd75; font-size: 11px; }
+/* "a new version is out" bar (src/client/update.js) */
+#updateBar {
+  position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 50;
+  display: flex; gap: 10px; align-items: center; padding: 8px 10px 8px 14px;
+  font: 700 14px Nunito, sans-serif; color: #f4f4f4; background: #3b5dc9;
+  box-shadow: inset -3px -3px 0 #29366f, inset 3px 3px 0 #41a6f6, 0 0 0 2px #1a1c2c, 0 6px 0 rgba(0,0,0,.3);
+}
+#updateBar button { background: #38b764; color: #f4f4f4; font-weight: 800; padding: 4px 12px; }

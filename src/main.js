@@ -13,6 +13,7 @@ import './client/ui/feedback.js';
 import './client/ui/endscreen.js';
 import './client/ui/menu.js';
 import './client/ui/tutorial.js';
+import './client/update.js'; // new releases reach players who keep the game open
 import { fit } from './client/ui/layout.js';
 import { buildToolbar, buildAbilities } from './client/ui/hud.js';
 import { startLoop } from './client/loop.js';

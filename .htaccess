@@ -1,13 +1,23 @@
-# Always revalidate game code: co-op players must run the exact same simulation.
+# Caching: new releases must reach players right away (co-op peers must run the exact same simulation).
+# - the page and build.json are never stored, so a returning player always gets the current release;
+# - scripts and styles may be stored but are revalidated on every load (ETag), and the release stamps
+#   main.js / style.css with ?v=<build> anyway (see .github/workflows/deploy.yml and src/client/update.js).
+FileETag MTime Size
 <IfModule mod_headers.c>
-  <FilesMatch "\.(js|css|html)$">
-    Header set Cache-Control "no-cache, must-revalidate"
+  <FilesMatch "\.(html|json)$">
+    Header set Cache-Control "no-store, no-cache, must-revalidate, max-age=0"
+    Header set Pragma "no-cache"
+    Header set Expires "0"
+  </FilesMatch>
+  <FilesMatch "\.(js|css)$">
+    Header set Cache-Control "no-cache, must-revalidate, max-age=0"
   </FilesMatch>
 </IfModule>
 <IfModule mod_expires.c>
   ExpiresActive On
+  ExpiresByType text/html "access plus 0 seconds"
+  ExpiresByType application/json "access plus 0 seconds"
   ExpiresByType application/javascript "access plus 0 seconds"
   ExpiresByType text/javascript "access plus 0 seconds"
   ExpiresByType text/css "access plus 0 seconds"
-  ExpiresByType text/html "access plus 0 seconds"
 </IfModule>

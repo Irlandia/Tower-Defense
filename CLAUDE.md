@@ -90,3 +90,4 @@ docs/                # architecture.md (контракт), net-protocol.md, code
 ## Деплой
 - Push у `main` → GitHub Actions (`.github/workflows/deploy.yml`) вивантажує гру по FTP у `/towerdefense.infinityfree.io/htdocs/` (лише змінені файли; `.claude`, `docs`, `tests`, `CLAUDE.md` не вивантажуються).
 - Секрети репозиторію: `FTP_SERVER`, `FTP_USERNAME`, `FTP_PASSWORD`.
+- Кешування: перед вивантаженням CI штампує номер збірки — `build.json`, `<meta name="build">` в index.html, `?v=` на main.js/style.css/peerjs і import map з `?v=` для кожного модуля `src/**/*.js` (старий кеш не підхопиться). `src/client/update.js` перевіряє `build.json` на старті, кожні 2 хв і при поверненні на вкладку: у меню — тихе перезавантаження, у забігу чи кооп-кімнаті — плашка «Оновити». Локально (`build: dev`) не перевіряє. `.htaccess`: html/json — no-store, js/css — no-cache.
