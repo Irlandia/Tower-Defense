@@ -12,6 +12,8 @@ import { pixelIcon, MODE_ICONS } from './icons.js';
 import { hidePop } from './popup.js';
 import { renderBestiary } from './bestiary.js';
 import { HERO, hero } from '../../say.js';
+import { renderWardrobe, avatarCode as myAvatarCode } from './wardrobe.js';
+import { mini, portrait, parse as parseAvatar, specOfNick, validCode } from '../../avatar.js';
 
 // ---------- rendering ----------
 const DIFF_NAMES = Object.fromEntries(Meta.DIFFS.map((d) => [d.id, d.name]));
@@ -104,23 +106,72 @@ export function renderMenu() {
   renderDifficulty();
   renderTree();
   if (app.menuTab === 'bestiary') renderBestiary($('bestiary'));
+  if (app.menuTab === 'wardrobe') renderWardrobe($('wardrobe'));
   for (const b of document.querySelectorAll('[data-board]')) b.classList.toggle('active', b.dataset.board === app.boardMode);
+  bus.emit('menu:tab', app.menuTab);
 }
 
-// ---------- leaderboard ----------
+// ---------- leaderboard (with the players' avatars) ----------
+const monthStart = () => { const d = new Date(); return Math.floor(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1) / 1000); };
+function avatarCode(r) {
+  // my own row always shows the current look; the others come from the server
+  const code = r.nick === app.nick && meta.avatar && meta.avatar.set ? myAvatarCode() : r.avatar;
+  return validCode(code) ? parseAvatar(code) : specOfNick(r.nick);
+}
+function avatarCell(r) {
+  const cv = document.createElement('canvas');
+  cv.width = 14; cv.height = 22; cv.className = 'lb-ava';
+  const g = cv.getContext('2d');
+  g.imageSmoothingEnabled = false;
+  g.drawImage(mini(avatarCode(r)), 0, 0, 14, 22);
+  return cv;
+}
+// 1st in the middle, 2nd left, 3rd right: each avatar stands on its own block
+function podium(rows) {
+  const el = document.createElement('div');
+  el.className = 'podium';
+  for (const i of [1, 0, 2]) {
+    const r = rows[i];
+    if (!r) continue;
+    const s = document.createElement('div');
+    s.className = `pod pod-${i + 1}${r.nick === app.nick ? ' me' : ''}`;
+    const who = document.createElement('div');
+    who.className = 'pod-who';
+    who.append(portrait(avatarCode(r), 5));
+    const block = document.createElement('div');
+    block.className = 'pod-block';
+    block.innerHTML = `<span class="pod-n">${i + 1}</span><span class="pod-name">${r.won ? '🏆 ' : ''}<b>${esc(r.nick)}</b><small>${esc(r.wave)} хв · ${DIFF_NAMES[r.diff] || ''}${r.coop ? ` · + ${esc(r.partner || 'друг')}` : ''}</small><em>${esc(r.score)}</em></span>`;
+    s.append(who, block);
+    el.append(s);
+  }
+  return el;
+}
 async function loadBoard() {
   const el = $('board');
+  const month = app.boardPeriod !== 'all' && app.boardMode !== 'brawl';
+  for (const b of document.querySelectorAll('[data-period]')) b.classList.toggle('active', (b.dataset.period === 'all') === !month);
   el.innerHTML = '<p class="hint">Завантаження…</p>';
   try {
-    const rows = await Api.scores(app.boardMode, brawlWeek(Date.now()));
+    const rows = await Api.scores(app.boardMode, brawlWeek(Date.now()), month ? monthStart() : 0);
     if (!rows.length) { el.innerHTML = '<p class="hint">Ще ніхто не зіграв у цьому режимі. Стань першим!</p>'; return; }
-    el.innerHTML = '<table><tr><th>#</th><th>Гравець</th><th>Хвиля</th><th>Склад.</th><th>Очки</th></tr>' + rows.map((r, i) => `
-      <tr class="${r.nick === app.nick ? 'me' : ''}"><td>${i + 1}</td>
-      <td>${r.won ? '🏆 ' : ''}${esc(r.nick)}${r.coop ? ` <small>+ ${esc(r.partner || 'друг')}</small>` : ''}</td>
-      <td>${esc(r.wave)}</td><td>${DIFF_NAMES[r.diff] || ''}</td><td>${esc(r.score)}</td></tr>`).join('') + '</table>';
+    const rest = rows.slice(3);
+    el.innerHTML = '';
+    el.append(podium(rows));
+    if (rest.length) {
+      const t = document.createElement('div');
+      t.innerHTML = '<table><tr><th>#</th><th></th><th>Гравець</th><th>Хвиля</th><th>Склад.</th><th>Очки</th></tr>' + rest.map((r, i) => `
+        <tr class="${r.nick === app.nick ? 'me' : ''}"><td>${i + 4}</td><td class="lb-av"></td>
+        <td>${r.won ? '🏆 ' : ''}${esc(r.nick)}${r.coop ? ` <small>+ ${esc(r.partner || 'друг')}</small>` : ''}</td>
+        <td>${esc(r.wave)}</td><td>${DIFF_NAMES[r.diff] || ''}</td><td>${esc(r.score)}</td></tr>`).join('') + '</table>';
+      t.querySelectorAll('td.lb-av').forEach((td, i) => td.append(avatarCell(rest[i])));
+      el.append(t);
+    }
   } catch (e) {
     el.innerHTML = `<p class="hint">Таблиця лідерів недоступна (${esc(e.message)})</p>`;
   }
+}
+for (const b of document.querySelectorAll('[data-period]')) {
+  b.addEventListener('click', () => { app.boardPeriod = b.dataset.period; renderMenu(); loadBoard(); });
 }
 for (const b of document.querySelectorAll('[data-board]')) {
   b.addEventListener('click', () => { app.boardMode = b.dataset.board; renderMenu(); loadBoard(); });
@@ -135,7 +186,7 @@ async function saveNick() {
     HERO.name = app.nick; // the story addresses the player by nickname
     $('nick').value = app.nick;
     $('nickMsg').textContent = '✓ збережено';
-    net.send({ t: 'hello', nick: app.nick, v: VERSION, perks: Meta.perks(meta) });
+    net.send({ t: 'hello', nick: app.nick, v: VERSION, perks: Meta.perks(meta), avatar: myAvatarCode() });
   } catch (e) { $('nickMsg').textContent = e.message; }
 }
 $('nickSave').addEventListener('click', saveNick);
@@ -193,6 +244,10 @@ for (const t of document.querySelectorAll('.menu-tabs [data-tab]')) {
 $('diffSel').addEventListener('change', (e) => { app.diff = e.target.value; renderMenu(); });
 $('toMenu').addEventListener('click', () => enterLobby()); // the run is kept: 'Повернутися до гри' resumes it
 
+// ---------- wardrobe ----------
+$('wardrobeBtn').addEventListener('click', () => { sfx.unlock(); sfx.play('click'); app.menuTab = 'wardrobe'; renderMenu(); });
+bus.on('menu:goto', (tab) => { app.menuTab = tab; renderMenu(); });
+
 // ---------- bus ----------
 bus.on('menu:show', () => {
   document.body.classList.add('in-menu');
@@ -216,5 +271,16 @@ bus.on('roster:changed', () => {
   const el = $('roster');
   if (!el) return;
   el.classList.toggle('hidden', !net.online);
-  el.innerHTML = app.roster.map((r) => `<span style="color:${PLAYER_COLORS[r.idx ?? r.slot] || '#fff'}">■ ${esc(r.nick || 'Гравець')}${r.slot === 0 ? ' (хост)' : ''}</span>`).join('');
+  el.replaceChildren(...app.roster.map((r) => {
+    const sp = document.createElement('span');
+    sp.style.color = PLAYER_COLORS[r.idx ?? r.slot] || '#fff';
+    const code = r.avatar || (r.slot === 0 ? myAvatarCode() : '');
+    const cv = document.createElement('canvas');
+    cv.width = 14; cv.height = 22; cv.className = 'lb-ava';
+    const g = cv.getContext('2d');
+    g.imageSmoothingEnabled = false;
+    g.drawImage(mini(validCode(code) ? parseAvatar(code) : specOfNick(r.nick || '')), 0, 0, 14, 22);
+    sp.append(cv, ` ${r.nick || 'Гравець'}${r.slot === 0 ? ' (хост)' : ''}`);
+    return sp;
+  }));
 });

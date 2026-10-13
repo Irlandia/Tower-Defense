@@ -36,8 +36,14 @@ export async function setNick(n) {
   return nick;
 }
 
-export async function scores(mode, week = 0) {
-  return (await call("scores", null, "&mode=" + encodeURIComponent(mode) + "&week=" + week)).scores;
+// since: unix seconds; 0 = all time. «Захисники місяця» pass the start of the current month.
+export async function scores(mode, week = 0, since = 0) {
+  return (await call("scores", null, "&mode=" + encodeURIComponent(mode) + "&week=" + week + (since ? "&since=" + since : ""))).scores;
+}
+
+// the wardrobe saved a new look: the honour wall shows it for this nick right away
+export async function setAvatar(code) {
+  return call('set_avatar', { avatar: code });
 }
 
 export async function addScore(row) {

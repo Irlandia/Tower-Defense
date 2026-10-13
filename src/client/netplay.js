@@ -6,6 +6,7 @@ import { validate } from './protocol.js';
 import { app, bus, net, meta, ui } from './app.js';
 import { startGame, resync, enterLobby, finishRun } from './session.js';
 import { broadcastRoster } from './roster.js';
+import { avatarCode } from './ui/wardrobe.js';
 
 
 const status = (text, kind = '') => bus.emit('net:status', text, kind);
@@ -50,7 +51,7 @@ net.onStatus = (text, kind) => {
   if (kind === 'good' && net.role === 'guest') {
     app.hostAlive = true;
     app.lastMsgAt = performance.now();
-    net.send({ t: 'hello', nick: app.nick, v: VERSION, perks: Meta.perks(meta) });
+    net.send({ t: 'hello', nick: app.nick, v: VERSION, perks: Meta.perks(meta), avatar: avatarCode() });
   }
 };
 
@@ -64,7 +65,7 @@ net.onMessage = (raw, slot) => {
       if (net.role !== 'host') break;
       if (m.v !== VERSION) { net.sendTo(slot, { t: 'mismatch', v: VERSION }); setTimeout(() => net.drop(slot), 300); break; }
       const prev = app.roster.find((r) => r.slot === slot);
-      const entry = { slot, nick: m.nick || 'Гравець', perks: m.perks || null, idx: prev ? prev.idx : undefined };
+      const entry = { slot, nick: m.nick || 'Гравець', perks: m.perks || null, avatar: m.avatar || '', idx: prev ? prev.idx : undefined };
       app.roster = [...app.roster.filter((r) => r.slot !== slot), entry];
       // a returning player gets their old seat back in the running game
       if (app.running && !app.state.over && app.slotIdx[slot] !== undefined && app.slotIdx[slot] < app.state.players.length) {

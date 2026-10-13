@@ -41,6 +41,11 @@ function fail(string $msg, int $code = 400): void {
     exit;
 }
 
+function clean_avatar($s): string {
+    // ten base-36 fields joined by dots (src/yard/avatar.js): anything else is dropped
+    return preg_match('/^[0-9a-z]{1,2}(\.[0-9a-z]{1,2}){9}$/', (string)$s) ? (string)$s : '';
+}
+
 function clean_nick($s): string {
     $s = preg_replace('/[^\p{L}\p{N} _\-.]/u', '', (string)$s);
     return mb_substr(trim($s), 0, 16);
@@ -64,15 +69,33 @@ switch ($action) {
         echo json_encode(['nick' => $nick]);
         break;
 
+    case 'set_avatar':
+        // the wardrobe saved a new look: remember it for this nick, every row of the honour wall shows it at once
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') fail('POST only', 405);
+        $av = clean_avatar($body['avatar'] ?? '');
+        if ($av === '') fail('Невірний вигляд');
+        with_json('nicks', function (&$d) use ($ipKey, $av) { if (isset($d[$ipKey])) $d[$ipKey]['avatar'] = $av; });
+        echo json_encode(['avatar' => $av]);
+        break;
+
     case 'scores':
         $mode = $_GET['mode'] ?? 'classic';
         $week = (int)($_GET['week'] ?? 0);
+        $since = max(0, (int)($_GET['since'] ?? 0)); // «захисники місяця»: only results from this moment on
         $all = with_json('scores', fn(&$d) => $d, false);
         // brawl results only count for the current week's ruleset
         $list = array_values(array_filter($all, fn($r) => ($r['mode'] ?? 'classic') === $mode
-            && ($mode !== 'brawl' || (int)($r['week'] ?? -1) === $week)));
+            && ($mode !== 'brawl' || (int)($r['week'] ?? -1) === $week)
+            && (int)($r['t'] ?? 0) >= $since));
         usort($list, fn($a, $b) => [$b['won'], $b['score'], $b['wave']] <=> [$a['won'], $a['score'], $a['wave']]);
-        $top = array_map(function ($r) { unset($r['ip']); return $r; }, array_slice($list, 0, 20));
+        $nickBook = with_json('nicks', fn(&$d) => $d, false);
+        $latest = [];
+        foreach ($nickBook as $n) { if (!empty($n['avatar'])) $latest[$n['nick'] ?? ''] = $n['avatar']; }
+        $top = array_map(function ($r) use ($latest) {
+            unset($r['ip']);
+            if (isset($latest[$r['nick'] ?? ''])) $r['avatar'] = $latest[$r['nick']];
+            return $r;
+        }, array_slice($list, 0, 20));
         echo json_encode(['scores' => $top]);
         break;
 
@@ -89,10 +112,11 @@ switch ($action) {
         $won = !empty($body['won']) && $wave >= 20;
         $row = [
             'nick' => $nick, 'mode' => $mode, 'diff' => $diff, 'wave' => $wave, 'kills' => $kills,
-            'week' => (int)($body['week'] ?? 0), 'won' => $won, 'coop' => !empty($body['coop']), 'partner' => clean_nick($body['partner'] ?? ''),
+            'week' => (int)($body['week'] ?? 0), 'won' => $won, 'coop' => !empty($body['coop']), 'partner' => clean_nick($body['partner'] ?? ''), 'avatar' => clean_avatar($body['avatar'] ?? ''),
             'score' => (int)round(($wave * 100 + $kills + ($won ? 1000 : 0)) * $diffs[$diff]),
             't' => time(),
         ];
+        if ($row['avatar'] !== '') with_json('nicks', function (&$d) use ($ipKey, $row) { if (isset($d[$ipKey])) $d[$ipKey]['avatar'] = $row['avatar']; });
         $ok = with_json('scores', function (&$d) use ($row, $ipKey) {
             // simple rate limit: one result per 20 s per IP
             foreach (array_reverse($d) as $r) {

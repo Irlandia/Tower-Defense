@@ -97,7 +97,7 @@ const BASE_ABILITIES = ['meteor', 'nova', 'wall'];
 const DEFAULT_SLOTS = [...BASE_ABILITIES, null];
 const newBuild = () => ({ tree: {}, slots: [...DEFAULT_SLOTS] });
 export function newMeta() {
-  return { v: 2, xp: 0, builds: [newBuild(), newBuild(), newBuild()], active: 0, best: {}, wins: {}, runs: 0, campaign: {}, bestiary: {} };
+  return { v: 2, xp: 0, builds: [newBuild(), newBuild(), newBuild()], active: 0, best: {}, wins: {}, runs: 0, campaign: {}, bestiary: {}, avatar: { code: '', set: false } };
 }
 
 const spentOf = (tree) => Object.values(tree).reduce((a, r) => a + r, 0);

@@ -159,6 +159,31 @@ try {
   }
   out.push("PASS fish leap + clicks" + (water ? "" : " (no pond on this map)"));
 } catch (e) { failed++; out.push("FAIL fish " + e.stack); }
+// avatar (src/avatar.js): code round-trip, clamping, every part draws, locks follow the story
+try {
+  const AV = await import('../src/avatar.js');
+  const code = AV.serialize(AV.DEFAULT);
+  if (!AV.validCode(code) || code.length > 24) throw new Error('default code invalid: ' + code);
+  const spec = { hair: 5, hairC: 7, eyes: 3, skin: 5, shirt: 3, shirtC: 9, pants: 2, pantsC: 9, hat: 5, acc: 4 };
+  if (JSON.stringify(AV.parse(AV.serialize(spec))) !== JSON.stringify(spec)) throw new Error('round trip');
+  if (JSON.stringify(AV.parse('garbage')) !== JSON.stringify(AV.DEFAULT) || AV.validCode('1.2.3') || AV.validCode('0.1.0.1.0.8.0.6.0.0;DROP')) throw new Error('bad codes must fall back');
+  const wild = AV.normalize({ hair: 99, hairC: -3, skin: 1.5, hat: 'x' });
+  if (wild.hair < 0 || wild.hair > 5 || wild.hairC < 0 || wild.hairC > 7 || wild.skin !== AV.DEFAULT.skin || wild.hat !== 0) throw new Error('normalize ' + JSON.stringify(wild));
+  let drawn = 0;
+  for (const [k, n] of AV.FIELDS) for (let v = 0; v < n; v++) {
+    const sp = { ...AV.DEFAULT, [k]: v };
+    const sc = AV.sprite(sp), mc = AV.mini(sp), sc2 = AV.mini(sp, true);
+    if (sc.width !== 18 || sc.height !== 27 || mc.width !== 7 || mc.height !== 11 || sc2.height !== 10) throw new Error('size ' + k + v);
+    drawn++;
+  }
+  if (AV.lockOf('hat', 5, { campaign: {}, level: 0 }) === null || AV.lockOf('hat', 5, { campaign: { 10: 1 }, level: 0 }) !== null) throw new Error('crown unlocks with mission 10');
+  if (AV.lockOf('hat', 0, null) !== null || AV.lockOf('hair', 3, null) !== null) throw new Error('base parts are open');
+  const rnd = AV.randomSpec(() => 0.99, { campaign: {}, level: 0 });
+  if (AV.lockOf('hat', rnd.hat, { campaign: {}, level: 0 }) || AV.lockOf('shirt', rnd.shirt, { campaign: {}, level: 0 })) throw new Error('random must respect locks');
+  if (AV.serialize(AV.specOfNick('Тарас')) !== AV.serialize(AV.specOfNick('Тарас'))) throw new Error('nick look must be stable');
+  out.push(`PASS avatar: code, locks, ${drawn} parts draw as portrait + miniature`);
+} catch (e) { failed++; out.push('FAIL avatar ' + e.stack); }
+
 out.push(failed ? `${failed} FAILED` : 'ALL PASSED');
 document.getElementById('out').textContent = out.join('\n');
 </script>

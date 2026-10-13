@@ -1,6 +1,7 @@
 // Network message validation (pure, no DOM / net access — unit-tested in tests/client.html).
 // Catalogue of messages: docs/net-protocol.md.
 import { COMMANDS } from '../sim/commands.js';
+import { validCode } from '../avatar.js';
 
 const MAX_CMDS = 64; // per tick
 const MSG_TYPES = new Set(['hello', 'cmd', 'cursor', 'ping', 'welcome', 'mismatch', 'full', 'roster', 'start', 'resync', 'tick', 'cmds', 'lobby', 'end', 'hash', 'desync']);
@@ -21,7 +22,7 @@ export function validate(m) {
   if (!isObj(m) || typeof m.t !== 'string' || !MSG_TYPES.has(m.t)) return null;
   switch (m.t) {
     case 'hello':
-      return { t: 'hello', v: m.v, nick: String(m.nick ?? '').slice(0, 16), perks: isObj(m.perks) ? m.perks : null };
+      return { t: 'hello', v: m.v, nick: String(m.nick ?? '').slice(0, 16), perks: isObj(m.perks) ? m.perks : null, avatar: validCode(m.avatar) ? m.avatar : '' };
     case 'cmd':
       return validCmd(m.cmd) ? { t: 'cmd', cmd: m.cmd } : null;
     case 'cursor':
@@ -30,7 +31,7 @@ export function validate(m) {
       return Array.isArray(m.cmds) && m.cmds.length <= MAX_CMDS && m.cmds.every(isObj) ? { t: m.t, cmds: m.cmds } : null;
     case 'roster':
       return Array.isArray(m.list) && m.list.length <= 4
-        ? { t: 'roster', list: m.list.filter(isObj).map((r) => ({ slot: r.slot, nick: String(r.nick ?? '').slice(0, 16), idx: r.idx })) }
+        ? { t: 'roster', list: m.list.filter(isObj).map((r) => ({ slot: r.slot, nick: String(r.nick ?? '').slice(0, 16), idx: r.idx, avatar: validCode(r.avatar) ? r.avatar : '' })) }
         : null;
     case 'start':
       return isNum(m.seed) && isObj(m.opts) && isInt(m.idx) ? { t: 'start', seed: m.seed, opts: m.opts, idx: m.idx, v: m.v } : null;

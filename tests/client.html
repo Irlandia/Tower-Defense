@@ -30,6 +30,8 @@ check('music: every campaign mission has its own theme', new Set(CAMP.map((m) =>
 check('music: outside the campaign the season picks the theme', songFor({ season: 'winter' }) === 'winter' && songFor({ season: 'spring', mission: null }) === 'spring');
 check('music: themes are well-formed', Object.values(SONGS).every((S) => S.bpm > 0 && S.chords.every((c) => c.length === 4) && (!S.drums || S.drums.length === 8)));
 check('validate: garbage dropped', validate(null) === null && validate('x') === null && validate({}) === null && validate({ t: 'nope' }) === null);
+check('validate: hello avatar must be a clean code', validate({ t: 'hello', nick: 'a', v: 1, avatar: '0.1.0.1.0.8.0.6.0.0' }).avatar === '0.1.0.1.0.8.0.6.0.0' && validate({ t: 'hello', nick: 'a', v: 1, avatar: '<script>' }).avatar === '' && validate({ t: 'hello', nick: 'a', v: 1 }).avatar === '');
+check('validate: roster keeps only clean avatars', validate({ t: 'roster', list: [{ slot: 0, nick: 'a', idx: 0, avatar: '0.1.0.1.0.8.0.6.0.0' }, { slot: 1, nick: 'b', idx: 1, avatar: 'x'.repeat(40) }] }).list.map((r) => r.avatar).join('|') === '0.1.0.1.0.8.0.6.0.0|');
 check('validate: cmd with known type', validate({ t: 'cmd', cmd: { type: 'place', kind: 'arrow', tx: 1, ty: 2 } })?.cmd.type === 'place');
 check('validate: cmd with unknown type dropped', validate({ t: 'cmd', cmd: { type: 'hack' } }) === null);
 check('validate: cmd prototype keys dropped', validate({ t: 'cmd', cmd: { type: 'constructor' } }) === null && validate({ t: 'cmd', cmd: { type: '__proto__' } }) === null);
@@ -63,6 +65,16 @@ check('ui: menu shown on boot', !hidden('menu'));
 check('ui: 4 mode tiles', d.querySelectorAll('.mode-tile').length === 4);
 check('ui: talent tree rendered', d.querySelectorAll('.tv-col').length === 4);
 check('ui: build bar + abilities', d.querySelectorAll('.tower-btn').length === 7 &&d.querySelectorAll('.ability').length >= 3);
+// wardrobe: opens from the 👕 button, a part can be tried on, saving stores the look and returns to «Грати»
+d.getElementById('wardrobeBtn').click();
+await wait(100);
+check('wardrobe: mirror and 10 category tabs', !!d.getElementById('wrBig') && d.querySelectorAll('.wr-tabs button').length === 10);
+d.querySelector('.wr-opt:not(.on):not(.locked)').click();
+await wait(60);
+d.getElementById('wrSave').click();
+await wait(100);
+const savedMeta = JSON.parse(frame.contentWindow.localStorage.getItem('pixeltd-meta-v2') || '{}');
+check('wardrobe: save stores the avatar and returns to the menu', !!(savedMeta.avatar && savedMeta.avatar.set && /^[0-9a-z.]+$/.test(savedMeta.avatar.code)) && !d.querySelector('.menu-tab[data-tab="play"]').classList.contains('hidden'), JSON.stringify(savedMeta.avatar));
 q('.mode-tile.mode-campaign').click();
 await wait(100);
 check('ui: campaign road', d.querySelectorAll('.camp-node').length === 10);

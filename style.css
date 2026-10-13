@@ -591,3 +591,53 @@ details.camp-brief summary::-webkit-details-marker { display: none; }
   box-shadow: inset -3px -3px 0 #29366f, inset 3px 3px 0 #41a6f6, 0 0 0 2px #1a1c2c, 0 6px 0 rgba(0,0,0,.3);
 }
 #updateBar button { background: #38b764; color: #f4f4f4; font-weight: 800; padding: 4px 12px; }
+
+/* ---- wardrobe (avatar editor) and avatars in lists ---- */
+#wardrobeBtn { padding: 6px 10px; background: #3d4870; font-size: 15px; }
+.lb-ava { width: 14px; height: 22px; image-rendering: pixelated; vertical-align: middle; }
+#board td.lb-av { width: 22px; padding: 0 2px; }
+#roster span { display: inline-flex; align-items: center; gap: 4px; }
+.wr { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 12px; }
+.wr-mirror { background: #1f2438; padding: 10px; display: flex; flex-direction: column; align-items: center; gap: 8px; box-shadow: inset -3px -3px 0 #1a1c2c, inset 3px 3px 0 #333c57; }
+.wr-glass { width: 100%; aspect-ratio: 3 / 4; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 8px; background: #2b3a5a; box-shadow: inset 0 0 0 3px #1a1c2c; }
+.wr-glass canvas { image-rendering: pixelated; width: 62%; height: auto; }
+.wr-name { font-size: 16px; color: var(--yellow); }
+.wr-minirow { display: flex; align-items: center; gap: 8px; }
+.wr-minirow canvas { image-rendering: pixelated; background: #1a1c2c; padding: 3px; }
+.wr-minirow small { color: var(--silver); font-size: 11px; line-height: 1.2; }
+.wr-panel { background: #1f2438; padding: 10px; display: flex; flex-direction: column; gap: 10px; min-width: 0; box-shadow: inset -3px -3px 0 #1a1c2c, inset 3px 3px 0 #333c57; }
+.wr-tabs { display: flex; flex-wrap: wrap; gap: 4px; }
+.wr-tabs button, .wr-actions button { font-size: 13px; padding: 6px 9px; background: #2a3150; }
+.wr-tabs button.on { background: #566c86; color: var(--yellow); }
+.wr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 6px; }
+.wr-opt { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 4px; background: #2f3758; min-height: 62px; justify-content: center; }
+.wr-opt canvas { image-rendering: pixelated; }
+.wr-opt small { font-size: 10px; color: var(--white); text-align: center; line-height: 1.1; }
+.wr-opt i { width: 32px; height: 32px; box-shadow: inset 0 0 0 3px rgba(0, 0, 0, .35); }
+.wr-opt.on { box-shadow: 0 0 0 2px var(--yellow); }
+.wr-opt.locked { opacity: .5; }
+.wr-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.wr-actions .primary { background: var(--green); }
+.wr-hint { color: var(--silver); }
+.board-tabs { flex-wrap: wrap; align-items: center; }
+.board-sep { flex: 1 1 20px; }
+@media (max-width: 760px) { .wr { grid-template-columns: 1fr; } }
+
+/* leaderboard podium: avatars stand right on blocks 2-1-3 */
+#board { max-height: none; }
+.podium { display: flex; justify-content: center; align-items: flex-end; gap: 8px; padding: 10px 0 14px; }
+.pod { display: flex; flex-direction: column; align-items: center; width: 31%; max-width: 200px; }
+.pod-who canvas { image-rendering: pixelated; display: block; margin-bottom: -1px; }
+.pod-block { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px 4px 8px; color: #1a1c2c;
+  box-shadow: inset -4px -4px 0 rgba(0, 0, 0, .3), inset 4px 4px 0 rgba(255, 255, 255, .35); }
+.pod-n { font-size: 30px; font-weight: 800; line-height: 1; }
+.pod-name { display: flex; flex-direction: column; align-items: center; text-align: center; line-height: 1.2; }
+.pod-name b { font-size: 15px; word-break: break-word; }
+.pod-name small { font-size: 11px; }
+.pod-name em { font-style: normal; font-weight: 800; font-size: 13px; }
+.pod-1 .pod-block { min-height: 140px; background: #ffcd75; }
+.pod-2 .pod-block { min-height: 112px; background: #94b0c2; }
+.pod-3 .pod-block { min-height: 96px; background: #c28569; }
+.pod.me .pod-block { box-shadow: inset -4px -4px 0 rgba(0, 0, 0, .3), inset 4px 4px 0 rgba(255, 255, 255, .35), 0 0 0 3px var(--cyan); }
+#board .pod-name small { color: #1a1c2c; opacity: .8; }
+#board .pod-name b { color: #1a1c2c; }

@@ -34,6 +34,7 @@ export const app = {
   selectedMission: 1,
   menuTab: 'play',
   boardMode: 'classic',
+  boardPeriod: 'month', // leaderboard: this month / all time
   bestiaryPick: null, // boss key shown in the bestiary details
   nick: '',
   // run control

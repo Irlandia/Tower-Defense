@@ -30,6 +30,7 @@
                 <span class="nick-ico">👤</span>
                 <input id="nick" maxlength="16" placeholder="Твій нік" autocomplete="off">
                 <button id="nickSave" title="Зберегти нік">✓</button>
+                <button id="wardrobeBtn" title="Шафа: змінити вигляд героя">👕</button>
               </div>
               <small id="nickMsg" class="hint"></small>
               <div class="xp-badge">Рівень <b id="lvl">0</b> <span id="xpLine"></span></div>
@@ -93,9 +94,14 @@
             <div id="bestiary"></div>
           </section>
 
+          <!-- WARDROBE: the avatar editor -->
+          <section class="menu-tab hidden" data-tab="wardrobe">
+            <div id="wardrobe"></div>
+          </section>
+
           <!-- LEADERBOARD -->
           <section class="menu-tab hidden" data-tab="board">
-            <div class="tabs board-tabs"><button data-board="classic">Класика</button><button data-board="circle">Коло</button><button data-board="brawl">Бійка тижня</button></div>
+            <div class="tabs board-tabs"><button data-board="classic">Класика</button><button data-board="circle">Коло</button><button data-board="brawl">Бійка тижня</button><span class="board-sep"></span><button data-period="month">Цього місяця</button><button data-period="all">Весь час</button></div>
             <div id="board"></div>
           </section>
         </div>

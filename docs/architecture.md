@@ -97,6 +97,7 @@
 - `popup.js` — меню вежі/перешкоди на карті.
 - `menu.js` — лобі, режими, кампанія, дерево талантів, таблиця лідерів, нік, мережеві кнопки.
 - `src/treeui.js` — екран дерева талантів (DOM, викликається з `menu.js`).
+- `wardrobe.js` — вкладка «Шафа» (кнопка 👕 біля ніка): редактор аватара (`src/avatar.js`); зберігає `meta.avatar`, шле `hello.avatar` у кімнату та `set_avatar` на сервер. Лише косметика, `sim` не чіпає.
 - `bestiary.js` — вкладка «Бестіарій»: усі боси `BOSSES`, силует → портрет → рамка-медаль (найважча складність перемоги), дані `meta.bestiary`.
 - `tutorial.js` — підказки першої соло-гри (localStorage `pixeltd-tutorial-done`), підсвічує клітинку через `ui.tutorTile`.
 - `talents.js`, `endscreen.js`, `banner.js`, `feedback.js`, `overlay.js` (курсори партнерів), `icons.js`, `cursors.js`, `story.js`, `layout.js`.

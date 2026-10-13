@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Аватар — прототип «Шафа з дзеркалом»</title>
+<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=Nunito:wght@500;700;800&display=swap" rel="stylesheet">
+<style>
+  :root { --ink:#1a1c2c; --w1:#c28569; --w2:#8a6248; --w3:#5a3e2c; --yellow:#ffcd75; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:#1a1c2c; color:#f4f4f4; font-family:'Nunito',sans-serif; display:flex; flex-direction:column; align-items:center; gap:12px; padding:14px; }
+  h1 { margin:0; font:700 22px 'Pixelify Sans',monospace; color:var(--yellow); }
+  .room { width:min(980px,100%); display:grid; grid-template-columns: 340px 1fr; gap:14px; background:#c28569 repeating-linear-gradient(90deg, rgba(0,0,0,.08) 0 2px, transparent 2px 24px); padding:14px; box-shadow: inset 0 0 0 5px var(--w3); }
+  .mirror { background:#5a3e2c; padding:12px; box-shadow: inset 0 2px 0 var(--w1), 0 4px 0 rgba(0,0,0,.35); display:flex; flex-direction:column; align-items:center; gap:8px; }
+  .glass { width:100%; background: linear-gradient(135deg,#41a6f6 0 12%, #73eff7 12% 16%, #2b3a5a 16% 100%); aspect-ratio: 3/4; display:flex; align-items:flex-end; justify-content:center; padding-bottom:12px; box-shadow: inset 0 0 0 4px #3d2a1c; position:relative; }
+  canvas { image-rendering:pixelated; }
+  .names { font:700 18px 'Pixelify Sans',monospace; color:var(--yellow); }
+  .panel { background:#5a3e2c; padding:10px; box-shadow: inset 0 2px 0 var(--w1), 0 4px 0 rgba(0,0,0,.35); display:flex; flex-direction:column; gap:10px; }
+  .tabs { display:flex; flex-wrap:wrap; gap:4px; }
+  button { font:700 13px 'Pixelify Sans','Nunito',sans-serif; color:#e8c28b; background:#3d2a1c; border:0; padding:7px 10px; cursor:pointer; box-shadow: inset 0 2px 0 #6b4a36, inset 0 -2px 0 #1a1c2c; }
+  button.on { background:#ffcd75; color:#1a1c2c; box-shadow: inset 0 2px 0 #fff3c4, inset 0 -2px 0 #c9902f; }
+  .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(64px,1fr)); gap:6px; }
+  .sw { height:64px; padding:0; display:flex; align-items:center; justify-content:center; background:#8a6248; }
+  .sw.on { outline:3px solid #ffcd75; }
+  .dot { width:34px; height:34px; box-shadow: inset 0 0 0 3px rgba(0,0,0,.35); }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .wall { width:min(980px,100%); display:flex; gap:20px; align-items:flex-end; justify-content:center; background:#c28569 repeating-linear-gradient(90deg, rgba(0,0,0,.08) 0 2px, transparent 2px 24px); padding:16px; box-shadow: inset 0 0 0 5px var(--w3); flex-wrap:wrap; }
+  .frame { width:128px; border:6px solid #e8b04a; background: repeating-linear-gradient(0deg,#2b3a5a 0 4px,#334870 4px 8px); height:150px; display:flex; align-items:flex-end; justify-content:center; padding-bottom:6px; box-shadow: inset 0 0 0 2px rgba(0,0,0,.35), 0 4px 0 rgba(0,0,0,.35); }
+  .plaque { background:#5a3e2c; padding:4px 8px; text-align:center; box-shadow: inset 0 2px 0 var(--w1); margin-top:8px; }
+  .plaque b { color:var(--yellow); font:700 14px 'Pixelify Sans',monospace; display:block; }
+  small { color:#e8c28b; }
+  #code { font:700 12px monospace; background:#3d2a1c; padding:5px 8px; color:#a7f070; }
+  .note { width:min(980px,100%); font-size:14px; line-height:1.5; color:#94b0c2; }
+</style>
+</head>
+<body>
+<h1>ШАФА З ДЗЕРКАЛОМ — прототип редактора аватара</h1>
+<div class="room">
+  <div class="mirror">
+    <div class="glass"><canvas id="big" width="144" height="208"></canvas></div>
+    <div class="names" id="nm">wqeqwe</div>
+    <div class="row"><canvas id="mini" width="28" height="44" title="На карті й біля вогнища"></canvas><small>так тебе бачать на дворі й біля вогнища</small></div>
+  </div>
+  <div class="panel">
+    <div class="tabs" id="tabs"></div>
+    <div class="grid" id="opts"></div>
+    <div class="row">
+      <button id="rnd">🎲 Випадково</button>
+      <button id="undo">↶ Назад</button>
+      <button id="save">✓ Зберегти</button>
+      <span id="code"></span>
+    </div>
+    <small id="hint">Усе відкрите безкоштовно — це тільки зовнішній вигляд, на гру він не впливає.</small>
+  </div>
+</div>
+<div class="wall" id="wall"></div>
+<div class="note" id="note"></div>
+
+<script>
+const SKIN = ['#f9dcc0', '#f2c6a0', '#e8b090', '#d19a73', '#a8705a', '#7a4a38'];
+const HAIR = ['#1a1c2c', '#5a3e2c', '#8a6248', '#e8b04a', '#b13e53', '#f4f4f4', '#3b5dc9', '#38b764'];
+const EYE = ['#1a1c2c', '#3b5dc9', '#38b764', '#8a6248'];
+const CLOTH = ['#b13e53', '#ef7d57', '#ffcd75', '#a7f070', '#38b764', '#41a6f6', '#3b5dc9', '#5d275d', '#f4f4f4', '#566c86'];
+const N = {
+  hair: ['Коротка', 'Кучері', 'Коса', 'Хвіст', 'Чуб', 'Горщик'],
+  shirt: ['Сорочка', 'Вишиванка', 'Жилет', 'Светр'],
+  pants: ['Штани', 'Шаровари', 'Спідниця'],
+  hat: ['Без убору', 'Солом’яний', 'Кепка', 'Вінок', 'Вушанка', 'Корона'],
+  acc: ['Нічого', 'Окуляри', 'Вуса', 'Хустина', 'Квітка'],
+};
+const SPEC0 = { hair: 0, hairC: 1, eyes: 0, skin: 1, shirt: 1, shirtC: 8, pants: 0, pantsC: 6, hat: 0, acc: 0 };
+let spec = { ...SPEC0 }, hist = [];
+const CATS = [
+  ['hair', 'Зачіска', 'N'], ['hairC', 'Колір волосся', 'C', HAIR], ['skin', 'Шкіра', 'C', SKIN], ['eyes', 'Очі', 'C', EYE],
+  ['shirt', 'Сорочка', 'N'], ['shirtC', 'Колір сорочки', 'C', CLOTH], ['pants', 'Штани', 'N'], ['pantsC', 'Колір штанів', 'C', CLOTH],
+  ['hat', 'Головний убір', 'N'], ['acc', 'Додатки', 'N'],
+];
+let cat = 0;
+
+// ---------- the 16x24 body, layered ----------
+function paint(g, s) {
+  const R = (x, y, w, h, c) => { g.fillStyle = c; g.fillRect(x, y, w, h); };
+  const skin = SKIN[s.skin], hair = HAIR[s.hairC], eye = EYE[s.eyes], sh = CLOTH[s.shirtC], pa = CLOTH[s.pantsC], dark = '#1a1c2c';
+  const shoe = '#5a3e2c';
+  // legs / skirt
+  if (s.pants === 2) { R(4, 17, 8, 5, pa); R(5, 22, 2, 1, skin); R(9, 22, 2, 1, skin); }
+  else if (s.pants === 1) { R(3, 18, 4, 4, pa); R(9, 18, 4, 4, pa); R(4, 19, 2, 1, '#00000022'); }
+  else { R(5, 18, 3, 4, pa); R(8, 18, 3, 4, pa); }
+  R(4, 22, 4, 2, shoe); R(8, 22, 4, 2, shoe);
+  // torso + arms + hands
+  R(4, 11, 8, 8, sh); R(2, 12, 2, 6, sh); R(12, 12, 2, 6, sh);
+  R(2, 18, 2, 1, skin); R(12, 18, 2, 1, skin);
+  if (s.shirt === 1) { // vyshyvanka: white-ish linen is the colour, embroidery red/black at collar and cuffs
+    R(6, 11, 4, 1, '#b13e53'); R(7, 12, 2, 1, dark); R(2, 17, 2, 1, '#b13e53'); R(12, 17, 2, 1, '#b13e53'); R(4, 18, 8, 1, '#b13e53'); R(5, 16, 1, 1, dark); R(8, 16, 1, 1, dark); R(10, 16, 1, 1, dark);
+  } else if (s.shirt === 2) { R(5, 11, 6, 8, '#3d2a1c'); R(7, 11, 2, 8, sh); } // waistcoat over the shirt
+  else if (s.shirt === 3) { for (let y = 12; y < 19; y += 2) R(4, y, 8, 1, 'rgba(0,0,0,.25)'); }
+  R(7, 10, 2, 1, skin); // neck
+  // head
+  R(4, 2, 8, 9, skin); R(3, 6, 1, 3, skin); R(12, 6, 1, 3, skin);
+  R(6, 7, 1, 2, eye); R(9, 7, 1, 2, eye); R(5, 9, 1, 1, '#f4b6d2'); R(10, 9, 1, 1, '#f4b6d2'); R(7, 9, 2, 1, '#8f2f44');
+  // hair
+  const H = (x, y, w, h) => R(x, y, w, h, hair);
+  if (s.hair === 0) { H(3, 1, 10, 3); H(3, 4, 1, 3); H(12, 4, 1, 3); }
+  else if (s.hair === 1) { H(2, 0, 12, 4); H(2, 4, 2, 5); H(12, 4, 2, 5); H(4, 4, 2, 1); H(10, 4, 2, 1); }
+  else if (s.hair === 2) { H(3, 1, 10, 3); H(3, 4, 2, 8); H(11, 4, 2, 8); R(12, 11, 2, 8, hair); R(12, 14, 2, 1, '#b13e53'); }
+  else if (s.hair === 3) { H(3, 1, 10, 3); H(3, 4, 1, 3); H(12, 4, 1, 3); H(13, 3, 2, 3); H(14, 6, 1, 4); }
+  else if (s.hair === 4) { H(4, 2, 8, 2); H(6, 0, 3, 3); H(9, 1, 3, 1); H(11, 2, 2, 3); H(12, 5, 1, 4); } // forelock
+  else { H(3, 1, 10, 4); H(3, 5, 2, 2); H(11, 5, 2, 2); }
+  // accessory
+  if (s.acc === 1) { R(5, 6, 3, 3, 'rgba(26,28,44,.0)'); R(5, 6, 3, 1, dark); R(5, 8, 3, 1, dark); R(5, 6, 1, 3, dark); R(7, 6, 1, 3, dark); R(8, 7, 1, 1, dark); R(9, 6, 3, 1, dark); R(9, 8, 3, 1, dark); R(9, 6, 1, 3, dark); R(11, 6, 1, 3, dark); }
+  if (s.acc === 2) { R(5, 9, 6, 1, hair); R(4, 10, 2, 1, hair); R(10, 10, 2, 1, hair); }
+  if (s.acc === 3) { R(5, 11, 6, 2, '#b13e53'); R(7, 13, 2, 1, '#b13e53'); R(6, 11, 1, 1, '#f4f4f4'); R(9, 12, 1, 1, '#f4f4f4'); }
+  if (s.acc === 4) { R(11, 2, 3, 3, '#f4b6d2'); R(12, 3, 1, 1, '#ffcd75'); }
+  // hat
+  if (s.hat === 1) { R(1, 2, 14, 2, '#e8b04a'); R(4, 0, 8, 3, '#ffcd75'); R(4, 2, 8, 1, '#b13e53'); }
+  else if (s.hat === 2) { R(3, 1, 10, 3, sh === '#f4f4f4' ? '#41a6f6' : sh); R(3, 3, 12, 1, '#1a1c2c'); }
+  else if (s.hat === 3) { for (let i = 0; i < 5; i++) { R(3 + i * 2, 1 + (i % 2), 2, 2, ['#f4b6d2', '#ffcd75', '#f4f4f4', '#c9a8ff', '#ef7d57'][i]); } R(3, 2, 10, 1, '#38b764'); }
+  else if (s.hat === 4) { R(3, 0, 10, 4, '#8a6248'); R(2, 4, 2, 5, '#8a6248'); R(12, 4, 2, 5, '#8a6248'); R(4, 0, 8, 1, '#c28569'); }
+  else if (s.hat === 5) { R(4, 0, 8, 3, '#ffcd75'); R(4, -1, 1, 1, '#ffcd75'); R(7, -1, 2, 1, '#ffcd75'); R(11, -1, 1, 1, '#ffcd75'); R(7, 1, 2, 1, '#b13e53'); }
+}
+function sprite(s) { // 18x26 with a 1px dark outline, Stardew-style
+  const a = document.createElement('canvas'); a.width = 16; a.height = 25;
+  const g = a.getContext('2d'); g.translate(0, 1); paint(g, s); g.translate(0, -1);
+  const d = g.getImageData(0, 0, 16, 25).data;
+  const out = document.createElement('canvas'); out.width = 18; out.height = 27;
+  const og = out.getContext('2d');
+  const px = (x, y) => (x < 0 || y < 0 || x >= 16 || y >= 25) ? 0 : d[(y * 16 + x) * 4 + 3];
+  og.fillStyle = '#1a1c2c';
+  for (let y = -1; y < 26; y++) for (let x = -1; x < 17; x++) {
+    if (!px(x, y) && (px(x - 1, y) || px(x + 1, y) || px(x, y - 1) || px(x, y + 1))) og.fillRect(x + 1, y + 1, 1, 1);
+  }
+  og.drawImage(a, 1, 1);
+  return out;
+}
+const MINI = ['..HHH..', '.HHHHH.', '..sss..', '..sks..', '.TTTTT.', 'TTTTTTT', 's.TTT.s', '..PPP..', '..P.P..', '..P.P..', '.kk.kk.'];
+function mini(s) {
+  const c = document.createElement('canvas'); c.width = 7; c.height = 11;
+  const g = c.getContext('2d');
+  const col = { H: s.hat ? ({ 1: '#ffcd75', 2: CLOTH[s.shirtC], 3: '#38b764', 4: '#8a6248', 5: '#ffcd75' })[s.hat] : HAIR[s.hairC], s: SKIN[s.skin], k: '#1a1c2c', T: CLOTH[s.shirtC], P: CLOTH[s.pantsC] };
+  MINI.forEach((row, j) => [...row].forEach((ch, i) => { if (col[ch]) { g.fillStyle = col[ch]; g.fillRect(i, j, 1, 1); } }));
+  return c;
+}
+
+// ---------- UI ----------
+const $ = (id) => document.getElementById(id);
+function render() {
+  const big = $('big'), g = big.getContext('2d'); g.imageSmoothingEnabled = false;
+  g.clearRect(0, 0, big.width, big.height);
+  g.drawImage(sprite(spec), 0, 0, 18 * 8, 27 * 8);
+  const m = $('mini').getContext('2d'); m.imageSmoothingEnabled = false; m.clearRect(0, 0, 28, 44); m.drawImage(mini(spec), 0, 0, 28, 44);
+  $('code').textContent = 'код: ' + Object.values(spec).map((v) => v.toString(36)).join('.');
+  // tabs
+  $('tabs').innerHTML = '';
+  CATS.forEach((c, i) => { const b = document.createElement('button'); b.textContent = c[1]; b.className = i === cat ? 'on' : ''; b.onclick = () => { cat = i; render(); }; $('tabs').append(b); });
+  // options
+  const [key, , kind, pal] = CATS[cat], o = $('opts');
+  o.innerHTML = '';
+  const count = kind === 'N' ? N[key].length : pal.length;
+  for (let v = 0; v < count; v++) {
+    const b = document.createElement('button'); b.className = 'sw' + (spec[key] === v ? ' on' : '');
+    if (kind === 'C') { const d = document.createElement('div'); d.className = 'dot'; d.style.background = pal[v]; b.append(d); }
+    else { const t = { ...spec, [key]: v }; const c = document.createElement('canvas'); c.width = 18 * 2; c.height = 27 * 2; c.getContext('2d').imageSmoothingEnabled = false; c.getContext('2d').drawImage(sprite(t), 0, 0, 36, 54); c.style.height = '56px'; b.title = N[key][v]; b.append(c); b.insertAdjacentHTML('beforeend', ''); }
+    b.onclick = () => { hist.push({ ...spec }); spec[key] = v; render(); };
+    o.append(b);
+  }
+  // honour wall preview
+  $('wall').innerHTML = '';
+  [['wqeqwe', 20, 'Кошмар'], ['Остап_К', 18, 'Важка'], ['Мирослава', 15, 'Звичайна']].forEach(([n, w, d], i) => {
+    const wrap = document.createElement('div'); wrap.style.textAlign = 'center';
+    const f = document.createElement('div'); f.className = 'frame';
+    const rs = i === 0 ? spec : { ...SPEC0, hair: (i * 2) % 6, hairC: i + 2, skin: i + 1, shirtC: 3 + i, shirt: i % 4, hat: i === 2 ? 3 : 0 };
+    const c = document.createElement('canvas'); c.width = 18 * 4; c.height = 27 * 4; const cg = c.getContext('2d'); cg.imageSmoothingEnabled = false; cg.drawImage(sprite(rs), 0, 0, 72, 108); f.append(c);
+    const p = document.createElement('div'); p.className = 'plaque'; p.innerHTML = `<b>${i === 0 ? ($('nm').textContent) : n}</b><small>${w} хвиль · ${d}</small>`;
+    wrap.append(f, p); $('wall').append(wrap);
+  });
+}
+$('rnd').onclick = () => { hist.push({ ...spec }); const r = (n) => Math.floor(Math.random() * n); spec = { hair: r(6), hairC: r(8), eyes: r(4), skin: r(6), shirt: r(4), shirtC: r(10), pants: r(3), pantsC: r(10), hat: Math.random() < 0.5 ? 0 : r(6), acc: Math.random() < 0.6 ? 0 : r(5) }; render(); };
+$('undo').onclick = () => { if (hist.length) { spec = hist.pop(); render(); } };
+$('save').onclick = () => { try { localStorage.setItem('pixeltd-avatar-proto', JSON.stringify(spec)); } catch {} $('hint').textContent = 'Збережено! Дід каже: «О, {hero}, а тобі личить.»'.replace('{hero}', $('nm').textContent); };
+try { const s = JSON.parse(localStorage.getItem('pixeltd-avatar-proto') || 'null'); if (s) spec = { ...SPEC0, ...s }; } catch {}
+$('note').innerHTML = '<b>Як це читати:</b> 16×24 «портретне» тіло з 1-піксельним контуром (як у Stardew Valley), шари: ноги → тулуб → голова → волосся → додатки → убір. Праворуч — та сама людина як 7×11 «мініатюра» для двору та вогнища. Нижче — як вона виглядатиме на Стіні слави. Це заготовка арт-гейту: частини й палітри — чернетка.';
+document.fonts?.ready.then(render); render();
+</script>
+</body>
+</html>

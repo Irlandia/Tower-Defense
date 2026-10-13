@@ -3,14 +3,14 @@ import { app, bus, net, meta, me } from './app.js';
 import * as Meta from '../meta.js';
 
 export function myEntry() {
-  return { slot: 0, nick: app.nick, perks: Meta.perks(meta), idx: 0 };
+  return { slot: 0, nick: app.nick, perks: Meta.perks(meta), avatar: meta.avatar && meta.avatar.code ? meta.avatar.code : '', idx: 0 };
 }
 
 /** host: rebuild the roster with ourselves first, send it to the guests and tell the UI. */
 export function broadcastRoster() {
   if (net.role !== 'host') return;
   app.roster = [myEntry(), ...app.roster.filter((r) => r.slot > 0)];
-  net.send({ t: 'roster', list: app.roster.map(({ slot, nick, idx }) => ({ slot, nick, idx })) });
+  net.send({ t: 'roster', list: app.roster.map(({ slot, nick, idx, avatar }) => ({ slot, nick, idx, avatar })) });
   bus.emit('roster:changed');
 }
 

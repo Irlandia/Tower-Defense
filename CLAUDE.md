@@ -39,7 +39,7 @@ src/client/loop.js   # фіксований крок 20 Гц, solo/host/guest, �
 src/client/protocol.js, netplay.js, roster.js  # валідація мережевих повідомлень, обробники, склад кімнати
 src/client/debug.js  # ?demo / ?select
 src/client/summary.js# підсумок забігу з подій sim (вбивства за родинами веж, боси, картки…) — джерело для мети
-src/client/ui/*      # bestiary (книга босів), tutorial (навчання першої гри, ?tutorial), hud (+ прев'ю наступної хвилі), popup, menu, talents, endscreen, banner, input, actions, feedback, overlay, icons, cursors, story, layout
+src/client/ui/*      # wardrobe (шафа: редактор аватара), bestiary (книга босів), tutorial (навчання першої гри, ?tutorial), hud (+ прев'ю наступної хвилі), popup, menu, talents, endscreen, banner, input, actions, feedback, overlay, icons, cursors, story, layout
 src/render.js        # Canvas-рендер + juice (частинки, числа шкоди, тряска, підписи комбо)
 src/background.js    # статичний фон карти: земля за сезоном, вода, дороги з декором, печери
 vendor/peerjs.min.js # PeerJS 1.5.4 (локальна копія, без CDN)
@@ -49,6 +49,7 @@ src/net.js           # PeerJS-транспорт (кімната за 5-симв
 src/meta.js          # досвід → рівні → очки; дерево (4 гілки × 4 яруси, 3 білди), loadout здібностей → perks, складності, рекорди, бестіарій босів (localStorage pixeltd-meta-v2)
 src/treeui.js        # екран дерева талантів (DOM): гілки, білди, слоти Q/W/E/R
 src/critters.js      # декоративні тварини: тільки рендер, не впливають на гру
+src/avatar.js        # аватар гравця: 10 виборів → портрет 16×24 і мініатюра 7×11, код ≤ 24 символи; лише косметика (docs/avatar.md)
 src/api.js           # клієнт api/api.php: нік за IP + таблиця лідерів
 api/api.php          # PHP: ніки (за хешем IP) і результати ігор у api/data/*.json (закрито .htaccess)
 tests/sim.html       # тести детермінізму + баланс-бот
