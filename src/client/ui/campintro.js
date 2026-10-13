@@ -66,63 +66,99 @@ function swamp(g, t) {
   if (Math.floor(t * 4) % 2) { g.fillStyle = '#f4f4f4'; g.fillRect(140, 30, 1, 10); g.fillRect(141, 40, 1, 8); } // a flash of lightning
 }
 
-// Left: the farm, Дід Панас carries logs and builds a dam across the stream; a pond fills, the field greens.
-// A hill in the middle. Right: past the hill the stream runs dry, the swamp shrinks to cracked mud, a sad slime.
+// «Багато літ тому», read left to right: a stream fills the pond, a channel waters the field; Дід Панас
+// stands by the dam he is building; a path runs under a big green hill; beyond it the swamp has dried into
+// cracked mud with dead reeds and a puzzled slime. The right side fades to a dry, yellow haze.
 function dam(g, t) {
-  const k = Math.min(1, t / 3); // how far the dam is built
-  // sky and far hills
-  g.fillStyle = '#73eff7'; g.fillRect(0, 0, W, 60);
-  g.fillStyle = '#ffcd75'; g.fillRect(24, 10, 12, 12); g.fillStyle = '#fff4d6'; g.fillRect(26, 12, 4, 4);
-  g.fillStyle = '#38b764'; g.fillRect(0, 56, W, H - 56); // ground
-  // the hill in the middle that hides the swamp from the farm
-  g.fillStyle = '#257179'; g.beginPath(); g.moveTo(126, 84); g.quadraticCurveTo(151, 22, 176, 84); g.closePath(); g.fill();
-  g.fillStyle = '#2f9e57'; g.beginPath(); g.moveTo(130, 84); g.quadraticCurveTo(151, 30, 172, 84); g.closePath(); g.fill();
-  g.fillStyle = '#a7f070'; for (let i = 0; i < 6; i++) g.fillRect(138 + i * 5, 62 + Math.abs(i - 2.5) * 4, 2, 1); // grass on the hill
-  // ---- left: the stream comes from the left edge to the dam at x=96 ----
-  g.fillStyle = '#3b5dc9'; g.fillRect(0, 84, 96, 10);
-  g.fillStyle = '#41a6f6'; for (let i = 0; i < 6; i++) g.fillRect(((i * 17 + Math.floor(t * 20)) % 90), 87, 5, 1); // ripples
-  // the pond grows behind the dam
-  const pond = Math.round(4 + k * 10);
-  g.fillStyle = '#3b5dc9'; g.fillRect(60, 84 - pond, 36, pond);
-  g.fillStyle = '#41a6f6'; g.fillRect(62, 84 - pond, 30, 1);
-  // the field: wheat that grows as the water arrives
-  for (let i = 0; i < 9; i++) {
-    const h = 3 + Math.round(k * 6), x = 8 + i * 6;
-    g.fillStyle = '#5a3e2c'; g.fillRect(x - 1, 79, 4, 2);
-    g.fillStyle = k > 0.5 ? '#a7f070' : '#c9a046'; g.fillRect(x, 79 - h, 2, h);
-    if (k > 0.7) { g.fillStyle = '#ffcd75'; g.fillRect(x, 78 - h, 2, 2); }
+  const k = Math.min(1, t / 3); // 0 → 1: the dam goes up, the swamp dries
+  const P = (x, y, w, h, c) => { g.fillStyle = c; g.fillRect(Math.round(x), Math.round(y), w, h); };
+  const ell = (cx, cy, rx, ry, c) => { g.fillStyle = c; g.beginPath(); g.ellipse(cx, cy, Math.max(0.5, rx), Math.max(0.5, ry), 0, 0, Math.PI * 2); g.fill(); };
+  // banded sky
+  const SKY = ['#3b8fd9', '#41a6f6', '#5ab4f4', '#6fc2f2', '#86cff0', '#9fdcef', '#b5e6ef', '#c9eeee'];
+  SKY.forEach((c, i) => P(0, i * 7, W, 7, c));
+  // the sun with a glow
+  g.globalAlpha = 0.35; ell(24, 22, 13, 13, '#fff4d6'); g.globalAlpha = 1;
+  ell(24, 22, 9, 9, '#ffcd75'); ell(23, 21, 6, 6, '#ffe9a8'); ell(22, 20, 3, 3, '#fff4d6');
+  // clouds drifting
+  for (const [cx, cy, w] of [[62, 10, 14], [130, 8, 16], [98, 20, 10]]) {
+    const x = cx + ((t * 3) % 12); P(x, cy, w, 3, '#f4f4f4'); P(x + 2, cy - 2, w - 6, 2, '#f4f4f4'); P(x, cy + 3, w, 1, '#c9eeee');
   }
-  // the dam: logs stacked one by one
-  const logs = Math.min(5, Math.floor(k * 5.99));
-  for (let i = 0; i < logs; i++) { g.fillStyle = '#8a6248'; g.fillRect(94, 92 - i * 5, 8, 4); g.fillStyle = '#5a3e2c'; g.fillRect(94, 95 - i * 5, 8, 1); g.fillStyle = '#c28569'; g.fillRect(94, 92 - i * 5, 2, 4); }
-  // Дід Панас (big, straw hat, white beard) carries a log towards the dam, then stands proud
-  const carry = k < 1, px = carry ? 108 + Math.round(Math.sin(t * 3) * 5) : 106, py = 61 + (carry ? bob(t, 1.2) : 0); // on the bank right of the dam
-  const P = (x, y, w, h, c) => { g.fillStyle = c; g.fillRect(px + x, py + y, w, h); };
-  P(-1, 0, 12, 2, '#e8b04a'); P(2, -3, 6, 3, '#ffcd75'); // straw hat
-  P(2, 2, 6, 5, '#f2c6a0'); P(3, 4, 1, 1, '#1a1c2c'); P(6, 4, 1, 1, '#1a1c2c'); // face, eyes
-  P(2, 6, 6, 3, '#f4f4f4'); // white beard
-  P(1, 9, 8, 7, '#b13e53'); P(3, 9, 4, 7, '#3b5dc9'); // red shirt, blue overalls
-  P(2, 16, 2, 5, '#3b5dc9'); P(6, 16, 2, 5, '#3b5dc9'); P(1, 21, 3, 1, '#5a3e2c'); P(6, 21, 3, 1, '#5a3e2c'); // legs, boots
-  if (carry) { P(-4, 7, 18, 3, '#8a6248'); P(-4, 7, 2, 3, '#c28569'); } // the log on his shoulder
-  else if (Math.floor(t * 3) % 2) P(10, 6, 2, 3, '#f2c6a0'); // waving: done!
-  // ---- right: beyond the hill the stream dries out, the swamp turns to cracked mud ----
-  const dry = k;
-  g.fillStyle = '#a8805e'; g.fillRect(172, 84, 68, 10); // the dry stream bed
-  g.globalAlpha = 1 - dry; g.fillStyle = '#3b5dc9'; g.fillRect(172, 84, 68, 10); g.globalAlpha = 1;
-  const sw = Math.round(46 * (1 - dry * 0.75)); // the swamp shrinks
-  g.fillStyle = '#8a6248'; g.fillRect(182, 66, 54, 18); // mud
-  g.fillStyle = '#5a3e2c'; for (let i = 0; i < 9; i++) { const x = 184 + (i * 13) % 48, y = 68 + (i * 7) % 14; g.fillRect(x, y, 6, 1); g.fillRect(x + 5, y, 1, 3); } // cracks
-  g.fillStyle = '#257179'; g.fillRect(209 - sw / 2, 70, sw, 10); g.fillStyle = '#5d275d'; g.fillRect(209 - sw / 2, 70, sw, 2);
-  g.fillStyle = '#1a1c2c'; g.fillRect(186, 58, 1, 8); g.fillRect(232, 60, 1, 6); g.fillStyle = '#5a3e2c'; g.fillRect(185, 56, 3, 3); g.fillRect(231, 58, 3, 3); // dry reeds
-  // a sad slime looking at the mud, with a question mark
-  const s = SPRITES.slime;
-  g.drawImage(s, 200, 82 - s.height + (dry > 0.6 ? 1 : bob(t)));
-  if (dry > 0.5) { g.fillStyle = '#f4f4f4'; g.fillRect(212, 58, 4, 1); g.fillRect(215, 59, 1, 2); g.fillRect(213, 61, 2, 1); g.fillRect(213, 63, 2, 2); } // «?»
-  if (dry > 0.8) { g.fillStyle = '#73eff7'; g.fillRect(203, 74 + Math.floor(t * 6) % 4, 1, 2); } // a tear
-  // the old-photo look: sepia wash, a frame and grain
-  g.fillStyle = 'rgba(194,133,105,0.22)'; g.fillRect(0, 0, W, H);
-  g.fillStyle = 'rgba(26,28,44,0.45)'; g.fillRect(0, 0, W, 9); g.fillRect(0, H - 9, W, 9); g.fillRect(0, 0, 4, H); g.fillRect(W - 4, 0, 4, H);
-  g.fillStyle = 'rgba(244,244,244,0.12)'; for (let i = 0; i < 18; i++) g.fillRect((i * 97 + Math.floor(t * 30) * 13) % W, (i * 61 + Math.floor(t * 30) * 7) % H, 1, 1);
+  // far hills
+  g.fillStyle = '#7cc48c'; g.beginPath(); g.moveTo(0, 54); g.quadraticCurveTo(25, 44, 50, 52); g.quadraticCurveTo(80, 40, 110, 52); g.quadraticCurveTo(150, 42, 190, 52); g.quadraticCurveTo(215, 44, 240, 50); g.lineTo(240, 60); g.lineTo(0, 60); g.fill();
+  // the meadow
+  P(0, 58, W, H - 58, '#4fc26a'); P(0, 58, W, 1, '#a7f070');
+  for (let i = 0; i < 40; i++) P((i * 47) % 170, 62 + (i * 13) % 40, 1, 2, '#38b764'); // grass blades
+  // the stream winds in from the left into the pond
+  g.strokeStyle = '#3b5dc9'; g.lineWidth = 3; g.beginPath(); g.moveTo(0, 59); g.quadraticCurveTo(14, 58, 20, 62); g.quadraticCurveTo(26, 65, 34, 65); g.stroke(); g.lineWidth = 1;
+  P(4, 59, 5, 1, '#73eff7');
+  // the pond fills as the dam rises
+  const pr = 15 + k * 4;
+  ell(50, 67, pr + 1, 7.5 + k, '#29366f'); ell(50, 66, pr, 7 + k, '#3b5dc9');
+  for (let i = 0; i < 4; i++) P(40 + i * 6 + Math.round(Math.sin(t * 2 + i) * 2), 63 + (i % 2) * 4, 4, 1, '#73eff7');
+  // a channel from the pond waters the field
+  P(39, 73, 2, 9, '#3b5dc9'); P(39, 73, 1, 9, '#73eff7');
+  P(0, 82, 66, H - 82, '#5a3e2c'); // tilled field
+  for (let r = 0; r < 5; r++) for (let i = 0; i < 11; i++) {
+    const x = 3 + i * 6, y = 86 + r * 5, h = 1 + Math.round(k * 2);
+    P(x - 1, y + 1, 5, 1, '#3d2a1e');
+    P(x, y - h, 1, h + 1, '#a7f070'); P(x + 2, y - h, 1, h + 1, k > 0.5 && (i + r) % 3 === 0 ? '#ffcd75' : '#38b764');
+  }
+  // the dam: a bundle of upright logs with two bands, growing from the bank
+  const dh = Math.round(6 + 15 * k), dx = 70, base = 78;
+  for (let i = 0; i < 4; i++) { P(dx + i * 2, base - dh, 2, dh, i % 2 ? '#8a6248' : '#a8805e'); P(dx + i * 2, base - dh, 2, 1, '#e0b089'); }
+  P(dx, base - dh + 3, 8, 1, '#5a3e2c'); if (dh > 12) P(dx, base - 4, 8, 1, '#5a3e2c');
+  P(dx - 1, base, 10, 1, '#3d2a1e');
+  // the dirt path from the dam towards the swamp, under the hill
+  P(78, 76, 110, 3, '#a8805e'); P(78, 79, 110, 1, '#8a6248');
+  for (let i = 0; i < 8; i++) P(84 + i * 13, 77, 1, 1, '#94b0c2'); // pebbles
+  // Дід Панас: straw hat, white beard, embroidered shirt, a shovel
+  const fx = 82, fy = 48, dig = Math.floor(t * 3) % 2;
+  P(fx - 3, fy + 2, 13, 2, '#e8b04a'); P(fx, fy - 1, 7, 3, '#ffcd75'); P(fx, fy + 1, 7, 1, '#b13e53'); // hat with a band
+  P(fx, fy + 4, 7, 4, '#f2c6a0'); P(fx + 1, fy + 5, 1, 1, '#1a1c2c'); P(fx + 5, fy + 5, 1, 1, '#1a1c2c');
+  P(fx, fy + 7, 7, 4, '#f4f4f4'); P(fx + 2, fy + 11, 3, 1, '#f4f4f4'); // beard
+  P(fx - 1, fy + 11, 9, 8, '#f4f4f4'); P(fx - 1, fy + 13, 9, 1, '#b13e53'); P(fx + 3, fy + 11, 1, 8, '#b13e53'); // вишиванка
+  P(fx - 2, fy + 12, 1, 5, '#f2c6a0'); // arm
+  P(fx, fy + 19, 3, 7, '#29366f'); P(fx + 4, fy + 19, 3, 7, '#29366f'); P(fx - 1, fy + 26, 4, 2, '#1a1c2c'); P(fx + 4, fy + 26, 4, 2, '#1a1c2c');
+  const sy = dig ? 2 : 0; // the shovel bobs as he digs
+  P(fx + 10, fy + 2 + sy, 1, 22, '#8a6248'); P(fx + 8, fy + 13 + sy, 3, 2, '#f2c6a0');
+  P(fx + 9, fy + 24 + sy, 3, 4, '#94b0c2'); P(fx + 9, fy + 27 + sy, 3, 1, '#566c86');
+  if (dig && k < 1) P(fx + 13, fy + 26, 2, 1, '#8a6248'); // a clod of earth
+  // the big green hill in the middle, drawn column by column so it reads as pixel art standing on the ground:
+  // a grassy, uneven top edge, a sunlit left slope with a rim light, a dithered shadow on the right, bushes at its foot
+  const HX0 = 102, HX1 = 184, HB = 78, HTOP = 34;
+  ell((HX0 + HX1) / 2, HB, (HX1 - HX0) / 2 + 4, 3, '#2f9e57'); // its shadow on the meadow
+  for (let x = HX0; x <= HX1; x++) {
+    const u = (x - HX0) / (HX1 - HX0); // 0 at the left foot, 1 at the right foot
+    const top = Math.round(HB - (HB - HTOP) * Math.pow(Math.sin(Math.PI * u), 0.75) + ((x * 7) % 3 === 0 ? 1 : 0)); // tufty edge
+    for (let y = top; y < HB; y++) {
+      const shade = u + (y - top) / 160; // further right and lower = darker
+      let c = shade < 0.42 ? '#6fd67a' : shade < 0.62 ? '#4fc26a' : shade < 0.78 ? ((x + y) % 2 ? '#4fc26a' : '#38b764') : '#38b764';
+      if (shade > 0.9 && (x + y) % 2) c = '#2f9e57';
+      P(x, y, 1, 1, c);
+    }
+    P(x, top, 1, 1, u < 0.55 ? '#a7f070' : '#4fc26a'); // rim light on the sunny side
+    P(x, top - 1, 1, 1, '#257179'); // a dark outline
+  }
+  for (const [x, y] of [[118, 58], [128, 48], [137, 44], [150, 50], [164, 58], [124, 68], [158, 66]]) { P(x, y, 2, 1, '#38b764'); P(x, y - 1, 1, 1, '#a7f070'); } // grass tufts
+  for (const [x, y, c] of [[124, 52, '#ffcd75'], [133, 46, '#f4f4f4'], [147, 56, '#ef7d57'], [156, 49, '#ffcd75'], [141, 64, '#f4f4f4'], [116, 66, '#ef7d57']]) P(x, y, 1, 1, c); // flowers
+  for (const bx of [100, 108, 176, 186]) { ell(bx, HB - 2, 5, 3, '#2f9e57'); ell(bx - 1, HB - 3, 3, 2, '#38b764'); } // bushes at its foot
+  // the path passes in front of the hill
+  P(78, 76, 110, 3, '#a8805e'); P(78, 79, 110, 1, '#8a6248');
+  for (let i = 0; i < 8; i++) P(84 + i * 13, 77, 1, 1, '#94b0c2');
+  // the dried swamp on the right
+  ell(206, 82, 33, 10, '#6b4a36'); ell(206, 81, 32, 9, '#8a6248');
+  for (let i = 0; i < 14; i++) { const x = 180 + (i * 17) % 52, y = 76 + (i * 7) % 11; P(x, y, 5, 1, '#5a3e2c'); P(x + 4, y, 1, 2, '#5a3e2c'); P(x + 2, y - 2, 1, 2, '#5a3e2c'); }
+  const wet = 1 - k; // the last puddle shrinks
+  ell(214, 86, 9 * wet + 1, 2 * wet + 0.5, '#257179'); ell(213, 85.5, 6 * wet, 1 * wet, '#38b764');
+  for (const [x, h] of [[184, 14], [190, 10], [222, 16], [228, 11], [234, 13]]) { P(x, 82 - h, 1, h, '#5a3e2c'); P(x - 1, 82 - h, 3, 4, '#8a6248'); } // dead cattails
+  P(236, 56, 1, 24, '#5a3e2c'); P(232, 60, 4, 1, '#5a3e2c'); P(231, 58, 1, 2, '#5a3e2c'); P(237, 64, 3, 1, '#5a3e2c'); P(239, 62, 1, 2, '#5a3e2c'); // a dead tree
+  const s = SPRITES.slime, sx = 194, sy2 = 84 - s.height;
+  g.drawImage(s, sx, sy2 + (k > 0.6 ? 1 : bob(t)));
+  if (k > 0.4) { P(sx + 6, sy2 - 9, 4, 1, '#f4f4f4'); P(sx + 9, sy2 - 8, 1, 2, '#f4f4f4'); P(sx + 7, sy2 - 6, 2, 1, '#f4f4f4'); P(sx + 7, sy2 - 4, 2, 1, '#f4f4f4'); } // «?»
+  if (k > 0.7) P(sx + 15, sy2 + 1 + (Math.floor(t * 5) % 3), 1, 2, '#73eff7'); // a drop of sweat
+  // the dry haze over the right side
+  const hz = g.createLinearGradient(165, 0, 240, 0); hz.addColorStop(0, 'rgba(201,160,70,0)'); hz.addColorStop(1, `rgba(201,160,70,${(0.2 + 0.25 * k).toFixed(2)})`);
+  g.fillStyle = hz; g.fillRect(165, 0, 75, H);
 }
 
 // The valley from above, drawn like a little game map: the swamp and its King on the left, two winding roads,
@@ -185,8 +221,21 @@ function map(g, t) {
 function finale(g, t) {
   const k = Math.min(1, t / 3);
   g.fillStyle = '#29366f'; g.fillRect(0, 0, W, H);
-  g.fillStyle = `rgba(239,125,87,${(0.25 + 0.5 * k).toFixed(2)})`; g.fillRect(0, 40, W, 40); // dawn
-  g.fillStyle = '#ffcd75'; g.beginPath(); g.arc(186, 80 - k * 16, 16, Math.PI, 0); g.fill(); // the sun rises beside the castle
+  // a banded dawn sky: night blue at the top warming to orange at the horizon (warmer as the sun rises)
+  const DAWN = ['#29366f', '#33397a', '#4a3f84', '#6a4886', '#8f5482', '#b2617a', '#d27270', '#ea8466'];
+  DAWN.forEach((c, i) => { g.fillStyle = c; g.fillRect(0, i * 10, W, 10); });
+  g.fillStyle = `rgba(41,54,111,${(0.45 * (1 - k)).toFixed(2)})`; g.fillRect(0, 0, W, 80); // still dark before the sun is up
+  // a big sunset sun rising clear of the wall: a soft glow, a two-tone disc and the classic pixel stripes
+  const sx = 186, sy = 86 - k * 34, R = 15;
+  const glow = g.createRadialGradient(sx, sy, R * 0.6, sx, sy, R * 2.6);
+  glow.addColorStop(0, 'rgba(255,205,117,0.55)'); glow.addColorStop(1, 'rgba(239,125,87,0)');
+  g.fillStyle = glow; g.fillRect(sx - R * 3, sy - R * 3, R * 6, R * 6);
+  g.save(); g.beginPath(); g.arc(sx, sy, R, 0, Math.PI * 2); g.clip();
+  g.fillStyle = '#ffcd75'; g.fillRect(sx - R, sy - R, R * 2, R * 2);
+  g.fillStyle = '#ffe9a8'; g.fillRect(sx - R, sy - R, R * 2, R * 0.7); // a brighter top
+  g.fillStyle = '#ef7d57'; g.fillRect(sx - R, sy + R * 0.35, R * 2, R); // warmer bottom
+  for (let i = 0; i < 4; i++) { g.fillStyle = 'rgba(177,62,83,0.9)'; g.fillRect(sx - R, Math.round(sy + R * 0.25 + i * 3.5), R * 2, 1 + (i >> 1)); } // stripes
+  g.restore();
   g.fillStyle = '#1a1c2c'; g.fillRect(0, 78, W, H - 78); // the castle wall in silhouette
   for (let x = 0; x < W; x += 12) g.fillRect(x, 74, 7, 4);
   g.fillRect(100, 52, 40, 30); g.fillRect(96, 46, 8, 10); g.fillRect(136, 46, 8, 10);
