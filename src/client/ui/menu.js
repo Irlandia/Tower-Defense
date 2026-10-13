@@ -14,6 +14,7 @@ import { renderBestiary } from './bestiary.js';
 import { HERO, hero } from '../../say.js';
 import { renderWardrobe, avatarCode as myAvatarCode } from './wardrobe.js';
 import { mini, portrait, parse as parseAvatar, specOfNick, validCode } from '../../avatar.js';
+import { showCampaignIntro } from './campintro.js';
 
 // ---------- rendering ----------
 const DIFF_NAMES = Object.fromEntries(Meta.DIFFS.map((d) => [d.id, d.name]));
@@ -38,7 +39,10 @@ function renderModes() {
     b.className = `mode-tile mode-${t.id}` + (app.mode === t.id ? ' active' : '');
     b.innerHTML = `<span class="mt-ico"></span><b>${t.name}</b><small>${esc(t.sub)}</small>`;
     b.querySelector('.mt-ico').append(pixelIcon(MODE_ICONS[t.id]));
-    b.addEventListener('click', () => { app.mode = t.id; renderMenu(); });
+    b.addEventListener('click', () => {
+      if (t.id === 'campaign' && app.mode !== 'campaign') showCampaignIntro(); // a short story when entering the campaign
+      app.mode = t.id; renderMenu();
+    });
     ml.append(b);
   }
   const info = $('modeInfo');

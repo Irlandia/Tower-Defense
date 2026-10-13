@@ -39,7 +39,7 @@ src/client/loop.js   # фіксований крок 20 Гц, solo/host/guest, �
 src/client/protocol.js, netplay.js, roster.js  # валідація мережевих повідомлень, обробники, склад кімнати
 src/client/debug.js  # ?demo / ?select
 src/client/summary.js# підсумок забігу з подій sim (вбивства за родинами веж, боси, картки…) — джерело для мети
-src/client/ui/*      # wardrobe (шафа: редактор аватара), bestiary (книга босів), tutorial (навчання першої гри, ?tutorial), hud (+ прев'ю наступної хвилі), popup, menu, talents, endscreen, banner, input, actions, feedback, overlay, icons, cursors, story, layout
+src/client/ui/*      # campintro (заставка кампанії: 6 піксельних сцен ~24 с, можна пропустити), wardrobe (шафа: редактор аватара), bestiary (книга босів), tutorial (навчання першої гри, ?tutorial), hud (+ прев'ю наступної хвилі), popup, menu, talents, endscreen, banner, input, actions, feedback, overlay, icons, cursors, story, layout
 src/render.js        # Canvas-рендер + juice (частинки, числа шкоди, тряска, підписи комбо)
 src/background.js    # статичний фон карти: земля за сезоном, вода, дороги з декором, печери
 vendor/peerjs.min.js # PeerJS 1.5.4 (локальна копія, без CDN)

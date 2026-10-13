@@ -78,6 +78,10 @@ check('wardrobe: save stores the avatar and returns to the menu', !!(savedMeta.a
 q('.mode-tile.mode-campaign').click();
 await wait(100);
 check('ui: campaign road', d.querySelectorAll('.camp-node').length === 10);
+check('ui: choosing the campaign plays its short story', !!d.getElementById('campIntro'));
+d.querySelector('#campIntro .ci-skip')?.click();
+await wait(50);
+check('ui: the story can be skipped', !d.getElementById('campIntro'));
 q('.mode-tile.mode-classic').click();
 d.getElementById('playSolo').click();
 await wait(400);
