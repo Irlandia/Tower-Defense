@@ -96,6 +96,16 @@ check('ui: back to menu with resume', !hidden('menu') && !hidden('resume'), 'men
 d.getElementById('resume').click();
 await wait(600);
 check('ui: resume hides menu', hidden('menu'));
+// the hero card shows the saved look (regression: the code string used to be drawn as the default look)
+{
+  const hero = () => d.querySelector('#heroAv canvas').toDataURL();
+  const before = hero();
+  const M = A.meta, old = M.avatar;
+  M.avatar = { code: '1.3.0.1.1.2.0.6.1.0', set: true };
+  A.bus.emit('avatar:saved');
+  check('ui: hero card redraws with the saved avatar', hero() !== before);
+  M.avatar = old; A.bus.emit('avatar:saved');
+}
 // tower popup must not hang over the end screen / the next level
 {
   const s = A.app.state, P = await frame.contentWindow.eval("import('/src/client/ui/popup.js')"), SS = await frame.contentWindow.eval("import('/src/client/session.js')");

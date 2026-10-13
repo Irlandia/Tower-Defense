@@ -256,9 +256,11 @@ function renderHero() {
   heroKey = code;
   const box = $('heroAv');
   box.querySelector('canvas')?.remove();
-  box.prepend(portrait(code, 2));
+  box.prepend(portrait(parseAvatar(code), 2)); // portrait() takes a spec, not the code string
 }
 $('heroAv').addEventListener('click', () => { sfx.unlock(); sfx.play('click'); app.menuTab = 'wardrobe'; renderMenu(); });
+// the wardrobe saved a new look: redraw the hero right away (the HUD one redraws itself on the next frame)
+bus.on('avatar:saved', () => { heroKey = ''; renderHero(); });
 // the logo letters bob in a wave
 for (const el of [$('menu').querySelector('h1')]) {
   const wave = (node, start) => [...node.childNodes].reduce((i, n) => {

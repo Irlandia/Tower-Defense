@@ -13,7 +13,7 @@ import { openTalent, renderTalent } from './talents.js';
 import { updatePop } from './popup.js';
 import { sideProgress } from './story.js';
 import { avatarCode as myAvatarCode } from './wardrobe.js';
-import { mini } from '../../avatar.js';
+import { mini, parse as parseAvatar } from '../../avatar.js';
 
 let infoKey = '';
 export function resetInfo() { infoKey = ''; }
@@ -214,5 +214,5 @@ function drawHudAvatar() {
   const c = $('hudAv'), g = c.getContext('2d');
   g.imageSmoothingEnabled = false;
   g.clearRect(0, 0, c.width, c.height);
-  g.drawImage(mini(code), 0, 0, 14, 22);
+  g.drawImage(mini(parseAvatar(code)), 0, 0, 14, 22); // mini() takes a spec, not the code string
 }
