@@ -1,6 +1,6 @@
 // Player actions shared by mouse, keyboard and the tower popup. Each one either changes local UI state
 // (selection, build mode) or sends a command through session.send().
-import { isLocked, hasWall, canMaster } from '../../sim/sim.js';
+import { isLocked, hasWall, canMaster, spinCost } from '../../sim/sim.js';
 import { app, ui, net, sfx, me, P } from '../app.js';
 import { $ } from '../dom.js';
 import { send } from '../session.js';
@@ -11,7 +11,7 @@ export const selObstacle = () => (ui.selected && ui.selected[0] === 'o' ? app.st
 
 export function select(key) { ui.selected = key; sfx.play('click'); }
 
-export function cancel() { ui.build = null; ui.selected = null; ui.ability = null; ui.moving = null; }
+export function cancel() { ui.build = null; ui.selected = null; ui.ability = null; ui.moving = null; ui.merging = null; }
 
 export function startMove() {
   const t = selTower();
@@ -21,7 +21,7 @@ export function startMove() {
 
 export function selectBuild(kind) {
   sfx.unlock();
-  if (isLocked(app.state, me(), kind)) return;
+  if (app.state.casino || isLocked(app.state, me(), kind)) return; // casino: towers come from the reel only
   ui.ability = null;
   ui.selected = null;
   ui.build = ui.build === kind ? null : kind;
@@ -56,4 +56,22 @@ export function togglePause() {
   if (net.role === 'guest') return;
   app.paused = !app.paused;
   $('pause').textContent = app.paused ? '▶' : '❚❚';
+}
+
+// ---------- Casino ----------
+/** Pull the reel lever (the sim checks the gold and finds the tile). */
+export function spin() {
+  sfx.unlock();
+  if (!app.running || !app.state.casino) return;
+  if (P().gold < spinCost(app.state, me())) { banner('Не вистачає золота на барабан', 'gold'); return; }
+  send({ type: 'spin' });
+  sfx.play('card');
+}
+/** Pick the selected tower to merge; the next click on an identical tower merges them. */
+export function startMerge() {
+  const t = selTower();
+  if (!t || t.owner !== me()) return;
+  ui.merging = t.id;
+  ui.selected = null;
+  sfx.play('click');
 }

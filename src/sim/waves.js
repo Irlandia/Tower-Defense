@@ -1,12 +1,13 @@
 // Wave planning and composition (enemy packs, bosses, goblin thief).
-import { ENEMIES, UNLOCKS, ROTATION, MODES, CONFIG, BOSSES, BOSS_POOL, ENDLESS, TICK_RATE as T } from './data.js';
+import { ENEMIES, UNLOCKS, ROTATION, MODES, CONFIG, BOSSES, BOSS_POOL, ENDLESS, CASINO, TICK_RATE as T } from './data.js';
 import { rand, randInt } from './rng.js';
 import { player, endlessMods } from './queries.js';
 
 // HP multiplier of the regular enemies of wave w (also used for packs that bosses bring along).
 export function waveHpMul(s, w) {
   const over20 = Math.max(0, w - s.winWave);
-  return ((s.brawl && s.brawl.hp) || 1) * (1 + 0.22 * (w - 1) + 0.017 * (w - 1) * (w - 1)) * s.opts.hpMul * MODES.circle.endlessHpGrowth ** over20;
+  const curve = s.casino ? 1 + CASINO.hpLin * (w - 1) + CASINO.hpSq * (w - 1) * (w - 1) : 1 + 0.22 * (w - 1) + 0.017 * (w - 1) * (w - 1); // casino: 60 waves, gentler
+  return ((s.brawl && s.brawl.hp) || 1) * curve * s.opts.hpMul * MODES.circle.endlessHpGrowth ** over20;
 }
 
 // Which lanes the next wave will use (shown to the player in advance).
@@ -94,7 +95,7 @@ export function startWave(s) {
   const pool = B.pool || [...Object.keys(UNLOCKS).filter((k) => UNLOCKS[k] <= w), ...rot.filter((r) => r.wave <= w).map((r) => r.type)];
   for (const r of rot) if (r.wave === w) s.events.push({ type: 'newEnemy', kind: r.type, wave: w }); // «Новий ворог» banner
   // co-op: a bit more enemies so two players still have to work
-  const budget = (B.budget || 1) * (8 + w * 6) * (1 + 0.5 * (s.players.length - 1)) * (s.endless ? ENDLESS.budgetGrowth ** over20 : 1); // +50% per extra player; endless: ever more
+  const budget = (B.budget || 1) * (s.casino ? CASINO.budget : 1) * (8 + w * 6) * (1 + 0.5 * (s.players.length - 1)) * (s.endless ? ENDLESS.budgetGrowth ** over20 : 1); // +50% per extra player; endless: ever more
   // Every planned lane gets its own stream starting at the same moment (two entries = two
   // simultaneous attacks, not alternating packs); the wave budget is split between them.
   for (const lane of lanes) {
@@ -129,16 +130,21 @@ export function startWave(s) {
   const bossHp = (B.bossHp || 1) * (1 + Math.max(0, w / 5 - 1) * 0.9) * s.opts.hpMul * MODES.circle.endlessHpGrowth ** over20 * s.endMods.bossHp;
   // Bosses: one per player, arriving 3 s into the wave (right with the announcement), staggered by 2 s
   // and spread over the lanes. Endless: every couple of waves, more of them the deeper you go.
-  let bosses = 0, kind = () => "boss";
-  if (over20 > 0) {
+  let bosses = 0, kind = () => "boss", late = false;
+  if (s.casino && w >= 20 && over20 === 0) { // casino: from wave 20 a boss closes every wave
+    bosses = s.players.length; late = true;
+    kind = () => (w === s.winWave ? "king" : "boss");
+  } else if (over20 > 0) {
     if (over20 % MODES.circle.endlessBossEvery === 0) { bosses = (1 + Math.floor(over20 / 6)) * s.players.length; kind = (i) => (i % 2 ? "king" : "boss"); }
   } else if (w % (B.bossEvery || 5) === 0) {
     bosses = s.players.length;
     kind = () => (w === s.winWave ? "king" : "boss");
   }
+  const lastAt = s.queue.reduce((m, q) => Math.max(m, q.at), s.tick);
   for (let i = 0; i < bosses; i++) {
     const type = kind(i);
-    s.queue.push({ type, bk: type === "king" ? 20 : drawBoss(s), lane: lanes[i % lanes.length], at: s.tick + 3 * T + i * 2 * T, hpMul: bossHp });
+    // usually right with the announcement; a "late" boss follows the last of the pack
+    s.queue.push({ type, bk: type === "king" ? 20 : drawBoss(s), lane: lanes[i % lanes.length], at: (late ? lastAt + 2 * T : s.tick + 3 * T) + i * 2 * T, hpMul: bossHp });
   }
   // campaign: the mission names its generals by wave (one per player)
   const mk = s.mission && s.mission.bosses && s.mission.bosses[w];
@@ -147,7 +153,7 @@ export function startWave(s) {
   }
   s.queue.sort((a, b) => a.at - b.at);
   s.countdown = CONFIG.waveDelay * T;
-  s.events.push({ type: "wave", wave: w, boss: over20 ? over20 % MODES.circle.endlessBossEvery === 0 : w % 5 === 0, final: w === s.winWave, lanes });
+  s.events.push({ type: "wave", wave: w, boss: over20 ? over20 % MODES.circle.endlessBossEvery === 0 : (s.casino && w >= 20) || w % 5 === 0, final: w === s.winWave, lanes });
   s.plan = planLanes(s);
 }
 

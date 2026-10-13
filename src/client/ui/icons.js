@@ -63,6 +63,8 @@ export const MODE_ICONS = {
     rows: ['...cccc.....', '..c....c....', '.c......cy..', 'c.......cyy.', 'c........c..', 'c........c..', 'c........c..', '.c......c...', '..c....c....', '...cccc.....', '............'] },
   brawl: { c: { s: '#f4f4f4', m: '#94b0c2', y: '#ffcd75', o: '#ef7d57' },
     rows: ['s.........s.', '.s.......s..', '..s.....s...', '...s...s....', '....s.s.....', '.....m......', '....s.s.....', '..yo...oy...', '.yy.....yy..', 'yy.......yy.', '............'] },
+  casino: { c: { r: '#b13e53', y: '#ffcd75', w: '#f4f4f4', k: '#1a1c2c', o: '#ef7d57', d: '#5d275d' }, // a little slot machine
+    rows: ['.rrrrrrrr...', 'ryyyyyyyyr..', 'rwkwwkwwkr.y', 'rw7ww7ww7r.y'.replace(/7/g, 'o'), 'rwkwwkwwkr.y', 'ryyyyyyyyrry', 'rrrrrrrrrr..', 'rddrrrrddr..', 'rddoyyoddr..', 'rrrrrrrrrr..', '............'] },
   campaign: { c: { p: '#f4e1b6', d: '#c29a6b', b: '#8a6248', r: '#b13e53' },
     rows: ['.dpppppppd..', 'dppppppppd..', '.pbbbbbp....', '.pppppppp...', '.pbbbbp.....', '.pppppppp...', '.pbbbbbbp...', '.ppppppprr..', 'dpppppppprr.', '.dppppppd...', '............'] },
 };

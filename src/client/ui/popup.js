@@ -1,7 +1,7 @@
 // On-map popup for the selected tower / obstacle: stats, upgrade, evolve, aura, move, sell, clear.
 // The HTML is rebuilt only when `key` changes, so it does not flicker or eat clicks.
 import { TICK_RATE, TOWERS, BRANCHES, CONFIG, AURA, MASTERY } from '../../sim/data.js';
-import { family, towerStats, upgradeCost, canEvolve, sellValue, sellRatioOf, clearCost, auraCost, canMaster, masterCost, towerDef } from '../../sim/sim.js';
+import { family, towerStats, upgradeCost, canEvolve, sellValue, sellRatioOf, clearCost, auraCost, canMaster, masterCost, towerDef, canMerge } from '../../sim/sim.js';
 import { W, MX, MY, PLAYER_COLORS } from '../../render.js';
 import { TILE } from '../../sim/data.js';
 import { app, ui, canvas, me, P, bus } from '../app.js';
@@ -9,7 +9,7 @@ import { $, esc } from '../dom.js';
 import { nickOf } from '../roster.js';
 import { send } from '../session.js';
 import { towerIcon } from './icons.js';
-import { selTower, selObstacle, upgradeSel, sellSel, startMove } from './actions.js';
+import { selTower, selObstacle, upgradeSel, sellSel, startMove, startMerge } from './actions.js';
 
 let popKey = '';
 export function resetPopup() { popKey = ''; }
@@ -22,6 +22,7 @@ $('pop').addEventListener('click', (ev) => {
   if (a.dataset.act === 'upgrade') upgradeSel();
   if (a.dataset.act === 'sell') sellSel();
   if (a.dataset.act === 'move') startMove();
+  if (a.dataset.act === 'merge') startMerge();
   if (a.dataset.act === 'aura' && t) send({ type: 'aura', id: t.id, aura: a.dataset.aura });
   if (a.dataset.act === 'evolve' && t) send({ type: 'evolve', id: t.id, kind: a.dataset.kind });
   if (a.dataset.act === 'master' && t) send({ type: 'master', id: t.id });
@@ -53,10 +54,13 @@ function towerHtml(t, gold) {
   const def = towerDef(t);
   const st = towerStats(s, t);
   const mine = t.owner === me();
-  const ms = MASTERY[t.kind];
-  const up = upgradeCost(t);
-  const evo = canEvolve(t);
-  let key = `t${t.id}:${t.kind}:${t.level}:${t.master ? 1 : 0}:${Math.floor(gold / 5)}:${Math.round(st.dmg)}:${st.buff}:${Math.ceil((t.moveCd || 0) / TICK_RATE)}:${sellValue(t, sellRatioOf(s, t.owner))}`;
+  // casino: no paid upgrades — ranks go up only by merging two identical towers
+  const ms = s.casino ? null : MASTERY[t.kind];
+  const up = s.casino ? 0 : upgradeCost(t);
+  const evo = !s.casino && canEvolve(t);
+  const mates = s.casino ? s.towers.filter((o) => canMerge(t, o)).length : 0;
+  let key = `t${t.id}:${t.kind}:${t.level}:${t.master ? 1 : 0}:${mates}:`;
+  key += `${Math.floor(gold / 5)}:${Math.round(st.dmg)}:${st.buff}:${Math.ceil((t.moveCd || 0) / TICK_RATE)}:${sellValue(t, sellRatioOf(s, t.owner))}`;
   // header: tower icon on a family-coloured tile, name, level badge
   let html = `<div class="pop-title" style="--fam: var(--fam-${family(t.kind)})"><span class="pop-ico" data-icon="${t.kind}"></span>
       <b>${def.name}</b><span class="lvl-badge">${t.master ? "♛ майстерність" : def.from ? "★ еволюція" : def.support ? "тотем" : "рів. " + t.level}</span></div>
@@ -67,6 +71,12 @@ function towerHtml(t, gold) {
   if (!mine) {
     html += `<div class="pop-stats"><span style="color:${PLAYER_COLORS[t.owner]}">Вежа гравця ${esc(nickOf(t.owner))}</span></div>`;
     return { key, html };
+  }
+  if (s.casino && !def.support) {
+    const next = t.master ? '' : def.from ? 'майстерність' : t.level < CONFIG.maxLevel ? `рівень ${t.level + 1}` : 'випадкова еволюція';
+    html += t.master
+      ? act('', 'pa-master', '♛ Максимум', 'вище вже нікуди', '', true)
+      : act('data-act="merge"', 'pa-up', '⇄ Злити', mates ? `з такою самою → ${next} (пар: ${mates})` : `потрібна така сама вежа → ${next}`, '', !mates);
   }
   if (up) html += act('data-act="upgrade"', 'pa-up', '▲ Покращити', `рівень ${t.level} → ${t.level + 1}`, `● ${up}`, gold < up);
   if (def.support) {
@@ -93,7 +103,7 @@ function towerHtml(t, gold) {
     html += act('data-act="master"', 'pa-master', `♛ ${ms.name}`, ms.desc, `● ${cost}`, !canMaster(t) || gold < cost);
   } else if (ms && def.support && !t.master) {
     html += act('', 'pa-master', `♛ ${ms.name}`, 'спершу прокачай одну з аур до 3 рівня', '', true);
-  } else if (t.master) html += `<div class="pop-stats master-done"><span>♛ ${ms.name}: ${ms.desc}</span></div>`;
+  } else if (t.master && ms) html += `<div class="pop-stats master-done"><span>♛ ${ms.name}: ${ms.desc}</span></div>`;
   const mcd = Math.ceil((t.moveCd || 0) / TICK_RATE);
   html += '<div class="pa-row">'
     + act('data-act="move"', 'pa-move', '↔ Перемістити', mcd ? `зачекай ${mcd} с` : `до ${CONFIG.moveRange} клітинок · M`, '', mcd)

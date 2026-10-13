@@ -877,7 +877,7 @@ Object.assign(Critters.prototype, {
     kid.t += dt; kid.sayT -= dt;
     // a determined little crawl, stopping short of roads and water
     if (!kid.carried && !this.offGrass(kid.x + kid.vx * 4, kid.y + kid.vy * 4)) { kid.x += kid.vx * 7 * dt; kid.y += kid.vy * 7 * dt; }
-    if (!F.mom && kid.t >= 4) F.mom = { x: door.x, y: door.y, dir: kid.dir, state: 'run', say: MOM_SHOUT[Math.floor(Math.random() * MOM_SHOUT.length)], sayT: 2.4 };
+    if (!F.mom && kid.t >= 5) F.mom = { x: door.x, y: door.y, dir: kid.dir, state: 'run', say: MOM_SHOUT[Math.floor(Math.random() * MOM_SHOUT.length)], sayT: 2.4 };
     const mom = F.mom;
     if (!mom) return;
     mom.sayT -= dt;

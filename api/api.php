@@ -105,7 +105,7 @@ switch ($action) {
         $nick = $nicks[$ipKey]['nick'] ?? '';
         if ($nick === '') fail('Спершу введи нік');
         $diffs = ['normal' => 1, 'hard' => 1.4, 'nightmare' => 1.9];
-        $mode = in_array($body['mode'] ?? '', ['classic', 'circle', 'brawl'], true) ? $body['mode'] : 'classic';
+        $mode = in_array($body['mode'] ?? '', ['classic', 'circle', 'brawl', 'casino'], true) ? $body['mode'] : 'classic';
         $diff = isset($diffs[$body['diff'] ?? '']) ? $body['diff'] : 'normal';
         $wave = max(0, min(500, (int)($body['wave'] ?? 0)));
         $kills = max(0, min(100000, (int)($body['kills'] ?? 0)));

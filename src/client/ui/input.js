@@ -1,10 +1,10 @@
 // Mouse and keyboard on the canvas -> actions / commands.
 import { TILE, TOWER_ORDER } from '../../sim/data.js';
-import { canPlace, canMove, isRoad, towerAt, obstacleAt, barrelAt, placeCost, enemyAt } from '../../sim/sim.js';
+import { canPlace, canMove, isRoad, towerAt, obstacleAt, barrelAt, placeCost, enemyAt, canMerge } from '../../sim/sim.js';
 import { W, H, MX, MY } from '../../render.js';
 import { app, ui, net, sfx, music, renderer, canvas, collected, me, P } from '../app.js';
 import { send } from '../session.js';
-import { select, cancel, selectBuild, useAbility, nextWave, upgradeSel, sellSel, startMove, toggleSpeed, togglePause } from './actions.js';
+import { select, cancel, selectBuild, useAbility, nextWave, upgradeSel, sellSel, startMove, toggleSpeed, togglePause, spin } from './actions.js';
 import { openTalent, closeTalent, pickCard } from './talents.js';
 
 let lastMouseEv = null;
@@ -49,6 +49,12 @@ canvas.addEventListener('mousedown', (ev) => {
   const s = app.state;
   const m = toMap(ev);
   if (m.y < 0) return;
+  if (ui.merging) { // casino: the second click picks the identical tower to merge into
+    const a = s.towers.find((k) => k.id === ui.merging), b = towerAt(s, m.tx, m.ty);
+    if (a && b && canMerge(a, b)) send({ type: 'merge', id: a.id, into: b.id });
+    ui.merging = null;
+    return;
+  }
   if (ui.moving) {
     // relocating a tower: click a highlighted free tile
     const mt = s.towers.find((k) => k.id === ui.moving);
@@ -98,6 +104,7 @@ window.addEventListener('keydown', (ev) => {
   else if (k === 't') openTalent();
   else if (k === ' ') { ev.preventDefault(); nextWave(); }
   else if (k === 'm') startMove();
+  else if (k === 'c') spin(); // casino: pull the reel
   else if (k === 'u') upgradeSel();
   else if (k === 's') sellSel();
   else if (k === 'f') toggleSpeed();

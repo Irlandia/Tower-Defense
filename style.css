@@ -697,3 +697,22 @@ details.camp-brief summary::-webkit-details-marker { display: none; }
 }
 .menu-head .hero-card { flex-direction: row; flex-wrap: nowrap; align-items: center; text-align: left; }
 .menu-head h1, .menu-head .tag { text-align: center; justify-self: center; }
+
+/* ===== Casino ===== */
+.mode-tile.mode-casino { --tile: #f4b6d2; } .mode-info.mode-casino { --tile: #f4b6d2; }
+#towers.casino { display: flex; flex-direction: column; gap: 6px; }
+.spin-btn { position: relative; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; padding: 10px 12px;
+  font-size: 18px; color: #1a1c2c; background: #ffcd75; box-shadow: inset -3px -3px 0 #ef7d57, inset 3px 3px 0 #fff4d6, 0 0 0 2px #1a1c2c; }
+.spin-btn b { font-family: 'Pixelify Sans', monospace; }
+.spin-btn .cost { background: #1a1c2c; color: #ffcd75; padding: 2px 8px; font-weight: 800; }
+.spin-btn.poor { filter: grayscale(.6) brightness(.8); }
+.spin-btn:not(.poor):hover .reel i { animation-duration: .25s; }
+.spin-btn .reel { display: flex; gap: 2px; }
+.spin-btn .reel i { width: 8px; height: 14px; background: linear-gradient(#f4f4f4 0 30%, #b13e53 30% 45%, #f4f4f4 45% 70%, #3b5dc9 70% 85%, #f4f4f4 85%);
+  background-size: 100% 28px; box-shadow: 0 0 0 1px #1a1c2c; animation: reelSpin 1.2s linear infinite; }
+.spin-btn .reel i:nth-child(2) { animation-delay: -.4s; } .spin-btn .reel i:nth-child(3) { animation-delay: -.8s; }
+@keyframes reelSpin { to { background-position: 0 28px; } }
+.spin-pool { display: flex; gap: 4px; flex-wrap: wrap; opacity: .85; }
+.spin-pool canvas { width: 28px; height: 28px; }
+.spin-tip { color: var(--silver); font-size: 12px; line-height: 1.3; }
+.mode-tile.mode-casino { grid-column: 1 / -1; } /* the fifth tile spans the row */

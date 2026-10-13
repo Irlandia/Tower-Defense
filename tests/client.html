@@ -62,7 +62,7 @@ const d = frame.contentDocument;
 const q = (sel) => d.querySelector(sel);
 const hidden = (id) => d.getElementById(id).classList.contains('hidden');
 check('ui: menu shown on boot', !hidden('menu'));
-check('ui: 4 mode tiles', d.querySelectorAll('.mode-tile').length === 4);
+check('ui: 5 mode tiles (incl. casino)', d.querySelectorAll('.mode-tile').length === 5);
 check('ui: talent tree rendered', d.querySelectorAll('.tv-col').length === 4);
 check('ui: build bar + abilities', d.querySelectorAll('.tower-btn').length === 7 &&d.querySelectorAll('.ability').length >= 3);
 // wardrobe: opens from the 👕 button, a part can be tried on, saving stores the look and returns to «Грати»

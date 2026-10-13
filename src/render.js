@@ -1,6 +1,6 @@
 // Canvas renderer + visual juice. Reads sim state, never mutates it.
 import { TILE, COLS, ROWS, TICK_RATE, TOWERS, CONFIG, ABILITIES, BARREL, BOSSES, bossFor, DAY, ENEMIES } from './sim/data.js';
-import { towerStats, canPlace, posAt, isRoad, canMove, dayPhase, family } from './sim/sim.js';
+import { towerStats, canPlace, posAt, isRoad, canMove, dayPhase, family, canMerge } from './sim/sim.js';
 import {
   C, SPRITES, FLASH, FROZEN, ENEMY_COLOR, drawTower, drawCastle, drawCave, drawNum, numWidth, drawIcon,
   drawObstacle, drawBarrel, drawCoin, drawChest, drawWall, ellipse, drawFarmHouse, drawField, bossSprites,
@@ -201,6 +201,17 @@ export class Renderer {
         case 'wallbreak':
           this.burst(e.x, e.y, 24, '#c28569', 80, -20);
           this.shake = Math.max(this.shake, 3);
+          break;
+        case 'spin': // casino: a tower drops from the reel
+          this.rings.push({ x: e.x, y: e.y, r: 2, max: 26, c: C.yellow, life: 0.8 });
+          this.burst(e.x, e.y - 10, 24, C.yellow, 80, -30);
+          this.labels.push({ x: e.x, y: e.y - 30, text: `🎰 ${TOWERS[e.kind].name}${e.level > 1 ? ' ★' + e.level : ''}`, color: e.level > 1 ? '#a7f070' : '#ffcd75', life: 1.4 });
+          break;
+        case 'merge': // casino: two identical towers become one stronger
+          for (let i = 0; i <= 8; i++) this.parts.push({ x: e.fx + (e.x - e.fx) * i / 8, y: e.fy - 8 + (e.y - e.fy) * i / 8, vx: 0, vy: -10, life: 0.5, c: C.cyan, s: 2 });
+          this.rings.push({ x: e.x, y: e.y, r: 2, max: 34, c: C.cyan, life: 1 });
+          this.burst(e.x, e.y - 10, 30, C.cyan, 90, -30);
+          this.labels.push({ x: e.x, y: e.y - 32, text: e.master ? '♛ Майстерність!' : TOWERS[e.kind].from ? `★ ${TOWERS[e.kind].name}!` : `Рівень ${e.level}!`, color: '#73eff7', life: 1.6 });
           break;
         case 'pop': // Пухир popped: a sticky green cloud that stuns towers nearby
           this.rings.push({ x: e.x, y: e.y, r: 2, max: e.r, c: C.lime, life: 0.8 });
@@ -415,6 +426,10 @@ export class Renderer {
         this.auraMarks(s, t);
         if (t.stunT > 0) this.stunMark(t, s.tick);
         if ('t' + t.id === ui.selected || hov(t.tx, t.ty)) this.outline(t.tx * TILE, t.ty * TILE);
+        if (ui.merging) { // casino: the tower being merged, and every identical tower it can merge into
+          const src = s.towers.find((k) => k.id === ui.merging);
+          if (src === t || canMerge(src, t)) { g.globalAlpha = 0.5 + 0.5 * Math.sin(s.tick / 3); g.strokeStyle = src === t ? C.white : C.cyan; g.strokeRect(t.tx * TILE + 1.5, t.ty * TILE + 1.5, TILE - 3, TILE - 3); g.globalAlpha = 1; }
+        }
       } else this.drawEnemy(g, it.e, alpha, s.tick, ui.hoverEnemy === it.e.id);
     }
 

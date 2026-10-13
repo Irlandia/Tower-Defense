@@ -29,6 +29,7 @@ function renderModes() {
     { id: 'circle', name: 'Коло', sub: 'кружляють' },
     { id: 'brawl', name: 'Бійка', sub: br.name },
     { id: 'campaign', name: 'Кампанія', sub: `★ ${stars}/${CAMPAIGN.length * 3}` },
+    { id: 'casino', name: 'Казино', sub: 'крути й зливай' },
   ];
   const ml = $('modes');
   ml.innerHTML = '';

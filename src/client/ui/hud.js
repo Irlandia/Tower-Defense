@@ -1,14 +1,14 @@
 // Heads-up display around the canvas: build bar, ability buttons, wave/gold counters, info panel.
 // Every dynamic block is rebuilt only when its cache key changes.
-import { TOWERS, TOWER_ORDER, ABILITIES, CONFIG, MODES, ENEMIES, TICK_RATE, UNLOCKS, DAY, ENDLESS } from '../../sim/data.js';
-import { placeCost, isLocked, abilityMax, hasWall, dayPhase } from '../../sim/sim.js';
+import { TOWERS, TOWER_ORDER, ABILITIES, CONFIG, MODES, ENEMIES, TICK_RATE, UNLOCKS, DAY, ENDLESS, CASINO } from '../../sim/data.js';
+import { placeCost, isLocked, abilityMax, hasWall, dayPhase, spinCost } from '../../sim/sim.js';
 import { PLAYER_COLORS } from '../../render.js';
 import * as Meta from '../../meta.js';
 import { app, ui, sfx, music, me, P, bus } from '../app.js';
 import { $, esc } from '../dom.js';
 import { nickOf } from '../roster.js';
 import { towerIcon, pixelIcon, AB_ICONS } from './icons.js';
-import { selectBuild, useAbility, nextWave, toggleSpeed, togglePause } from './actions.js';
+import { selectBuild, useAbility, nextWave, toggleSpeed, togglePause, spin } from './actions.js';
 import { openTalent, renderTalent } from './talents.js';
 import { updatePop } from './popup.js';
 import { sideProgress } from './story.js';
@@ -22,6 +22,25 @@ export function buildToolbar() {
   const bar = $('towers');
   bar.innerHTML = '';
   const s = app.state;
+  bar.classList.toggle('casino', !!s.casino);
+  if (s.casino) { // casino: no tower buttons, one big reel lever instead
+    const b = document.createElement('button');
+    b.id = 'spinBtn';
+    b.className = 'spin-btn';
+    b.title = 'Крутити барабан [C]: випадкова вежа на випадковому місці біля дороги';
+    b.innerHTML = '<span class="reel"><i></i><i></i><i></i></span><b>🎰 Крутити</b><span class="cost"></span>';
+    b.addEventListener('click', spin);
+    bar.append(b);
+    const pool = document.createElement('div');
+    pool.className = 'spin-pool';
+    for (const k of CASINO.pool) if (!isLocked(s, me(), k)) pool.append(towerIcon(k));
+    bar.append(pool);
+    const tip = document.createElement('small');
+    tip.className = 'spin-tip';
+    tip.textContent = 'Дві однакові вежі → клікни одну, «⇄ Злити», потім другу. 1+1=2, 2+2=3, 3+3=еволюція, еволюція×2=майстерність.';
+    bar.append(tip);
+    return;
+  }
   TOWER_ORDER.forEach((kind, i) => {
     const def = TOWERS[kind];
     const locked = isLocked(s, me(), kind);
@@ -122,9 +141,11 @@ function infoContent(s) {
     const a = ABILITIES[ui.ability];
     return { key: 'a' + ui.ability, html: `<b>${a.name}</b><br>${a.desc}<br><span class="hint">ПКМ — скасувати</span>` };
   }
-  let key = 'h' + s.mode + (s.brawl ? s.brawl.id : '');
-  let html = s.mode === 'circle'
-    ? `<b>Коло</b><br>Вороги не доходять до замку — вони крутяться по колу і з кожним колом швидшають. Живих більше <b>${s.limit}</b> — поразка.`
+  let key = 'h' + s.mode + (s.brawl ? s.brawl.id : '') + (s.casino ? 'c' : '');
+  let html = s.casino
+    ? `<b>Казино</b><br>Будувати не можна. Крути барабан <b>[C]</b> — вежа падає на випадкове місце біля дороги. Дві однакові вежі зливай у сильнішу. Живих більше <b>${s.limit}</b> — поразка. З 20-ї хвилі кожна хвиля закінчується босом.`
+    : s.mode === 'circle'
+      ? `<b>Коло</b><br>Вороги не доходять до замку — вони крутяться по колу і з кожним колом швидшають. Живих більше <b>${s.limit}</b> — поразка.`
     : '<b>Порада</b><br>Крига робить ворогів <span class="wet">мокрими</span>: Тесла бʼє їх x2, а Вогонь викликає вибух пари.';
   if (s.mission) {
     const M = s.mission, mine = s.towers.filter((t) => t.owner === me()).length;
@@ -169,7 +190,7 @@ function nextInfo(s) {
   if (lanes > 1) parts.push(`<b>${lanes}</b> входи одночасно`);
   const fresh = B.pool ? [] : [...Object.keys(UNLOCKS).filter((k) => UNLOCKS[k] === w), ...(s.rot || []).filter((r) => r.wave === w).map((r) => r.type)];
   for (const k of fresh) { const tip = ENEMY_TIPS[k] || ENEMIES[k].tip; parts.push(`новий: <b>${ENEMIES[k].name}</b>${tip ? ` <i>(${tip})</i>` : ''}`); }
-  const boss = (s.mission && s.mission.bosses && s.mission.bosses[w]) || (w <= s.winWave && w % (B.bossEvery || 5) === 0);
+  const boss = (s.mission && s.mission.bosses && s.mission.bosses[w]) || (w <= s.winWave && ((s.casino && w >= 20) || w % (B.bossEvery || 5) === 0));
   if (boss) parts.push(`<span class="ni-boss">${w === s.winWave ? 'ФІНАЛЬНИЙ БОС' : 'БОС'}</span>`);
   return parts.length ? `<small>Хвиля ${w}:</small> ${parts.join(' · ')}` : '';
 }
@@ -179,6 +200,8 @@ export function updateUI() {
   const s = app.state;
   drawHudAvatar();
   const pl = P();
+  const sb = s.casino && $('spinBtn'); // casino: the reel's price and whether you can pay it
+  if (sb) { const c = spinCost(s, me()); sb.querySelector('.cost').textContent = '● ' + c; sb.classList.toggle('poor', pl.gold < c); }
   for (const b of document.querySelectorAll('.tower-btn')) {
     b.classList.toggle('active', ui.build === b.dataset.kind);
     b.classList.toggle('poor', pl.gold < placeCost(s, me(), b.dataset.kind));
@@ -199,7 +222,7 @@ export function updateUI() {
   $('talent').classList.toggle('off', !n); // keep its slot so the panel never jumps
   $('talent').textContent = `✦ Талант${n > 1 ? ' x' + n : ''} [T]`;
   const dp = DAY.phases[dayPhase(s)];
-  $("waveInfo").textContent = `${dp.icon} ${s.mission ? "Місія " + s.mission.id : s.brawl ? s.brawl.name : MODES[s.mode].name} · ${s.wave} / ${s.winWave}`;
+  $("waveInfo").textContent = `${dp.icon} ${s.mission ? "Місія " + s.mission.id : s.brawl ? s.brawl.name : (s.casino ? MODES.casino : MODES[s.mode]).name} · ${s.wave} / ${s.winWave}`;
   $("waveInfo").title = dp.name + (dp.range ? ": вежі бачать на 10% ближче, +25% золота за вбивства" : "");
   $('waveBar').style.width = (100 * s.wave) / s.winWave + '%';
   const coop = s.players.length > 1;

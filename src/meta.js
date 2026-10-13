@@ -298,7 +298,7 @@ export function finishRun(m, s, sum = null) {
   const earned = s.endless && !s.won
     ? Math.round(Math.max(0, s.wave - 20) * 2 * d.reward)
     : Math.round((s.wave + (s.won ? 15 : 0) + Math.floor(s.kills / 40)) * d.reward);
-  const key = s.opts.mode === 'campaign' ? 'campaign-' + s.mission.id : s.opts.mode === 'brawl' ? 'brawl-' + s.opts.week + '-' + d.id : (s.mode === 'circle' ? 'circle-' : '') + d.id;
+  const key = s.opts.mode === 'campaign' ? 'campaign-' + s.mission.id : s.opts.mode === 'brawl' ? 'brawl-' + s.opts.week + '-' + d.id : s.casino ? 'casino-' + d.id : (s.mode === 'circle' ? 'circle-' : '') + d.id;
   if (s.mission && s.won) { m.campaign = m.campaign || {}; m.campaign[s.mission.id] = Math.max(m.campaign[s.mission.id] || 0, s.stars || 1); }
   const record = s.wave > (m.best[key] || 0);
   const before = level(m);

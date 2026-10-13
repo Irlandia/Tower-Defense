@@ -1,12 +1,12 @@
 // Player commands (Command pattern): one handler per `c.type`, looked up in COMMANDS.
 // Every handler validates its input itself: commands come from the network and must never be trusted.
 // Handler signature: (s, pl, pi, c) where pl = s.players[pi], pi = acting player index, c = the command.
-import { TILE, COLS, ROWS, TOWERS, CARDS, CONFIG, OBSTACLES, BARREL, ABILITIES, AURA, ENEMIES, COIN, TICK_RATE as T } from './data.js';
-import { rand } from './rng.js';
+import { TILE, COLS, ROWS, TOWERS, CARDS, CONFIG, OBSTACLES, BARREL, ABILITIES, AURA, ENEMIES, COIN, CASINO, BRANCHES, TICK_RATE as T } from './data.js';
+import { rand, randInt } from './rng.js';
 import { center, posAt } from './mapgen.js';
 import {
   canPlace, isRoad, isLocked, placeCost, upgradeCost, canEvolve, canMove, sellValue, clearCost,
-  auraCost, abilityMax, hasWall, hasAbility, sellRatioOf, canMaster, masterCost,
+  auraCost, abilityMax, hasWall, hasAbility, sellRatioOf, canMaster, masterCost, spinCost, canMerge,
 } from './queries.js';
 import { damage, ignite, pickCards } from './combat.js';
 import { startWave } from './waves.js';
@@ -49,7 +49,44 @@ export const COMMANDS = {
     s.events.push({ type: "reroll", p: pi });
   },
 
+  // Casino: pay for a spin; a random tower (level 1, sometimes 2) lands on a random free tile by the road
+  spin(s, pl, pi) {
+    if (!s.casino) return;
+    const cost = spinCost(s, pi);
+    if (pl.gold < cost) return;
+    const road = [...s.map.tiles].map((k) => k.split(',').map(Number));
+    const spots = [];
+    for (let ty = 0; ty < ROWS; ty++) for (let tx = 0; tx < COLS; tx++) {
+      if (canPlace(s, tx, ty) && road.some(([x, y]) => Math.abs(x - tx) + Math.abs(y - ty) <= 2)) spots.push([tx, ty]);
+    }
+    const kinds = CASINO.pool.filter((k) => TOWERS[k] && !isLocked(s, pi, k));
+    if (!spots.length || !kinds.length) { s.events.push({ type: 'spinFull', p: pi }); return; } // no room: nothing is charged
+    pl.gold -= cost;
+    pl.spins = (pl.spins || 0) + 1;
+    const [tx, ty] = spots[randInt(s, spots.length)];
+    const kind = kinds[randInt(s, kinds.length)];
+    const level = rand(s) < CASINO.lvl2Chance ? 2 : 1;
+    const t = { id: s.nextId++, owner: pi, kind, tx, ty, ...center(tx, ty), level, cd: 0, spent: cost, aim: 0, fired: 0 };
+    s.towers.push(t);
+    s.events.push({ type: 'spin', x: t.x, y: t.y, kind, level, p: pi });
+  },
+
+  // Casino: merge tower `id` into the identical tower `into`: 1+1=2, 2+2=3, 3+3=a random evolution, evo+evo=mastery
+  merge(s, pl, pi, c) {
+    if (!s.casino) return;
+    const a = own(s, pi, c.id), b = own(s, pi, c.into);
+    if (!canMerge(a, b)) return;
+    if (TOWERS[b.kind].from) b.master = true;
+    else if (b.level < CONFIG.maxLevel) b.level++;
+    else { const br = BRANCHES[b.kind]; b.kind = br[randInt(s, br.length)]; } // the reel decides the evolution
+    b.spent += a.spent;
+    b.cd = 0;
+    s.towers = s.towers.filter((k) => k !== a);
+    s.events.push({ type: 'merge', x: b.x, y: b.y, fx: a.x, fy: a.y, kind: b.kind, level: b.level, master: !!b.master, p: pi });
+  },
+
   place(s, pl, pi, c) {
+    if (s.casino) return; // casino: towers only come from the reel
     if (!isTile(c.tx) || !isTile(c.ty)) return;
     const def = TOWERS[c.kind];
     const cost = def ? placeCost(s, pi, c.kind) : 0;
@@ -63,6 +100,7 @@ export const COMMANDS = {
   },
 
   upgrade(s, pl, pi, c) {
+    if (s.casino) return; // casino: ranks go up only by merging
     const t = own(s, pi, c.id);
     const cost = t ? upgradeCost(t) : 0;
     if (!cost || pl.gold < cost) return;
@@ -73,6 +111,7 @@ export const COMMANDS = {
   },
 
   evolve(s, pl, pi, c) {
+    if (s.casino) return; // casino: ranks go up only by merging
     const t = own(s, pi, c.id);
     const def = TOWERS[c.kind];
     if (!t || !def || def.from !== t.kind || !canEvolve(t) || pl.gold < def.cost) return;
@@ -85,6 +124,7 @@ export const COMMANDS = {
 
   // the final upgrade (Mastery) of an evolved tower / a Totem with an aura at level 3
   master(s, pl, pi, c) {
+    if (s.casino) return; // casino: ranks go up only by merging
     const t = own(s, pi, c.id);
     if (!t || !canMaster(t)) return;
     const cost = masterCost(s, pi, t);
@@ -97,6 +137,7 @@ export const COMMANDS = {
   },
 
   aura(s, pl, pi, c) {
+    if (s.casino) return; // casino: ranks go up only by merging
     const t = own(s, pi, c.id);
     if (!t || !TOWERS[t.kind].support || !AURA[c.aura]) return;
     const cost = auraCost(t, c.aura);

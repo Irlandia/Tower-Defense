@@ -6,7 +6,7 @@ export const COLS = 26;
 export const ROWS = 14;
 export const TICK_RATE = 20;
 // Bump on every change to sim/data: co-op peers refuse to play with a different version.
-export const VERSION = 58;
+export const VERSION = 60;
 // Spores: at most this many new infections per tick across the whole map (chain reactions stay readable and cheap).
 export const SPORE_CAP = 6;
 
@@ -137,7 +137,17 @@ export const BRANCHES = {
 // Game modes. Circle: enemies loop forever and stack up; too many alive = defeat.
 export const MODES = {
   classic: { name: "Класика", desc: "Вороги йдуть до замку. Пропустив — втратив життя." },
+  casino: { name: "Казино", desc: "Будувати не можна: крути барабан за золото й зливай однакові вежі, щоб прокачати. 60 хвиль по колу." },
   circle: { name: "Коло", desc: "Вороги крутяться по колу й накопичуються. Забагато живих — поразка.", maxAlive: 45, lapSpeed: 0.06, lapHeal: 0.1, lapMax: 8, endlessBossEvery: 2, endlessHpGrowth: 1.15 },
+};
+
+// Casino: a 60-wave circle where you cannot build. Spin the reel for gold: a random tower (level 1, sometimes 2) lands
+// on a random free tile by the road; merge two identical towers to rank up: 1+1=2, 2+2=3, 3+3=a random evolution,
+// evolution+same evolution=mastery. Spins get dearer (spinBase + spinStep per spin, up to spinMax).
+export const CASINO = {
+  waves: 60, startGold: 120, spinBase: 20, spinStep: 4, spinMax: 140, lvl2Chance: 0.12, sellRatio: 0.4,
+  pool: ['arrow', 'cannon', 'frost', 'tesla', 'fire', 'spore'],
+  hpLin: 0.14, hpSq: 0.005, budget: 0.7, // a gentler HP curve and fewer enemies: 60 waves instead of 20
 };
 
 // Endless circle: pressure that a big defence still feels. Per endless wave (n = waves past the win):

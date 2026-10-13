@@ -59,6 +59,9 @@ bus.on('sim:events', (events) => {
       case 'sell': case 'coin': case 'chest': if (mine(e)) sfx.play('sell'); break;
       case 'leak': case 'stolen': sfx.play('leak'); break;
       case 'pop': sfx.play('explode'); break;
+      case 'spin': if (mine(e)) sfx.play('sell'); break;
+      case 'merge': if (mine(e)) sfx.play('card'); resetPopup(); break;
+      case 'spinFull': if (mine(e)) banner('Немає вільного місця біля дороги', 'gold', 'злий або продай вежі', 1800); break;
       case 'lap': sfx.play('click'); break;
       case 'wave':
         sfx.play('wave');

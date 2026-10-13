@@ -6,7 +6,7 @@
 // This file owns createGame/step and the per-tick entity updates, and re-exports the public API.
 import {
   TILE, COLS, ROWS, TICK_RATE as T, CONFIG, TOWERS, ENEMIES, ABILITIES,
-  MAPGEN, SEASONS, SEASON_ORDER, MODES, TOWER_ORDER, brawlOf, CAMPAIGN, OBSTACLES, BOSSES, bossKey,
+  MAPGEN, SEASONS, SEASON_ORDER, MODES, TOWER_ORDER, brawlOf, CAMPAIGN, OBSTACLES, BOSSES, bossKey, CASINO,
 } from './data.js';
 import { rand, randInt } from './rng.js';
 import { center, key, genClassic, genCircle, placeFarm, posAt } from './mapgen.js';
@@ -57,22 +57,24 @@ function newPlayer(opts, i = 0) {
 // opts come from meta-progression + difficulty (see src/meta.js); in co-op the host sends them to the guest.
 export function createGame(seed, opts = {}) {
   const o = { hpMul: 1, cards: 3, locked: [], mode: "classic", players: 1, ...opts };
+  const casino = o.mode === 'casino'; // Casino: a circle board where towers come from the reel (CASINO in data.js)
   // Weekly Brawl: a ruleset on top of a normal board; the same towers are open for everyone
   // Campaign missions reuse the brawl rule engine; boss waves come from the mission instead of "every 5th"
   const M = o.mode === "campaign" ? CAMPAIGN[Math.max(0, Math.min(CAMPAIGN.length - 1, (o.mission || 1) - 1))] : null;
   if (M) o.season = M.season;
   const B = o.mode === "brawl" ? brawlOf(o.week || 0) : M ? { ...M.rules, map: M.map, weather: M.weather, bossEvery: 999 } : null;
   if (B && B.towers) { const lock = TOWER_ORDER.filter((k) => !B.towers.includes(k)); o.locked = lock; o.lockedBy = Array.from({ length: o.players }, () => lock); }
-  if (B && !B.towers) o.lockedBy = Array.from({ length: o.players }, () => []); // brawls open every tower
+  if ((B && !B.towers) || casino) o.lockedBy = Array.from({ length: o.players }, () => []); // brawls and the casino open every tower
   if (B) o.brawlRules = B;
   const s = {
     rngState: seed >>> 0,
     dayStart: (seed >>> 0) % 4, // time of day the run starts at (DAY.phases), moves on every DAY.every waves
     opts: o,
-    mode: B ? B.map : o.mode,
+    mode: B ? B.map : casino ? "circle" : o.mode,
+    casino,
     brawl: B,
     mission: M,
-    winWave: M ? M.waves : CONFIG.winWave,
+    winWave: M ? M.waves : casino ? CASINO.waves : CONFIG.winWave,
     farmHp: M && M.farmHp ? M.farmHp : 0,
     farmMax: M && M.farmHp ? M.farmHp : 0,
     stats: { coins: 0, leaks: 0, peak: 0, early: 0 },
@@ -82,7 +84,7 @@ export function createGame(seed, opts = {}) {
     tick: 0,
     lives: CONFIG.startLives + (o.bonusLives || 0),
     // alive limit depends on the board (brawls and missions can be played on the circle too)
-    limit: (B ? B.map : o.mode) === 'circle' ? (M && M.limit ? M.limit : MODES.circle.maxAlive) + 15 * (o.players - 1) + 5 * Math.round((o.bonusLives || 0) / 3) : 0, // more players, bigger waves, more room
+    limit: (B ? B.map : casino ? "circle" : o.mode) === "circle" ? (M && M.limit ? M.limit : MODES.circle.maxAlive) + 15 * (o.players - 1) + 5 * Math.round((o.bonusLives || 0) / 3) : 0, // more players, bigger waves, more room
     wave: 0,
     countdown: CONFIG.firstWaveDelay * T,
     map: null,
@@ -105,7 +107,8 @@ export function createGame(seed, opts = {}) {
   };
   // season: chosen in the menu, or random (from the seed, so co-op peers agree)
   s.season = SEASONS[o.season] ? o.season : SEASON_ORDER[randInt(s, SEASON_ORDER.length)];
-  s.map = o.mode === "circle" ? genCircle(s, o.players) : genClassic(s);
+  s.map = s.mode === "circle" ? genCircle(s, o.players) : genClassic(s);
+  if (casino) for (const p of s.players) { p.gold = CASINO.startGold + (p.gold - CONFIG.startGold); p.spins = 0; } // casino: its own purse (tree bonus gold still counts)
   s.map.farm = placeFarm(s.map);
   s.plan = planLanes(s);
 

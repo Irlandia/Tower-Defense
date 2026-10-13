@@ -51,7 +51,7 @@ bus.on('run:end', ({ won, earned, record, level, levelUp, bestiary }) => {
   if ($('endless')) $('endless').addEventListener('click', () => send({ type: 'continue' }));
   $('menuBtn').addEventListener('click', () => enterLobby());
   if (app.nick && !M) { // campaign missions are not leaderboard runs
-    Api.addScore({ mode: s.opts.mode === 'brawl' ? 'brawl' : s.mode, week: s.opts.week, diff: s.opts.diff, wave: s.wave, kills: s.kills, won, coop: s.players.length > 1, partner: others(), avatar: meta.avatar && meta.avatar.code ? meta.avatar.code : '' })
+    Api.addScore({ mode: s.opts.mode === 'brawl' ? 'brawl' : s.casino ? 'casino' : s.mode, week: s.opts.week, diff: s.opts.diff, wave: s.wave, kills: s.kills, won, coop: s.players.length > 1, partner: others(), avatar: meta.avatar && meta.avatar.code ? meta.avatar.code : '' })
       .then((r) => { $('scoreMsg').textContent = `Результат у таблиці лідерів: ${r.score} очок`; })
       .catch((e) => { $('scoreMsg').textContent = 'Таблиця лідерів недоступна: ' + e.message; });
   }

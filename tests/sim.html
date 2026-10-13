@@ -5,9 +5,9 @@
 <script type="module">
 import { createGame, step, canPlace, canEvolve, isRoad, posAt, towerStats, vsMult, pickCards, placeCost, isLocked, missionStars } from '../src/sim/sim.js';
 import { TOWERS, TOWER_ORDER, BRANCHES, COLS, ROWS, CARDS, BRAWLS, brawlOf, ENEMIES, UNLOCKS } from '../src/sim/data.js';
-import { ABILITIES } from '../src/sim/data.js';
+import { ABILITIES, CASINO } from '../src/sim/data.js';
 import * as Meta from '../src/meta.js';
-import { sellRatioOf, abilityMax, stateHash, dayPhase, nightSight, canMaster, masterCost, towerDef } from '../src/sim/sim.js';
+import { sellRatioOf, abilityMax, stateHash, dayPhase, nightSight, canMaster, masterCost, towerDef, spinCost, canMerge } from '../src/sim/sim.js';
 import { kill, spawn, damage, infect, ignite, explode } from '../src/sim/combat.js';
 import { VERSION, BOSSES, BOSS_POOL, CAMPAIGN, ROTATION, CONFIG } from '../src/sim/data.js';
 const CAMPAIGN_NPC = CAMPAIGN.find((m) => m.id === 7).npc;
@@ -734,6 +734,55 @@ try {
     check('endless: no pressure before endless', !nc.endMods || nc.endMods.armor === 0);
   }
 
+  { // Casino: no building, spins place random towers, merges rank them up to mastery, 60 waves, late bosses from 20
+    const cg = createGame(14, { mode: 'casino' });
+    const p0 = cg.players[0];
+    check('casino: a 60-wave circle with its own purse', cg.mode === 'circle' && cg.casino && cg.winWave === 60 && p0.gold === CASINO.startGold, `${cg.mode} ${cg.winWave} ${p0.gold}`);
+    const [cx, cy] = free(cg, 1)[0];
+    step(cg, [{ type: 'place', kind: 'arrow', tx: cx, ty: cy, p: 0 }]);
+    check('casino: building is not allowed', cg.towers.length === 0);
+    p0.gold = 100000;
+    const c0 = spinCost(cg, 0);
+    step(cg, [{ type: 'spin', p: 0 }]);
+    check('casino: a spin places a random level 1-2 tower by the road and costs gold', cg.towers.length === 1 && cg.towers[0].level <= 2 && p0.gold === 100000 - c0);
+    check('casino: spins get dearer', spinCost(cg, 0) > c0);
+    for (let i = 0; i < 60; i++) step(cg, [{ type: 'spin', p: 0 }]);
+    // merge everything we can, many times: ranks must climb, and a merged pair leaves one tower
+    let merged = 0;
+    for (let round = 0; round < 40; round++) {
+      const t = cg.towers.find((a) => cg.towers.some((b) => canMerge(a, b)));
+      if (!t) break;
+      const into = cg.towers.find((b) => canMerge(t, b));
+      const n = cg.towers.length;
+      step(cg, [{ type: 'merge', id: t.id, into: into.id, p: 0 }]);
+      if (cg.towers.length === n - 1) merged++;
+    }
+    check('casino: identical towers merge (one tower less each time)', merged > 5, `merged ${merged}`);
+    // a forced ladder: 1+1 -> 2, 2+2 -> 3, 3+3 -> evolution, evo+evo -> mastery
+    const lad = createGame(15, { mode: 'casino' });
+    const add = (kind, level, extra = {}) => { const [x, y] = free(lad, 1)[0]; const t = { id: lad.nextId++, owner: 0, kind, tx: x, ty: y, x: x * 24 + 12, y: y * 24 + 12, level, cd: 0, spent: 10, aim: 0, fired: 0, ...extra }; lad.towers.push(t); return t; };
+    let A = add('arrow', 1), Bt = add('arrow', 1);
+    step(lad, [{ type: 'merge', id: A.id, into: Bt.id, p: 0 }]);
+    check('casino merge: 1+1 = level 2', Bt.level === 2 && !lad.towers.includes(A));
+    A = add('arrow', 3); Bt = add('arrow', 3);
+    step(lad, [{ type: 'merge', id: A.id, into: Bt.id, p: 0 }]);
+    check('casino merge: 3+3 = an evolution', BRANCHES.arrow.includes(Bt.kind), Bt.kind);
+    A = add(Bt.kind, 3);
+    step(lad, [{ type: 'merge', id: A.id, into: Bt.id, p: 0 }]);
+    check('casino merge: evolution + the same evolution = mastery', Bt.master === true);
+    A = add('cannon', 1); const C2 = add('arrow', 1);
+    step(lad, [{ type: 'merge', id: A.id, into: C2.id, p: 0 }]);
+    check('casino merge: different towers do not merge', lad.towers.includes(A) && C2.level === 1);
+    // late bosses: from wave 20 a boss closes every wave
+    const lb = createGame(16, { mode: 'casino' });
+    lb.wave = 21; lb.countdown = 1; step(lb);
+    const bq = lb.queue.filter((q) => ENEMIES[q.type].lives), mobs = lb.queue.filter((q) => !ENEMIES[q.type].lives);
+    check('casino: from wave 20 a boss closes every wave (after the pack)', bq.length >= 1 && bq.every((b) => b.at > Math.max(...mobs.map((m) => m.at))), `bosses ${bq.length}`);
+    const lb2 = createGame(16, { mode: 'casino' });
+    lb2.wave = 11; lb2.countdown = 1; step(lb2);
+    check('casino: before 20 no boss on a normal wave', !lb2.queue.some((q) => ENEMIES[q.type].lives));
+  }
+
   // Time of day: start phase from the seed, moves every DAY.every waves; night = shorter sight, more gold
   const starts = new Set([1, 2, 3, 4, 5, 6, 7, 8].map((sd) => dayPhase(createGame(sd))));
   check('day: runs start at different times of day', starts.size >= 3, [...starts].join());
@@ -1294,7 +1343,7 @@ try {
 
   // Golden replay: a fixed bot run must give the same fingerprint until VERSION is bumped.
   // When you change src/sim on purpose: VERSION++ and paste the new hash printed below.
-  const GOLDEN = { version: 58, hash: 2070823479 };
+  const GOLDEN = { version: 60, hash: 2070823479 };
   const gh = stateHash(runBot(4242, 6).s);
   if (VERSION === GOLDEN.version) check('golden replay: sim unchanged at this VERSION (else bump VERSION)', gh === GOLDEN.hash, `got ${gh}`);
   else log(`NOTE golden replay: VERSION ${VERSION} — set GOLDEN = { version: ${VERSION}, hash: ${gh} }`);

@@ -90,6 +90,19 @@ try {
   out.push('PASS rotation mobs: sprites, state icons and events');
 } catch (e) { failed++; out.push('FAIL rotation mobs ' + e.stack); }
 
+// casino: spins, merges and the merge highlight draw
+try {
+  const sc = createGame(21, { mode: 'casino' });
+  sc.players[0].gold = 99999;
+  for (let i = 0; i < 12; i++) step(sc, [{ type: 'spin', p: 0 }]);
+  r.onEvents(sc.events, sc);
+  const a = sc.towers[0];
+  r.draw(sc, 0.5, { me: 0, merging: a.id }, 0.016);
+  r.onEvents([{ type: 'merge', x: a.x, y: a.y, fx: a.x + 24, fy: a.y, kind: 'sniper', level: 3, master: false, p: 0 }, { type: 'spin', x: a.x, y: a.y, kind: 'arrow', level: 2, p: 0 }], sc);
+  r.draw(sc, 0.5, { me: 0 }, 0.016);
+  out.push('PASS casino: spins, merges and the merge highlight draw');
+} catch (e) { failed++; out.push('FAIL casino ' + e.stack); }
+
 // decoration: the ent stroll and the mermaid's leaps draw in every phase without errors
 try {
   const se = createGame(4, { season: 'spring' });

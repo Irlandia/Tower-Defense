@@ -1,5 +1,5 @@
 // Pure read-only queries on the game state. Used by the simulation, the renderer and the client UI.
-import { TOWERS, CONFIG, OBSTACLES, ABILITIES, AURA, BRANCHES, ENEMIES, BOSSES, TICK_RATE as T, COLS, ROWS, DAY , MASTERY, MASTERED, ENDLESS } from './data.js';
+import { TOWERS, CONFIG, OBSTACLES, ABILITIES, AURA, BRANCHES, ENEMIES, BOSSES, TICK_RATE as T, COLS, ROWS, DAY , MASTERY, MASTERED, ENDLESS, CASINO } from './data.js';
 import { key } from './mapgen.js';
 
 export function isFree(s, tx, ty) {
@@ -116,7 +116,7 @@ export function canMove(s, t, tx, ty) {
 }
 
 // Share of the spent gold a player gets back when selling (tree: Торг, Ковальня).
-export const sellRatioOf = (s, p) => Math.min(1, CONFIG.sellRatio + player(s, p).mods.sell);
+export const sellRatioOf = (s, p) => Math.min(1, (s.casino ? CASINO.sellRatio : CONFIG.sellRatio) + player(s, p).mods.sell); // casino: reel towers sell cheap
 export function sellValue(t, ratio = CONFIG.sellRatio) {
   return Math.floor(t.spent * ratio);
 }
@@ -182,4 +182,15 @@ export function endlessMods(s) {
     if (c.bossHp) out.bossHp *= c.bossHp;
   }
   return out;
+}
+
+// ---------- Casino: reel spins and merges ----------
+/** Price of player p's next spin (dearer with every spin). */
+export const spinCost = (s, p) => Math.min(CASINO.spinMax, CASINO.spinBase + CASINO.spinStep * (player(s, p).spins || 0));
+/** Two towers that can merge: same owner, same kind, same rank (base level / evolved / mastered); mastered is the top. */
+export function canMerge(a, b) {
+  if (!a || !b || a === b || a.owner !== b.owner || a.kind !== b.kind || a.master || b.master) return false;
+  if (TOWERS[a.kind].support) return false;
+  if (TOWERS[a.kind].from) return !!MASTERY[a.kind]; // evolution + the same evolution = mastery
+  return a.level === b.level; // base towers: same level (3+3 evolves)
 }
