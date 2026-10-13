@@ -78,6 +78,7 @@ bus.on('sim:events', (events) => {
       }
       case 'bossRage': sfx.play('leak'); break;
       case 'nova': sfx.play('frost'); sfx.play('explode'); break;
+      case 'spores': sfx.play(e.burst ? 'explode' : 'frost'); break;
       case 'quake': sfx.play('rumble'); break;
       case 'dragon': sfx.play('explode'); if (mine(e)) banner('ДРАКОН!', 'gold', 'летить уздовж дороги', 1400); break;
       case 'goldrain': if (mine(e)) sfx.play('sell'); break;

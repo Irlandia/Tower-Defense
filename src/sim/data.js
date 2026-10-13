@@ -6,7 +6,9 @@ export const COLS = 26;
 export const ROWS = 14;
 export const TICK_RATE = 20;
 // Bump on every change to sim/data: co-op peers refuse to play with a different version.
-export const VERSION = 52;
+export const VERSION = 53;
+// Spores: at most this many new infections per tick across the whole map (chain reactions stay readable and cheap).
+export const SPORE_CAP = 6;
 
 export const CONFIG = {
   startGold: 160,
@@ -59,6 +61,12 @@ export const TOWERS = {
     name: 'Вогонь', cost: 80, range: 63, rate: 1.4, dmg: 3, proj: 'fire', speed: 255, burn: 6, burnTime: 3,
     desc: 'Підпалює. Мокрі вороги вибухають парою!',
   },
+  // spore: stacks of poison (ignores armour). Spread: when an infected enemy dies it passes the spores to neighbours.
+  spore: {
+    name: 'Грибниця', cost: 80, range: 66, rate: 1, dmg: 3, proj: 'spore', speed: 240,
+    spore: { dps: 3, time: 4, stacks: 1, spread: { r: 40, n: 2, gen: 2 } },
+    desc: 'Заражає спорами: отрута ігнорує броню. Хворий, що помирає, передає спори сусідам.',
+  },
 };
 // Evolutions: at level 3 a tower can turn into one of two specialised types (from = base family).
 Object.assign(TOWERS, {
@@ -82,6 +90,12 @@ Object.assign(TOWERS, {
     desc: 'Безперервне полумʼя по всіх навколо.' },
   magma: { from: 'fire', name: 'Магма', cost: 160, range: 78, rate: 0.8, dmg: 8, proj: 'fire', speed: 225, burn: 8, burnTime: 3,
     puddle: { r: 21, dps: 12, time: 4 }, desc: 'Залишає на дорозі калюжі лави.' },
+  plague: { from: 'spore', name: 'Чумна хмара', cost: 150, range: 72, rate: 0.9, dmg: 4, proj: 'spore', speed: 260,
+    spore: { dps: 3, time: 5, stacks: 1, spread: { r: 55, n: 3, gen: 3 }, puddle: { r: 20, dps: 4, time: 4 } },
+    desc: 'Спори передаються далі на більшу відстань і лишають на дорозі отруйну калюжу.' },
+  bloom: { from: 'spore', name: 'Споровий вибух', cost: 160, range: 66, rate: 0.7, dmg: 4, proj: 'spore', speed: 240,
+    spore: { dps: 4, time: 5, stacks: 3, burst: { r: 30, dmg: 12 } },
+    desc: 'Не передає спори. Заражений вибухає хмарою; кожен стак — сильніший вибух.' },
 });
 // Support tower: never shoots, gives auras to towers in range; each aura is upgraded separately.
 TOWERS.totem = {
@@ -105,15 +119,17 @@ export const MASTERY = {
   overload: { name: 'Ядерне ядро', cost: 220, desc: 'Заряд +60% за удар, до ×5', set: { dmg: 18, overcharge: 0.6, overMax: 5 } },
   inferno: { name: 'Серце вулкана', cost: 230, desc: 'Шкода 7, горіння 16, ширше полумʼя', set: { dmg: 7, burn: 16, range: 66 } },
   magma: { name: 'Лавове поле', cost: 220, desc: 'Калюжі більші, гарячіші й довші', set: { dmg: 12, puddle: { r: 28, dps: 17, time: 5 } } },
+  plague: { name: 'Епідемія', cost: 220, desc: 'Спори тримаються довше, передаються на 4 сусідів на 4 покоління, калюжі більші', set: { dmg: 6, spore: { dps: 4, time: 6, stacks: 1, spread: { r: 70, n: 4, gen: 4 }, puddle: { r: 22, dps: 4, time: 5 } } } },
+  bloom: { name: 'Чорний цвіт', cost: 230, desc: 'Отрута 6 за стак, вибух ширший і сильніший', set: { dmg: 6, spore: { dps: 6, time: 6, stacks: 3, burst: { r: 40, dmg: 18 } } } },
   totem: { name: 'Великий тотем', cost: 200, desc: 'Аури сильніші на 50%, радіус 84', set: { range: 84, auraMul: 1.5 } },
 };
 // Full definitions of mastered towers (TOWERS entry with the mastery fields on top).
 export const MASTERED = Object.fromEntries(Object.entries(MASTERY).map(([k, m]) => [k, { ...TOWERS[k], ...m.set, mastered: true }]));
 
-export const TOWER_ORDER =["arrow", "cannon", "frost", "tesla", "fire", "totem"];
+export const TOWER_ORDER = ["arrow", "cannon", "frost", "tesla", "fire", "totem", "spore"];
 export const BRANCHES = {
   arrow: ['sniper', 'ranger'], cannon: ['mortar', 'cluster'], frost: ['blizzard', 'glacier'],
-  tesla: ["storm", "overload"], fire: ['inferno', 'magma'],
+  tesla: ["storm", "overload"], fire: ['inferno', 'magma'], spore: ['plague', 'bloom'],
 };
 
 // Procedural map + interactive objects.
@@ -209,6 +225,12 @@ export const CARDS = [
   { id: 'archmage', name: 'Архімаг', desc: 'Усі здібності перезаряджаються на 40% швидше', rarity: 'epic', max: 1, apply: (s, p) => { p.mods.cdAll *= 0.6; } },
   { id: 'wisdom', name: 'Мудрість', desc: 'Далі в кожному виборі талантів — 4 картки і +1 перекидання', rarity: 'epic', max: 1,
     apply: (s, p) => { p.mods.cards += 1; p.rerolls = Math.min(DRAFT.maxRerolls + 1, (p.rerolls || 0) + 1); } },
+  // --- spores (Грибниця): only once the tower is unlocked ---
+  { id: 'mycelium', name: 'Густа мережа', desc: 'Грибниця: отрута +40%', rarity: 'common', max: 2, needs: 'spore', apply: (s, p) => { p.mods.spore *= 1.4; } },
+  { id: 'carrier', name: 'Розносчик', desc: 'Спори: передаються ще на одного сусіда і на одне покоління далі', rarity: 'rare', max: 1, needs: 'spore',
+    apply: (s, p) => { p.mods.sporeN += 1; p.mods.sporeGen += 1; } },
+  { id: 'blackmold', name: 'Чорна пліснява', desc: 'Спори тривають удвічі довше, вибух Споровий вибух ×1.5', rarity: 'epic', max: 1, needs: 'spore',
+    apply: (s, p) => { p.mods.sporeTime *= 2; p.mods.sporeBurst *= 1.5; } },
   // --- co-op only, just for fun ---
   { id: 'roulette', name: 'Рулетка дружби', desc: 'Рулетка: 250 золота отримає випадковий гравець — може, й ти', rarity: 'common', max: 2, coop: true,
     apply: (s, p) => { const i = Math.floor(rand(s) * s.players.length); s.players[i].gold += 250; s.events.push({ type: 'roulette', p: i, by: s.players.indexOf(p) }); } },

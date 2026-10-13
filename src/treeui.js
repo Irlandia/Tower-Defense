@@ -21,7 +21,7 @@ function head(m, L, open, act, onChange) {
   const pct = L < Meta.MAX_LEVEL ? Math.round((100 * (m.xp - cur)) / (next - cur)) : 100;
   div.innerHTML = `<div class="tv-lvl">Рівень <b>${L}</b> / ${Meta.MAX_LEVEL} · вільних очок <b class="tv-pts">${Meta.points(m)}</b></div>
     <div class="tv-bar"><i style="width:${pct}%"></i></div>
-    <small class="hint">${L < Meta.MAX_LEVEL ? `${m.xp - cur} / ${next - cur} досвіду до рівня ${L + 1}` : 'Максимальний рівень'} · Тесла — з рівня ${Meta.UNLOCK_LEVEL.tesla}, Вогонь — з рівня ${Meta.UNLOCK_LEVEL.fire}</small>`;
+    <small class="hint">${L < Meta.MAX_LEVEL ? `${m.xp - cur} / ${next - cur} досвіду до рівня ${L + 1}` : 'Максимальний рівень'} · Тесла — з рівня ${Meta.UNLOCK_LEVEL.tesla}, Вогонь — з рівня ${Meta.UNLOCK_LEVEL.fire}, Грибниця — з рівня ${Meta.UNLOCK_LEVEL.spore}</small>`;
   return div;
 }
 

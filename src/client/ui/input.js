@@ -91,7 +91,7 @@ window.addEventListener('keydown', (ev) => {
   if (ev.repeat || ev.target.tagName === 'INPUT' || !app.running) return;
   const k = ev.key.toLowerCase();
   if (app.talentOpen && ['1', '2', '3', '4'].includes(k)) { pickCard(+k - 1); return; }
-  const idx = ['1', '2', '3', '4', '5', '6'].indexOf(k);
+  const idx = ['1', '2', '3', '4', '5', '6', '7'].indexOf(k);
   const slot = ['q', 'w', 'e', 'r'].indexOf(k);
   if (idx >= 0) selectBuild(TOWER_ORDER[idx]);
   else if (slot >= 0) useAbility(P().abilities[slot]);

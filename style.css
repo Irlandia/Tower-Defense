@@ -259,7 +259,7 @@ button, input { font-family: 'Nunito', system-ui, sans-serif; font-weight: 700; 
 #info .done { color: #a7f070; }
 
 /* ===================== button redesign ===================== */
-:root { --fam-arrow: #ef7d57; --fam-cannon: #94b0c2; --fam-frost: #73eff7; --fam-tesla: #ffcd75; --fam-fire: #b13e53; --fam-totem: #a7f070; }
+:root { --fam-arrow: #ef7d57; --fam-cannon: #94b0c2; --fam-frost: #73eff7; --fam-tesla: #ffcd75; --fam-fire: #b13e53; --fam-totem: #a7f070; --fam-spore: #c28569; }
 button { border-radius: 6px; transition: transform .08s, filter .12s, background .12s; }
 button:hover:not(:disabled) { filter: brightness(1.12); }
 
@@ -276,6 +276,7 @@ button:hover:not(:disabled) { filter: brightness(1.12); }
 .tower-btn[data-kind="tesla"] { --fam: var(--fam-tesla); }
 .tower-btn[data-kind="fire"] { --fam: var(--fam-fire); }
 .tower-btn[data-kind="totem"] { --fam: var(--fam-totem); }
+.tower-btn[data-kind="spore"] { --fam: var(--fam-spore); }
 .tower-btn canvas {
   width: 36px; height: 44px; padding: 2px 4px; border-radius: 6px;
   background: radial-gradient(circle at 50% 70%, color-mix(in srgb, var(--fam) 35%, transparent), rgba(26,28,44,.6) 70%);

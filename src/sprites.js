@@ -75,6 +75,25 @@ function sphere(g, cx, cy, r, T) {
   }
 }
 
+// A toadstool: stem + wide domed cap (T = [light, mid, dark]) with a pale gill rim and 3 spots.
+function mushroom(g, cx, base, capW, capH, stemR, stemH, T, spot = C.white, stemT = ['#f4f4f4', '#f4e1b6', '#c29a6b']) {
+  cyl(g, cx, base, stemR, stemH, stemT);
+  const bottom = base - stemH + 1;
+  for (let i = 0; i < capH; i++) {
+    const t = (i + 1) / capH;
+    const w = Math.max(2, Math.round(capW * Math.sqrt(1 - (1 - t) * (1 - t))));
+    const y = bottom - capH + i;
+    const c = t < 0.35 ? T[0] : t < 0.75 ? T[1] : T[2];
+    R(g, cx - w, y, w * 2, 1, c);
+    R(g, cx - w, y, 1, 1, C.ink); R(g, cx + w - 1, y, 1, 1, C.ink); // outline
+  }
+  R(g, cx - capW + 1, bottom, capW * 2 - 2, 1, C.ink);
+  R(g, cx - capW + 2, bottom - 1, capW * 2 - 4, 1, stemT[1]); // gills under the rim
+  for (const [dx, dy, s] of [[-0.45, 0.35, 2], [0.2, 0.2, 2], [0.5, 0.6, 1]]) {
+    R(g, cx + Math.round(dx * capW), bottom - capH + Math.round(dy * capH), s, s, spot);
+  }
+}
+
 function crystal(g, cx, bottom, w, h, T) {
   for (let i = 0; i < h; i++) {
     const t = i / h;
@@ -219,6 +238,31 @@ export function drawTower(g, kind, x, y, level, aim = 0, t = 0, recoil = false) 
       R(g, cx - 3 + b, by - 10, 2, 1, C.yellow);
       R(g, cx + 2 - b, by - 9, 1, 1, C.yellow);
       R(g, cx + 6, by - 7 + b, 1, 2, C.orange);
+      break;
+    }
+    case 'spore': {
+      // a red fly-agaric that breathes out green spores
+      mushroom(g, cx, by + 2, 10, 8, 3, 10, [C.orange, C.red, C.plum]);
+      const f = (t >> 2) % 4;
+      R(g, cx - 5 + f, by - 14 - f, 1, 1, C.lime); R(g, cx + 4 - f, by - 17 + f, 1, 1, C.green);
+      break;
+    }
+    // ----- spore evolutions -----
+    case 'plague': {
+      // a big sickly toadstool: green cap, yellow spots, dripping spores, a poison puddle at the foot
+      ellipse(g, cx, by + 3, 10, 2, C.lime);
+      mushroom(g, cx, by + 2, 11, 10, 4, 10, [C.lime, C.green, C.teal], C.yellow, [C.lime, C.green, C.teal]);
+      const d = (t >> 3) % 2;
+      R(g, cx - 7, by - 6, 1, 3 + d, C.lime); R(g, cx + 6, by - 6, 1, 2 + d, C.lime); R(g, cx + 1, by - 6, 1, 2 + (1 - d), C.lime);
+      break;
+    }
+    case 'bloom': {
+      // three mushrooms in a cluster; the caps flash before a burst
+      const hot = (t >> 2) % 2;
+      const caps = hot ? [C.yellow, C.orange, C.red] : [C.orange, C.red, C.plum];
+      mushroom(g, cx - 6, by + 3, 5, 5, 2, 7, caps);
+      mushroom(g, cx + 6, by + 3, 5, 6, 2, 10, caps);
+      mushroom(g, cx, by + 4, 6, 6, 2, 5, caps);
       break;
     }
   }

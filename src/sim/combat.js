@@ -1,6 +1,6 @@
 // Combat primitives: spawning, damage, kills, burning, explosions, talent draws.
 // Everything here mutates the state passed in and draws randomness only from state.rngState.
-import { ENEMIES, BOSSES, MODES, CARDS, RARITY, DRAFT, DAY, COIN, TICK_RATE as T } from './data.js';
+import { ENEMIES, BOSSES, MODES, CARDS, RARITY, DRAFT, DAY, COIN, SPORE_CAP, TICK_RATE as T } from './data.js';
 import { rand, randInt } from './rng.js';
 import { posAt } from './mapgen.js';
 import { player, isLocked, vsMult, family, dayPhase } from './queries.js';
@@ -39,6 +39,7 @@ export function spawn(s, type, lane, dist, hpMul) {
     id: s.nextId++, type, lane, hp, maxHp: hp, armor: ENEMIES[type].armor, hpMul,
     dist, x: p.x, y: p.y, px: p.x, py: p.y, lap: 0, speedMul: (s.brawl && s.brawl.speed) || 1,
     slowT: 0, slowF: 1, wetT: 0, burnT: 0, burnDps: 0, burnAcc: 0, burnOwner: 0, flash: 0, dead: false, blocked: false,
+    sporeT: 0, sporeStacks: 0, sporeGen: 0, sporeDps: 0, sporeAcc: 0, sporeSeen: -1, sporeOwner: 0, sporeMul: 1, sporeCfg: null,
   };
   s.enemies.push(e);
   return e;
@@ -58,6 +59,57 @@ export function ignite(s, e, dps, time, owner, src = null) {
   e.burnT = Math.round(time * T);
   e.burnOwner = owner;
   e.burnSrc = src;
+  e.sporeT = 0; e.sporeStacks = 0; // fire burns the spores away: nothing left to spread
+}
+
+// Spores: poison stacks (ignores armour). A tower gives generation 0; spread from a dying neighbour is generation + 1.
+// A fresh infection starts at its generation; re-hits only add a stack and refresh the timer.
+export function infect(s, e, cfg, owner, mul, gen) {
+  if (e.dead) return;
+  const m = player(s, owner).mods;
+  if (!(e.sporeT > 0)) { e.sporeStacks = 0; e.sporeGen = gen; }
+  e.sporeStacks = Math.min(cfg.stacks, e.sporeStacks + 1);
+  e.sporeT = Math.round(cfg.time * m.sporeTime * T);
+  e.sporeDps = cfg.dps * e.sporeStacks * mul * m.spore;
+  e.sporeCfg = cfg; e.sporeOwner = owner; e.sporeMul = mul;
+}
+
+// Infected enemies that died this tick burst (Споровий вибух) or pass the spores on to neighbours.
+// Deterministic: enemies in array order, neighbours by distance then id, at most SPORE_CAP new infections per tick.
+// Bosses are never infected by spread, so a boss can't start a chain.
+export function resolveSpores(s) {
+  let left = SPORE_CAP;
+  for (const e of s.enemies) {
+    if (!e.dead || !(e.sporeT > 0) || !e.sporeCfg) continue;
+    const cfg = e.sporeCfg, m = player(s, e.sporeOwner).mods;
+    e.sporeT = 0;
+    if (cfg.burst) {
+      const dmg = cfg.burst.dmg * e.sporeStacks * e.sporeMul * m.sporeBurst;
+      for (const o of s.enemies) {
+        if (o.dead || Math.hypot(o.x - e.x, o.y - e.y) > cfg.burst.r) continue;
+        damage(s, o, ENEMIES[o.type].lives ? dmg / 2 : dmg, e.sporeOwner, { pierce: true, src: 'spore' });
+      }
+      s.events.push({ type: 'spores', x: e.x, y: e.y, r: cfg.burst.r, burst: true });
+    } else if (cfg.spread) {
+      const gen = e.sporeGen + 1;
+      if (gen > cfg.spread.gen + m.sporeGen) continue;
+      const r = cfg.spread.r;
+      const near = s.enemies
+        .filter((o) => !o.dead && o !== e && !ENEMIES[o.type].lives && !(o.sporeT > 0) && o.sporeSeen !== s.wave)
+        .map((o) => ({ o, d: Math.hypot(o.x - e.x, o.y - e.y) }))
+        .filter((x) => x.d <= r)
+        .sort((a, b) => a.d - b.d || a.o.id - b.o.id)
+        .slice(0, cfg.spread.n + m.sporeN);
+      let passed = 0;
+      for (const { o } of near) {
+        if (left <= 0) break;
+        left--; passed++;
+        o.sporeSeen = s.wave; // one infection per enemy per wave
+        infect(s, o, cfg, e.sporeOwner, e.sporeMul, gen);
+      }
+      if (passed) s.events.push({ type: 'spores', x: e.x, y: e.y, r, n: passed });
+    }
+  }
 }
 
 

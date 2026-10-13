@@ -8,7 +8,7 @@ import { TOWERS, TOWER_ORDER, BRANCHES, COLS, ROWS, CARDS, BRAWLS, brawlOf } fro
 import { ABILITIES } from '../src/sim/data.js';
 import * as Meta from '../src/meta.js';
 import { sellRatioOf, abilityMax, stateHash, dayPhase, nightSight, canMaster, masterCost, towerDef } from '../src/sim/sim.js';
-import { kill, spawn, damage } from '../src/sim/combat.js';
+import { kill, spawn, damage, infect, ignite } from '../src/sim/combat.js';
 import { VERSION, BOSSES, BOSS_POOL, CAMPAIGN } from '../src/sim/data.js';
 const CAMPAIGN_NPC = CAMPAIGN.find((m) => m.id === 7).npc;
 Meta.setPersist(false); // tests never write the player's real save
@@ -564,7 +564,11 @@ try {
   Meta.buy(two, 'a1');
   Meta.setActive(two, 0);
   check('builds: points spent in one build do not show in another', Meta.rankOf(two, 'a1') === 0);
-  check('unlocks: tesla from level 3, fire from level 6', Meta.perks(metaAt(Meta.xpForLevel(2))).locked.join() === 'tesla,fire' && Meta.perks(metaAt(Meta.xpForLevel(3))).locked.join() === 'fire' && Meta.perks(metaAt(Meta.xpForLevel(6))).locked.length === 0);
+  check('unlocks: tesla from level 3, fire from level 6, spore from level 9', Meta.perks(metaAt(Meta.xpForLevel(2))).locked.join() === 'tesla,fire,spore' && Meta.perks(metaAt(Meta.xpForLevel(3))).locked.join() === 'fire,spore' && Meta.perks(metaAt(Meta.xpForLevel(6))).locked.join() === 'spore' && Meta.perks(metaAt(Meta.xpForLevel(9))).locked.length === 0);
+  // Грибниця tree node: +20% poison per rank (max 2)
+  const sp = metaAt(Meta.xpForLevel(12));
+  sp.builds[0].tree = { e11: 2 };
+  check('Мікориза: spore poison x1.4 at 2 ranks', Math.abs(Meta.perks(sp).spore - 1.4) < 1e-9, `${Meta.perks(sp).spore}`);
   check('loadout: default meteor / nova / wall on Q / W / E', Meta.perks(metaAt(Meta.xpForLevel(5))).abilities.join() === 'meteor,nova,wall');
   const ap = metaAt(Meta.xpForLevel(25));
   ap.builds[0].tree = { a1: 3, a2: 2, a3: 2, a4: 2, a5: 1, k_focus: 1 };
@@ -782,9 +786,50 @@ try {
   h2.players[0].gold += 1;
   check('stateHash: one gold differs', stateHash(h1) !== stateHash(h2));
 
+  // Spores (Грибниця): spread on death to the nearest neighbours, generation cap, bloom burst, fire clears them.
+  {
+    const mkGame = (seed) => { const g = createGame(seed, { mode: 'classic' }); g.queue = []; g.countdown = 1e9; return g; };
+    const at = (g) => { const lane = g.map.lanes[0]; return lane.segs[0].start + 5; };
+    const mk = (g, hpMul = 1) => (i) => {
+      const d = at(g), P = posAt(g.map, 0, d);
+      const e = spawn(g, 'slime', 0, d, hpMul); e.x = e.px = P.x + i * 3; e.y = e.py = P.y; e.speedMul = 0; return e;
+    };
+    const g = mkGame(9), make = mk(g);
+    const carrier = make(0), near = [1, 2, 3].map(make);
+    infect(g, carrier, TOWERS.spore.spore, 0, 1, 0);
+    damage(g, carrier, 9999, 0, { pierce: true });
+    step(g);
+    const passed = near.filter((o) => o.sporeT > 0);
+    check('spore spread: a dying carrier passes spores to the 2 nearest (base n=2), generation 1', passed.length === 2 && passed.every((o) => o.sporeGen === 1), `${passed.length}`);
+    check('spore spread: spores that passed are not in the enemy list anymore', !g.enemies.includes(carrier));
+
+    // generation cap: a generation-2 carrier (base cap 2) must not pass on
+    const g2 = mkGame(11), make2 = mk(g2), c2 = make2(0), n2 = [1, 2].map(make2);
+    infect(g2, c2, TOWERS.spore.spore, 0, 1, 2);
+    const before = new Set(g2.enemies.filter((o) => o.sporeT > 0).map((o) => o.id));
+    damage(g2, c2, 9999, 0, { pierce: true });
+    step(g2);
+    check('spore generation cap: generation 2 does not spread further', n2.every((o) => o.sporeT <= 0) && before.size === 1, `new=${g2.enemies.filter((o) => o.sporeT > 0).length}`);
+
+    // bloom: stacks add up to 3, the burst hits the cluster and does not spread
+    const gb = mkGame(10), makeB = mk(gb, 5), bc = makeB(0), bn = makeB(1);
+    for (let i = 0; i < 4; i++) infect(gb, bc, TOWERS.bloom.spore, 0, 1, 0);
+    const hpBefore = bn.hp;
+    damage(gb, bc, 9999, 0, { pierce: true });
+    step(gb);
+    check('bloom: stacks cap at 3 and the burst hits the neighbour without spreading', bc.sporeStacks === 3 && bn.hp < hpBefore && bn.sporeT <= 0, `hp ${hpBefore}->${bn.hp}`);
+
+    // fire burns the spores away
+    const gf = mkGame(12), fc = mk(gf)(0);
+    infect(gf, fc, TOWERS.spore.spore, 0, 1, 0);
+    ignite(gf, fc, 6, 2, 0, 'fire');
+    check('spores: fire burns the infection away (nothing to spread)', fc.sporeT === 0 && fc.sporeStacks === 0);
+    check('spores: three cards need the spore tower', CARDS.filter((c) => c.needs === 'spore').length === 3);
+  }
+
   // Golden replay: a fixed bot run must give the same fingerprint until VERSION is bumped.
   // When you change src/sim on purpose: VERSION++ and paste the new hash printed below.
-  const GOLDEN = { version: 52, hash: 419548047 };
+  const GOLDEN = { version: 53, hash: 2159789739 };
   const gh = stateHash(runBot(4242, 6).s);
   if (VERSION === GOLDEN.version) check('golden replay: sim unchanged at this VERSION (else bump VERSION)', gh === GOLDEN.hash, `got ${gh}`);
   else log(`NOTE golden replay: VERSION ${VERSION} — set GOLDEN = { version: ${VERSION}, hash: ${gh} }`);

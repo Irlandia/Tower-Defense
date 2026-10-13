@@ -100,6 +100,11 @@ export class Renderer {
           if (e.over >= 2) this.burst(e.pts[1].x, e.pts[1].y, 10, C.orange, 60);
           for (const p of e.pts.slice(1)) this.burst(p.x, p.y, 4, C.cyan, 50);
           break;
+        case 'spores': // a green cloud where spores burst (bloom) or pass to the neighbours (spread)
+          this.rings.push({ x: e.x, y: e.y, r: 3, max: e.r, c: e.burst ? C.orange : C.lime, life: 0.7 });
+          this.burst(e.x, e.y, e.burst ? 24 : 8, e.burst ? C.red : C.lime, 60, -20);
+          if (e.burst) this.shake = Math.max(this.shake, 3);
+          break;
         case 'meteor':
           this.rings.push({ x: e.x, y: e.y, r: 4, max: e.r, c: C.yellow, life: 1 });
           this.rings.push({ x: e.x, y: e.y, r: 2, max: e.r * 0.7, c: C.red, life: 1 });
@@ -598,6 +603,10 @@ export class Renderer {
           g.fillStyle = C.cyan; g.fillRect(x - 2, y - 2, 4, 4);
           g.fillStyle = C.white; g.fillRect(x - 1, y - 1, 2, 2);
           break;
+        case 'spore':
+          g.fillStyle = C.plum; g.fillRect(x - 2, y - 2, 4, 4);
+          g.fillStyle = C.lime; g.fillRect(x - 1, y - 1, 2, 2);
+          break;
         case 'fire':
           g.fillStyle = C.orange; g.fillRect(x - 3, y - 3, 6, 6);
           g.fillStyle = C.yellow; g.fillRect(x - 2, y - 2, 3, 3);
@@ -651,6 +660,7 @@ export class Renderer {
     }
     if (e.slowT > 0 && !frozen) { g.fillStyle = C.cyan; g.fillRect(dx, dy + spr.height - 1, spr.width, 1); }
     if (e.burnT > 0 && Math.random() < 0.6) this.parts.push({ x: x + Math.random() * 10 - 5, y: dy + 4, vx: 0, vy: -24, life: 0.3, c: Math.random() < 0.5 ? C.orange : C.yellow, s: 2 });
+    if (e.sporeT > 0 && (tick >> 2) % 2 === 0) this.parts.push({ x: x + Math.random() * 10 - 5, y: dy + 8, vx: 0, vy: -14, life: 0.4, c: Math.random() < 0.5 ? C.lime : C.green, s: 1 }); // poisoned: green spores drift up
     if (e.blocked && (tick >> 2) % 2) this.parts.push({ x: x + Math.random() * 8 - 4, y: y + 4, vx: Math.random() * 20 - 10, vy: -10, life: 0.3, c: '#c28569' });
     if (e.hp < e.maxHp && !e.disguised) {
       const w = Math.max(14, spr.width);

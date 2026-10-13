@@ -24,7 +24,7 @@ export function levelOf(xp) {
 }
 export const level = (m) => levelOf(m.xp);
 // Tower unlocks by player level (not by the tree).
-export const UNLOCK_LEVEL = { tesla: 3, fire: 6 };
+export const UNLOCK_LEVEL = { tesla: 3, fire: 6, spore: 9 };
 // Builds: the 2nd opens at level 10, the 3rd at level 20. Each build spends its own points (up to the level).
 export const BUILD_LEVEL = [1, 10, 20];
 export const buildsOpen = (L) => BUILD_LEVEL.filter((need) => L >= need).length;
@@ -64,6 +64,7 @@ export const TREE = [
   { id: 'e7', branch: 'elem', tier: 3, max: 1, name: 'Парова турбіна', desc: 'Вибух пари: +40%', fx: (p) => { p.steam *= 1.4; } },
   { id: 'e8', branch: 'elem', tier: 3, max: 2, name: 'Мідна обмотка', desc: 'Тесла: +15% шкоди за рівень', fx: (p, r) => mul(p.dmg, 'tesla', 1 + 0.15 * r) },
   { id: 'e9', branch: 'elem', tier: 3, max: 2, name: 'Розгалуження', desc: 'Тесла: +1 стрибок блискавки за рівень', fx: (p, r) => { p.chain += r; } },
+  { id: 'e11', branch: 'elem', tier: 2, max: 2, name: 'Мікориза', desc: 'Грибниця: отрута +20% за рівень', fx: (p, r) => { p.spore *= 1 + 0.2 * r; } },
   { id: 'k_vortex', branch: 'elem', tier: 4, max: 1, key: true, name: 'Стихійний вир', desc: 'Пара ×1.5 сили й радіусу; Тесла на мокрих +1 стрибок', fx: (p) => { p.steam *= 1.5; p.steamR *= 1.5; p.wetChain += 1; } },
   // --- Інженер: вежі, тотеми, барикади ---
   { id: 'g1', branch: 'eng', tier: 1, max: 3, name: 'Дешева праця', desc: 'Вежі: −5% вартості за рівень', fx: (p, r) => add(p.discount, 'all', 0.05 * r) },
@@ -181,6 +182,7 @@ export function perks(m) {
     cdAll: 1, meteorCd: 1, novaCd: 1, wallCd: 1, moveCd: 1, wall: 1, meteorDmg: 1, novaFreeze: 0, overSec: 0,
     gold: 1, wage: 0, sell: 0, dmgAll: 1, crit: 0, critMul: 0, wet: 0, wetChain: 0, chain: 0, burn: 1,
     steam: 1, steamR: 1, aura: 1, splash: 1, multi: {}, masterDisc: 0,
+    spore: 1, sporeTime: 1, sporeGen: 0, sporeN: 0, sporeBurst: 1,
     dmg: {}, rate: {}, range: {}, discount: {},
     locked: Object.keys(UNLOCK_LEVEL).filter((k) => L < UNLOCK_LEVEL[k]),
   };

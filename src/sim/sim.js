@@ -11,7 +11,7 @@ import {
 import { rand, randInt } from './rng.js';
 import { center, key, genClassic, genCircle, placeFarm, posAt } from './mapgen.js';
 import { isFree, player, family, towerStats, missionStars, towerDef } from './queries.js';
-import { spawn, ignite, damage, explode } from './combat.js';
+import { spawn, ignite, damage, explode, infect, resolveSpores } from './combat.js';
 import { planLanes, startWave, waveHpMul } from './waves.js';
 import { applyCmd } from './commands.js';
 
@@ -39,6 +39,7 @@ function newPlayer(opts, i = 0) {
       goldrainCd: 1, overdriveCd: 1, quakeCd: 1, dragonCd: 1,
       wall: k.wall || 1, meteorDmg: k.meteorDmg || 1, novaFreeze: k.novaFreeze || 0, overSec: k.overSec || 0,
       aura: k.aura || 1, moveCd: k.moveCd || 1, barrel: 1, lapDmg: 0, hunter: 0, thief: 0, wallRegen: 0, masterDisc: k.masterDisc || 0,
+      spore: k.spore || 1, sporeTime: k.sporeTime || 1, sporeGen: k.sporeGen || 0, sporeN: k.sporeN || 0, sporeBurst: k.sporeBurst || 1,
       towerRate: { ...(k.rate || {}) }, towerRange: { ...(k.range || {}) }, multi: { ...(k.multi || {}) }, splash: k.splash || 1, discount: { ...(k.discount || {}) },
       cards: k.cards || opts.cards || 3,
     },
@@ -178,6 +179,7 @@ export function step(s, cmds = [], advance = true) {
   for (const p of s.projs) updateProj(s, p);
   for (const c of s.coins) c.life--;
   s.projs = s.projs.filter((p) => !p.done);
+  resolveSpores(s); // infected enemies that died this tick burst or pass the spores on (before they are dropped)
   s.enemies = s.enemies.filter((e) => !e.dead);
   s.zones = s.zones.filter((z) => z.life > 0);
   s.coins = s.coins.filter((c) => c.life > 0);
@@ -221,6 +223,16 @@ function updateEnemy(s, e) {
       const d = Math.floor(e.burnAcc);
       e.burnAcc -= d;
       damage(s, e, d, e.burnOwner, { pierce: true, quiet: true, src: e.burnSrc });
+      if (e.dead) return;
+    }
+  }
+  if (e.sporeT > 0) {
+    e.sporeT--;
+    e.sporeAcc += e.sporeDps / T;
+    if (e.sporeAcc >= 1) {
+      const d = Math.floor(e.sporeAcc);
+      e.sporeAcc -= d;
+      damage(s, e, d, e.sporeOwner, { pierce: true, quiet: true, src: 'spore' });
       if (e.dead) return;
     }
   }
@@ -269,6 +281,7 @@ function updateEnemy(s, e) {
     }
   } else if (e.dist >= L.total) {
     e.dead = true;
+    e.sporeT = 0; // reaching the castle is not a death: no spore burst or spread
     s.lives -= def.lives || 1;
     if (def.steal) {
       // the thief robs everyone a little
@@ -507,6 +520,16 @@ function hit(s, p, target) {
       damage(s, target, p.dmg, p.owner, { src });
       if (!target.dead) applyCold(target, def, m);
       break;
+    case 'spore': {
+      const cfg = def.spore;
+      if (cfg.puddle) { // Чумна хмара: a poison puddle left on the road
+        s.zones.push({ x: p.x, y: p.y + 6, r: cfg.puddle.r, dps: cfg.puddle.dps * m.spore, life: cfg.puddle.time * T, max: cfg.puddle.time * T, owner: p.owner, src: 'spore' });
+      }
+      if (!target) break;
+      damage(s, target, p.dmg, p.owner, { src });
+      if (!target.dead) infect(s, target, cfg, p.owner, lvMul, 0);
+      break;
+    }
     case 'fire':
       if (def.puddle) {
         s.zones.push({ x: p.x, y: p.y + 6, r: def.puddle.r, dps: def.puddle.dps * m.burn, life: def.puddle.time * T, max: def.puddle.time * T, owner: p.owner, src });
