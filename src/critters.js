@@ -857,12 +857,12 @@ Object.assign(Critters.prototype, {
     const F = this.farm;
     if (!F) return;
     const door = { x: F.home.x, y: F.home.y + 1 };
-    F.kidWait = (F.kidWait ?? (this.kidDemo ? 1 : 40 + Math.random() * 30)) - dt;
+    F.kidWait = (F.kidWait ?? (this.kidDemo ? 10 : 40 + Math.random() * 30)) - dt; // demo: first escape after 10 s
     if (!F.kid && F.kidWait <= 0) {
       const dir = Math.random() < 0.5 ? -1 : 1;
       F.kid = { x: door.x, y: door.y, dir, t: 0, say: KID_SAY[Math.floor(Math.random() * KID_SAY.length)], sayT: 1.2 };
       F.mom = null;
-      F.kidWait = this.kidDemo ? 9 : 55 + Math.random() * 15; // about once a minute
+      F.kidWait = this.kidDemo ? 5 : 55 + Math.random() * 15; // about once a minute (demo: every 5 s)
     }
     const kid = F.kid;
     if (!kid) return;
