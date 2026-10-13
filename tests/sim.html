@@ -8,8 +8,8 @@ import { TOWERS, TOWER_ORDER, BRANCHES, COLS, ROWS, CARDS, BRAWLS, brawlOf } fro
 import { ABILITIES } from '../src/sim/data.js';
 import * as Meta from '../src/meta.js';
 import { sellRatioOf, abilityMax, stateHash, dayPhase, nightSight, canMaster, masterCost, towerDef } from '../src/sim/sim.js';
-import { kill, spawn, damage, infect, ignite } from '../src/sim/combat.js';
-import { VERSION, BOSSES, BOSS_POOL, CAMPAIGN } from '../src/sim/data.js';
+import { kill, spawn, damage, infect, ignite, explode } from '../src/sim/combat.js';
+import { VERSION, BOSSES, BOSS_POOL, CAMPAIGN, ENEMIES, UNLOCKS, ROTATION, CONFIG } from '../src/sim/data.js';
 const CAMPAIGN_NPC = CAMPAIGN.find((m) => m.id === 7).npc;
 Meta.setPersist(false); // tests never write the player's real save
 
@@ -37,6 +37,7 @@ function runBot(seed, maxWaves, opts = {}) {
   const SP = spots(s);
   let i = 0, guard = 0;
   const hashes = [];
+  const seen = new Set(), news = [];
   while (!s.over && s.wave <= maxWaves && guard++ < 200000) {
     const cmds = [];
     if (s.players[0].drafts.length) cmds.push({ type: "pick", index: 0 });
@@ -57,9 +58,11 @@ function runBot(seed, maxWaves, opts = {}) {
       if (pl.cds.nova === 0) cmds.push({ type: 'nova' });
     }
     step(s, cmds);
+    for (const e of s.enemies) seen.add(e.type);
+    for (const ev of s.events) if (ev.type === 'newEnemy') news.push(ev.kind + '@' + ev.wave);
     if (s.tick % 100 === 0) hashes.push(`${s.tick}:${pl.gold}:${s.lives}:${s.enemies.length}:${s.enemies.reduce((a, e) => a + e.hp + e.dist, 0).toFixed(3)}`);
   }
-  return { s, hash: hashes.join('|') };
+  return { s, hash: hashes.join('|'), seen, news };
 }
 
 try {
@@ -827,9 +830,417 @@ try {
     check('spores: three cards need the spore tower', CARDS.filter((c) => c.needs === 'spore').length === 3);
   }
 
+  // ---------- Rotation mobs, batch 1 (Хмарка, Бляшанка, Барабанщик, Жабка, Мушляк) + infrastructure ----------
+  {
+    const arena = (seed = 9, opts = {}) => { const g = createGame(seed, opts); g.queue = []; g.countdown = 1e9; g.lives = 1e6; return g; };
+    // a stationary enemy on lane 0 (speedMul 0) at a given distance along it
+    const put = (g, type, dist, hpMul = 1) => { const e = spawn(g, type, 0, dist, hpMul); e.speedMul = 0; return e; };
+    const roster = Object.keys(ENEMIES).filter((k) => ENEMIES[k].from !== undefined);
+    check('rotation: batch 1 has five mobs with weight, gap, family, tip and about', roster.length >= 5 && roster.every((k) => ENEMIES[k].weight > 0 && ENEMIES[k].gap > 0 && ENEMIES[k].family && ENEMIES[k].tip && ENEMIES[k].about), roster.join());
+    check('data: runner gap is data (7), base types weigh 1', ENEMIES.runner.gap === 7 && ENEMIES.slime.gap === 12 && ['slime', 'runner', 'knight', 'healer', 'splitter'].every((k) => ENEMIES[k].weight === 1));
+
+    // rotation: seeded, deterministic, one mob per slot wave, never before its own `from`
+    const rots = [];
+    let rotOk = true, rotMsg = '';
+    for (let seed = 1; seed <= 60; seed++) {
+      const a = createGame(seed), b = createGame(seed);
+      const n = Math.min(ROTATION.slots.length, roster.length);
+      const first = a.rot.slice(0, n);
+      if (JSON.stringify(a.rot) !== JSON.stringify(b.rot)) { rotOk = false; rotMsg = `seed ${seed} not deterministic`; }
+      if (!first.every((r, i) => r.wave === ROTATION.slots[i] && ENEMIES[r.type].from <= r.wave) || new Set(a.rot.map((r) => r.type)).size !== a.rot.length || a.rot.length !== roster.length) { rotOk = false; rotMsg = `seed ${seed}: ${JSON.stringify(a.rot)}`; }
+      rots.push(first.map((r) => r.type).join());
+    }
+    check('rotation: seeded, one mob per slot (7/9/11/13/15), no repeats, respects `from`', rotOk, rotMsg);
+    check('rotation: different seeds meet the mobs in a different order', new Set(rots).size > 1, [...new Set(rots)].length + ' orders');
+    {
+      const g = createGame(5), r = g.rot.find((x) => x.wave === 9);
+      g.wave = 8; g.queue = [];
+      step(g, [{ type: 'nextWave', p: 0 }]);
+      const ne = g.events.filter((e) => e.type === 'newEnemy');
+      check('rotation: «newEnemy» event on the slot wave (and not before)', ne.length === 1 && ne[0].kind === r.type && ne[0].wave === 9);
+      const early = createGame(5); early.wave = 5; step(early, [{ type: 'nextWave', p: 0 }]);
+      check('rotation: nothing from the rotation before wave 7', !early.events.some((e) => e.type === 'newEnemy') && early.queue.every((q) => ENEMIES[q.type].from === undefined));
+      const bw = createGame(5, { mode: 'brawl', week: BRAWLS.findIndex((b) => b.id === 'slime') });
+      bw.wave = 8; step(bw, [{ type: 'nextWave', p: 0 }]);
+      check('rotation: brawl pools are untouched', !bw.events.some((e) => e.type === 'newEnemy') && bw.queue.every((q) => q.type === 'slime' || q.type === 'splitter' || q.type === 'goblin'));
+    }
+    // weights: heavier types are drawn more often (slime w1 vs cloud 0.6)
+    {
+      const g = createGame(3); g.rot = [{ wave: 1, type: 'cloud' }, { wave: 1, type: 'drummer' }]; g.lives = 1e6;
+      const cnt = {};
+      for (let i = 0; i < 40; i++) { g.wave = 0; g.queue = []; step(g, [{ type: 'nextWave', p: 0 }]); for (const q of g.queue) cnt[q.type] = (cnt[q.type] || 0) + 1; }
+      check('weights: the type draw follows ENEMIES[].weight (slime 1 vs cloud 0.6)', cnt.slime > cnt.cloud && cnt.cloud > 0, JSON.stringify(cnt));
+      // drummer is a pack leader: first of its pack, followed by someone else, spaced by its own gap
+      let leaders = 0, bad = 0;
+      for (let i = 0; i < 40; i++) {
+        g.wave = 0; g.queue = []; step(g, [{ type: 'nextWave', p: 0 }]);
+        const q = g.queue;
+        q.forEach((it, j) => { if (it.type !== 'drummer') return; leaders++; const nx = q[j + 1]; if (nx && (nx.type === 'drummer' || nx.at - it.at !== ENEMIES.drummer.gap)) bad++; });
+      }
+      check('drummer: always first in a pack, followed by another type', leaders > 0 && bad === 0, `leaders=${leaders} bad=${bad}`);
+    }
+    // count / gap / fly: temporary test types so batch 2 (Мошкара) can rely on them
+    {
+      ENEMIES.t_swarm = { name: 'T', hp: 7, speed: 52, armor: 0, gold: 1, cost: 1.5, weight: 1e6, gap: 5, count: 3, fly: true };
+      UNLOCKS.t_swarm = 1;
+      try {
+        const g = createGame(8); g.queue = []; g.lives = 1e6;
+        step(g, [{ type: 'nextWave', p: 0 }]);
+        const sw = g.queue.filter((q) => q.type === 't_swarm');
+        check('count: a queue item brings `count` units, cost is per group', sw.length > 0 && sw.length % 3 === 0 && sw.length / 3 <= Math.ceil(14 / 1.5), `units=${sw.length}`);
+        check('gap: pack spacing comes from data (5 ticks between groups)', sw.length >= 6 && sw[3].at - sw[0].at === 5, `${sw.slice(0, 6).map((q) => q.at)}`);
+        const f = createGame(8); f.queue = []; f.lives = 1e6; f.countdown = 1e9;
+        const m = spawn(f, 't_swarm', 0, 40, 1), sl = spawn(f, 'slime', 0, 40, 1);
+        const P = posAt(f.map, 0, 70);
+        f.walls.push({ id: 999, owner: 0, tx: 0, ty: 0, x: P.x, y: P.y, hp: 1e6, max: 1e6 });
+        const Z = posAt(f.map, 0, 120);
+        f.zones.push({ x: Z.x, y: Z.y, r: 20, dps: 400, life: 400, max: 400, owner: 0, src: 'fire' });
+        for (let i = 0; i < 90; i++) step(f);
+        check('fly: ignores barricades and puddles', !m.blocked && m.dist > 85 && m.hp === m.maxHp && sl.blocked && sl.dist < 80, `fly=${m.dist.toFixed(0)} slime=${sl.dist.toFixed(0)} hp=${m.hp}`);
+      } finally { delete ENEMIES.t_swarm; delete UNLOCKS.t_swarm; }
+    }
+    // speed cap
+    {
+      const g = arena(4); const e = spawn(g, 'runner', 0, 10, 1); e.speedMul = 6;
+      const d0 = e.dist; step(g);
+      check('speed cap: no enemy exceeds 110 px/s whatever the multipliers', Math.abs(e.dist - d0 - CONFIG.speedCap / 20) < 1e-6, `${(e.dist - d0) * 20}`);
+      const k = spawn(g, 'slime', 0, 10, 1); k.speedMul = 1; const k0 = k.dist; step(g);
+      check('speed cap: normal enemies untouched', Math.abs(k.dist - k0 - ENEMIES.slime.speed / 20) < 1e-6);
+    }
+
+    // 1. Дощова хмарка: soaks neighbours in 40 px each second and puts their fire out
+    {
+      const g = arena(11), c = put(g, 'cloud', 80), near = put(g, 'slime', 70), far = put(g, 'slime', 160);
+      ignite(g, near, 5, 3, 0, 'fire'); ignite(g, far, 5, 3, 0, 'fire');
+      let rainEv = 0;
+      for (let i = 0; i < 20; i++) { step(g); rainEv += g.events.filter((e) => e.type === 'rain').length; }
+      check('cloud: soaks enemies within 40 px and puts out their fire', near.wetT > 0 && near.burnT === 0 && !(c.wetT > 0), `wet=${near.wetT} burn=${near.burnT}`);
+      check('cloud: leaves far enemies alone', !(far.wetT > 0) && far.burnT > 0);
+      check('cloud: vs tesla x1.5, rain event for the juice', vsMult('cloud', 'tesla') === 1.5 && rainEv >= 1, `rain events=${rainEv}`);
+    }
+    // 2. Бляшаний солдатик: each blow that does not get through the armour knocks 1 off
+    {
+      const g = arena(12), e = put(g, 'tinman', 80, 100);
+      damage(g, e, 5, 0, { src: 'arrow' });
+      check('tinman: a bounced blow strips 1 armour', e.armor === 5, `armor=${e.armor}`);
+      damage(g, e, 8, 0, { src: 'arrow' }); // 8 vs armour 5: gets through
+      check('tinman: a blow that gets through does not strip', e.armor === 5);
+      damage(g, e, 50, 0, { pierce: true, src: 'cannon' });
+      check('tinman: piercing damage does not strip', e.armor === 5);
+      for (let i = 0; i < 7; i++) damage(g, e, 1, 0, { src: 'arrow' });
+      check('tinman: armour wears down to 0, never below', e.armor === 0 && g.events.filter((x) => x.type === 'shed').length >= 5, `armor=${e.armor}`);
+    }
+    // 3. Заводний барабанщик: +20% speed for the units right behind him, never bosses/drummers/units ahead
+    {
+      const g = arena(13), d = put(g, 'drummer', 100);
+      const behind = put(g, 'slime', 80), ahead = put(g, 'slime', 130), far = put(g, 'slime', 15), boss = put(g, 'boss', 90), d2 = put(g, 'drummer', 85);
+      for (let i = 0; i < 10; i++) step(g);
+      check('drummer: units within 48 px behind get x1.2 haste', behind.hasteT > 0 && behind.hasteF === ENEMIES.drummer.beat.mult, `${behind.hasteT}/${behind.hasteF}`);
+      check('drummer: not units ahead, far behind, bosses or other drummers', !(ahead.hasteT > 0) && !(far.hasteT > 0) && !(boss.hasteT > 0) && !(d2.hasteT > 0));
+      const k = arena(13), kd = put(k, 'drummer', 110), kb = spawn(k, 'slime', 0, 70, 1);
+      const kc = spawn(k, 'slime', 0, 400, 1); // control far from any drummer
+      const b0 = kb.dist, c0 = kc.dist;
+      for (let i = 0; i < 20; i++) step(k);
+      check('drummer: the boosted unit really runs 20% faster', Math.abs((kb.dist - b0) / (kc.dist - c0) - 1.2) < 0.05, `${((kb.dist - b0) / (kc.dist - c0)).toFixed(3)}`);
+      // haste does not stack: the biggest wins (Пан Равлик x1.5 stays)
+      const m = arena(13), md = put(m, 'drummer', 100), mb = put(m, 'slime', 80); mb.hasteT = 30; mb.hasteF = 1.5;
+      for (let i = 0; i < 10; i++) step(m);
+      check('drummer: takes the max with other hastes, no stacking', mb.hasteF === 1.5);
+    }
+    // 4. Жабка-стрибунка: a hit makes her hop 48 px forward (3 s cooldown), over barricades; slowed ones do not hop
+    {
+      const g = arena(14), f = put(g, 'froglet', 80, 100);
+      const d0 = f.dist;
+      damage(g, f, 1, 0, { src: 'arrow' });
+      for (let i = 0; i < 10; i++) step(g);
+      check('froglet: a hit makes her hop 48 px forward', Math.abs(f.dist - d0 - 48) < 0.01 && f.leapT === 0, `moved ${(f.dist - d0).toFixed(1)}`);
+      const d1 = f.dist;
+      damage(g, f, 1, 0, { src: 'arrow' });
+      for (let i = 0; i < 10; i++) step(g);
+      check('froglet: no second hop during the cooldown', f.dist === d1);
+      for (let i = 0; i < 60; i++) step(g);
+      damage(g, f, 1, 0, { src: 'arrow' });
+      for (let i = 0; i < 10; i++) step(g);
+      check('froglet: hops again after 3 s', f.dist - d1 > 47);
+      const g2 = arena(14), s2 = put(g2, 'froglet', 80, 100);
+      s2.slowT = 20; s2.slowF = 0.5;
+      damage(g2, s2, 1, 0, { src: 'arrow' });
+      for (let i = 0; i < 10; i++) step(g2);
+      check('froglet: slowed or frozen does not hop', s2.dist === 80 && !g2.events.some((e) => e.type === 'leap'));
+      const b = arena(14), bf = spawn(b, 'froglet', 0, 60, 100), bs = spawn(b, 'slime', 0, 60, 100);
+      const P = posAt(b.map, 0, 75);
+      b.walls.push({ id: 999, owner: 0, tx: 0, ty: 0, x: P.x, y: P.y, hp: 1e6, max: 1e6 });
+      bf.speedMul = 0.1; // walks slowly, but a hop is a hop
+      damage(b, bf, 1, 0, { src: 'arrow' });
+      for (let i = 0; i < 40; i++) step(b);
+      check('froglet: jumps over a barricade the slime cannot pass', bf.dist > 100 && bs.blocked && bs.dist < 90, `frog=${bf.dist.toFixed(0)} slime=${bs.dist.toFixed(0)}`);
+    }
+    // 5. Мушляк: a hit shuts him in the shell for 1.2 s (stands, armour +5), then 3 s without hiding again
+    {
+      const g = arena(15), m = spawn(g, 'shellback', 0, 80, 100);
+      damage(g, m, 1, 0, { src: 'arrow' });
+      check('shellback: a hit closes the shell, armour +5', m.shellT === 24 && m.armor === ENEMIES.shellback.armor + 5);
+      const d0 = m.dist;
+      for (let i = 0; i < 20; i++) step(g);
+      check('shellback: stands still in the shell', m.dist === d0 && m.shellT > 0);
+      for (let i = 0; i < 6; i++) step(g);
+      check('shellback: comes out after 1.2 s with the old armour, walks again', m.shellT === 0 && m.armor === ENEMIES.shellback.armor && m.dist > d0);
+      damage(g, m, 1, 0, { src: 'arrow' });
+      check('shellback: cannot hide again for 3 s', m.shellT === 0);
+      for (let i = 0; i < 61; i++) step(g);
+      damage(g, m, 1, 0, { src: 'arrow' });
+      check('shellback: hides again after the cooldown', m.shellT > 0);
+      const q = arena(15), q1 = put(q, 'shellback', 80, 100);
+      ignite(q, q1, 6, 2, 0, 'fire'); damage(q, q1, 1, 0, { quiet: true, pierce: true });
+      for (let i = 0; i < 10; i++) step(q);
+      check('shellback: burning (quiet) damage does not close the shell', !(q1.shellT > 0));
+      const cn = arena(15), cu = put(cn, 'shellback', 80, 100);
+      damage(cn, cu, 16, 0, { pierce: true, src: 'cannon' });
+      check('shellback: a cannon shot (ignores armour) still hurts in the shell', cu.hp < cu.maxHp - 10 && cu.shellT > 0);
+    }
+    // determinism + bots: every rotation mob shows up in a real run (classic and circle) without desync
+    {
+      const r1 = runBot(777, 17), r2 = runBot(777, 17);
+      check('rotation mobs: a run to wave 17 is deterministic', r1.hash === r2.hash && r1.news.join() === r2.news.join());
+      const o = { mode: 'circle', bonusGold: 2500, bonusLives: 30 };
+      const rc1 = runBot(31, 17, o), rc2 = runBot(31, 17, o);
+      check('rotation mobs: circle bot run is deterministic', rc1.hash === rc2.hash && rc1.hash.length > 0);
+      const metAll = new Set();
+      for (const seed of [1, 2, 3]) for (const md of ['classic', 'circle']) {
+        const r = runBot(seed, 17, { mode: md, bonusGold: 2500, bonusLives: 30 });
+        r.news.forEach((n) => metAll.add(n.split('@')[0]));
+        for (const k of r.seen) if (ENEMIES[k].from !== undefined) metAll.add(k);
+      }
+      check('bots (classic + circle, seeds 1-3, to wave 17): every batch-1 mob appears and is announced', roster.every((k) => metAll.has(k)), [...metAll].join());
+    }
+  }
+
+  // ---------- Rotation mobs, batch 2 (Котун, Туманець, Мошкара, Сорока, Кістлявчик) ----------
+  {
+    const arena = (seed = 9, opts = {}) => { const g = createGame(seed, { bonusGold: 3000, ...opts }); g.queue = []; g.countdown = 1e9; g.lives = 1e6; return g; };
+    const put = (g, type, dist, hpMul = 1) => { const e = spawn(g, type, 0, dist, hpMul); e.speedMul = 0; return e; };
+    // a free tile closest to a point of lane 0 (for towers that must see the enemy)
+    const nearTile = (g, dist, minD = 0) => {
+      const P = posAt(g.map, 0, dist);
+      let best = null, bd = 1e9;
+      for (let ty = 0; ty < ROWS; ty++) for (let tx = 0; tx < COLS; tx++) {
+        if (!canPlace(g, tx, ty)) continue;
+        const d = Math.hypot(tx * 24 + 12 - P.x, ty * 24 + 12 - P.y);
+        if (d >= minD && d < bd) { bd = d; best = [tx, ty]; }
+      }
+      return best;
+    };
+    const tower = (g, kind, dist, evolve, minD = 0) => {
+      const base = TOWERS[kind].from || kind, [tx, ty] = nearTile(g, dist, minD);
+      step(g, [{ type: 'place', kind: base, tx, ty, p: 0 }]);
+      const t = g.towers[g.towers.length - 1];
+      if (kind !== base) { step(g, [{ type: 'upgrade', id: t.id, p: 0 }]); step(g, [{ type: 'upgrade', id: t.id, p: 0 }]); step(g, [{ type: 'evolve', id: t.id, kind, p: 0 }]); }
+      return t;
+    };
+
+    // 5. Котун: +12 px/s every second up to 84; slowing, freezing, barricade and any explosion drop the roll
+    {
+      const g = arena(21), r = spawn(g, 'roller', 0, 20, 100);
+      for (let i = 0; i < 40; i++) step(g);
+      check('roller: speeds up (+12/s) while undisturbed', Math.abs(r.rollV - 24) < 0.01, `rollV=${r.rollV}`);
+      for (let i = 0; i < 200; i++) step(g);
+      check('roller: tops out at 84 px/s', Math.abs(def84(r) - 84) < 0.01, `${def84(r)}`);
+      r.slowT = 10; r.slowF = 0.5; step(g);
+      check('roller: a slow drops the roll', r.rollV === 0);
+      for (let i = 0; i < 30; i++) step(g);
+      check('roller: and he starts rolling again', r.rollV > 5);
+      step(g, [{ type: 'nova', p: 0 }]); // nova not in loadout: use direct freeze instead
+      r.slowT = 5; r.slowF = 0; step(g);
+      check('roller: freezing resets the roll', r.rollV === 0);
+      for (let i = 0; i < 80; i++) step(g);
+      const v = r.rollV;
+      explode(g, r.x, r.y, 20, 1, 0, 'cannon');
+      check('roller: an explosion drops the roll', v > 20 && r.rollV === 0, `${v}`);
+      for (let i = 0; i < 60; i++) step(g);
+      const wp = posAt(g.map, 0, r.dist + 16);
+      g.walls.push({ id: 998, owner: 0, tx: 0, ty: 0, x: wp.x, y: wp.y, hp: 1e6, max: 1e6 });
+      for (let i = 0; i < 20; i++) step(g);
+      check('roller: a barricade drops the roll', r.blocked && r.rollV === 0);
+      const f = arena(21), fr = spawn(f, 'roller', 0, 20, 100); fr.speedMul = 4; fr.rollV = 66;
+      const d0 = fr.dist; step(f);
+      check('roller: never faster than the global cap of 110', Math.abs(fr.dist - d0 - CONFIG.speedCap / 20) < 1e-6);
+    }
+    function def84(r) { return ENEMIES.roller.speed + r.rollV; }
+
+    // 2. Туманець: aimed towers cannot see him until area / chain / water / fire / spores / ability touches him
+    {
+      const run = (setup) => {
+        const g = arena(22), m = put(g, 'mistling', 120, 20);
+        const info = setup(g, m);
+        for (let i = 0; i < 60; i++) step(g);
+        return { g, m, ...info };
+      };
+      const a = run((g) => { tower(g, 'arrow', 120, false, 42); });
+      check('mistling: invisible to aimed towers (arrow does nothing)', a.m.mist && a.m.hp === a.m.maxHp);
+      // proximity: walking up to any tower (<= 36 px) shows him for good, even a plain archer
+      const nb = run((g) => { tower(g, 'arrow', 120); });
+      check('mistling: revealed by walking up to a tower (<= 36 px)', !nb.m.mist && nb.g.events.length >= 0);
+      const walk = arena(22), wm = spawn(walk, 'mistling', 0, 20, 200), wt = tower(walk, 'arrow', 140, false, 30);
+      let seenAt = -1;
+      for (let i = 0; i < 400 && seenAt < 0; i++) { step(walk); if (!wm.mist) seenAt = Math.hypot(wt.x - wm.x, wt.y - wm.y); }
+      check('mistling: walking past an archer reveals him at <= 36 px (and the reveal event is sent)', seenAt >= 0 && seenAt <= 36 + 3, `at ${seenAt.toFixed(1)} px`);
+      const w = run((g, m) => { m.wetT = 40; });
+      check('mistling: water reveals him for good', !w.m.mist);
+      const b = run((g, m) => { m.hasteT = 0; ignite(g, m, 3, 2, 0, 'fire'); });
+      check('mistling: fire reveals him', !b.m.mist);
+      const sp = run((g, m) => { infect(g, m, TOWERS.spore.spore, 0, 1, 0); });
+      check('mistling: spores reveal him', !sp.m.mist);
+      const ex = arena(22), em = put(ex, 'mistling', 120, 20);
+      explode(ex, em.x, em.y, 20, 1, 0, 'cannon');
+      check('mistling: an explosion reveals him and the reveal event is sent', !em.mist && ex.events.some((e) => e.type === 'reveal'));
+      for (let i = 0; i < 40; i++) step(ex);
+      check('mistling: stays visible once revealed', !em.mist);
+      const pu = run((g) => { tower(g, 'inferno', 120); });
+      check('mistling: a pulse tower (Пекло) takes the hidden ones as a separate list', !pu.m.mist && pu.m.hp < pu.m.maxHp, `hp ${pu.m.hp}/${pu.m.maxHp}`);
+      const ch = arena(22), cm = put(ch, 'mistling', 126, 20), cs = put(ch, 'slime', 118, 20);
+      tower(ch, 'tesla', 120);
+      for (let i = 0; i < 40; i++) step(ch);
+      check('mistling: a Tesla chain jumps to him', !cm.mist && cm.hp < cm.maxHp && cs.hp < cs.maxHp, `slime ${cs.hp}/${cs.maxHp} mist ${cm.hp}/${cm.maxHp}`);
+      const mt = arena(22, { perks: [{ abilities: ['meteor'] }] }), mm = put(mt, 'mistling', 120, 20);
+      step(mt, [{ type: 'meteor', x: mm.x, y: mm.y, p: 0 }]);
+      check('mistling: an ability (meteor) reveals him', !mm.mist);
+    }
+
+    // QA 4.1 / 4.2: a boss «rally» does not heal a heap; dying by the very last burn / spore tick means «died burning / poisoned»
+    {
+      const g = arena(26), p = put(g, 'bonepile', 120, 10), boss = spawn(g, 'boss', 0, 118, 1);
+      boss.bk = 'shroom'; boss.abT = 1; boss.speedMul = 0;
+      damage(g, p, 9999, 0, { src: 'arrow' });
+      for (let i = 0; i < 3; i++) step(g);
+      check('rally: a boss heal does not lift a heap of bones (hp stays 1)', p.pile > 0 && p.hp === 1 && g.events.length >= 0, `hp=${p.hp}`);
+      const b = arena(26), bb = put(b, 'bonepile', 120, 10);
+      bb.hp = 1; bb.burnT = 1; bb.burnDps = 100; bb.burnOwner = 0; bb.burnSrc = 'fire';
+      step(b);
+      check('bonepile: killed by the LAST burn tick does not rise', bb.dead);
+      const c = arena(26), cb = put(c, 'bonepile', 120, 10);
+      cb.hp = 1; cb.sporeT = 1; cb.sporeDps = 100; cb.sporeOwner = 0; cb.sporeCfg = TOWERS.spore.spore;
+      step(c);
+      check('bonepile: killed by the LAST spore tick does not rise', cb.dead);
+    }
+    // 6. Мошкара: three at once, fly, cost per group, cannon x0.5
+    {
+      const d = ENEMIES.gnats;
+      check('gnats: count 3, fly, vs fire 1.5 / tesla 1.3 / cannon 0.5', d.count === 3 && d.fly && vsMult('gnats', 'fire') === 1.5 && vsMult('gnats', 'tesla') === 1.3 && vsMult('gnats', 'cannon') === 0.5);
+      const g = createGame(3); g.rot = [{ wave: 1, type: 'gnats' }]; g.lives = 1e6;
+      let units = 0, groupsOk = true;
+      for (let i = 0; i < 20; i++) {
+        g.wave = 0; g.queue = []; step(g, [{ type: 'nextWave', p: 0 }]);
+        const gn = g.queue.filter((q) => q.type === 'gnats');
+        units += gn.length;
+        if (gn.length % 3 !== 0) groupsOk = false;
+        const slimes = g.queue.filter((q) => q.type === 'slime').length;
+        if (gn.length / 3 * d.cost + slimes * ENEMIES.slime.cost > 14 + 3) groupsOk = false; // cost is per group, within the budget
+      }
+      check('gnats: always arrive in threes, cost counted per group', units > 0 && groupsOk, `units=${units}`);
+      const fl = arena(23), fg = spawn(fl, 'gnats', 0, 40, 1), sl = spawn(fl, 'slime', 0, 40, 1);
+      const P = posAt(fl.map, 0, 70);
+      fl.walls.push({ id: 997, owner: 0, tx: 0, ty: 0, x: P.x, y: P.y, hp: 1e6, max: 1e6 });
+      for (let i = 0; i < 70; i++) step(fl);
+      check('gnats: fly over the barricade', fg.dist > 90 && sl.blocked);
+    }
+
+    // 7. Сорока: collects coins within 28 px, spills them (+1 coin) when killed, loses them when she escapes
+    {
+      const g = arena(24), m = put(g, 'magpie', 80, 100);
+      g.coins.push({ id: 5001, x: m.x + 20, y: m.y, value: 6, life: 100 }, { id: 5002, x: m.x + 60, y: m.y, value: 7, life: 100 });
+      step(g);
+      check('magpie: picks up a coin within 28 px, not a far one', m.loot.length === 1 && m.loot[0] === 6 && g.coins.length === 1 && g.coins[0].id === 5002);
+      g.coins = [];
+      kill(g, m, 0, 'arrow');
+      const vals = g.coins.map((c) => c.value).sort();
+      check('magpie: killed, she spills her loot plus one coin', g.coins.length >= 2 && vals.includes(6), JSON.stringify(vals));
+      const e = arena(24), em = spawn(e, 'magpie', 0, 80, 1);
+      em.loot.push(9, 9);
+      const L = e.map.lanes[0];
+      em.dist = L.total - 0.5;
+      const lives = e.lives;
+      step(e);
+      check('magpie: escaped = the loot is gone, nothing spills', em.dead && e.coins.length === 0 && e.lives === lives - 1);
+      const gc = arena(24), gm = put(gc, 'magpie', 80, 1);
+      for (let i = 0; i < 12; i++) gm.loot.push(1);
+      gc.coins.push({ id: 5003, x: gm.x, y: gm.y, value: 4, life: 100 });
+      step(gc);
+      check('magpie: carries at most 12 coins', gm.loot.length === 12 && gc.coins.length === 1);
+    }
+
+    // 9. Кістлявчик: falls into a pile (3 s, circle 2 s), gets up once with 40% hp; fire / spores / explosions stop it
+    {
+      const g = arena(25), b = put(g, 'bonepile', 120, 10), gold0 = g.players[0].gold;
+      damage(g, b, 9999, 0, { src: 'arrow' });
+      check('bonepile: death makes a pile, not a corpse (gold paid)', !b.dead && b.pile === 60 && b.hp === 1 && g.players[0].gold > gold0 && g.events.some((e) => e.type === 'pile'));
+      tower(g, 'arrow', 120);
+      for (let i = 0; i < 30; i++) step(g);
+      check('bonepile: aimed towers cannot hit the pile', b.hp === 1 && b.pile > 0 && !b.dead);
+      for (let i = 0; i < 40 && b.pile > 0; i++) step(g);
+      check('bonepile: gets up after 3 s with 40% hp', b.pile === 0 && !b.dead && b.hp === Math.round(b.maxHp * 0.4), `hp ${b.hp}/${b.maxHp} tick ${g.tick}`);
+      damage(g, b, 99999, 0, { pierce: true, src: 'arrow' });
+      check('bonepile: gets up only once', b.dead);
+
+      const c = arena(25, { mode: 'circle' }), cb = put(c, 'bonepile', 120, 10);
+      damage(c, cb, 9999, 0, { src: 'arrow' });
+      check('bonepile: in the circle the pile lasts 2 s', cb.pile === 40);
+
+      const ar = arena(25), ap = put(ar, 'bonepile', 120, 10);
+      damage(ar, ap, 9999, 0, { src: 'arrow' });
+      explode(ar, ap.x, ap.y, 20, 1, 0, 'cannon');
+      check('bonepile: area damage finishes the pile', ap.dead);
+
+      const bu = arena(25), bp = put(bu, 'bonepile', 120, 10);
+      ignite(bu, bp, 3, 2, 0, 'fire');
+      damage(bu, bp, 9999, 0, { pierce: true, quiet: true });
+      check('bonepile: dies for good while burning', bp.dead);
+      const sc = arena(25), sb = put(sc, 'bonepile', 120, 10);
+      infect(sc, sb, TOWERS.spore.spore, 0, 1, 0);
+      damage(sc, sb, 9999, 0, { pierce: true, quiet: true });
+      check('bonepile: dies for good while poisoned', sb.dead);
+      const ex = arena(25), eb = put(ex, 'bonepile', 120, 1);
+      explode(ex, eb.x, eb.y, 20, 9999, 0, 'cannon');
+      check('bonepile: dies for good from an explosion', eb.dead);
+      // a pile is not healed by a Цілитель nor counted as a target for the chain
+      const hl = arena(25), hp = put(hl, 'bonepile', 120, 10); put(hl, 'healer', 125, 1);
+      damage(hl, hp, 9999, 0, { src: 'arrow' });
+      for (let i = 0; i < 40; i++) step(hl);
+      check('bonepile: a healer does not heal the pile', hp.hp === 1 && hp.pile > 0);
+    }
+
+    // determinism of a whole run with batch-2 mobs forced into the pool, classic and circle
+    {
+      const forced = (mode) => {
+        const g = createGame(41, { mode, bonusGold: 3000, bonusLives: 30 });
+        g.rot = ['gnats', 'magpie', 'roller', 'mistling', 'bonepile'].map((type, i) => ({ wave: i + 1, type }));
+        const sig = [];
+        for (let i = 0; i < 20 * 150 && !g.over; i++) {
+          step(g, i % 40 === 0 && g.towers.length < 6 ? [{ type: 'place', kind: ['arrow', 'cannon', 'tesla', 'fire'][g.towers.length % 4], tx: nearTile(g, 80 + g.towers.length * 30)[0], ty: nearTile(g, 80 + g.towers.length * 30)[1], p: 0 }] : []);
+          if (g.tick % 100 === 0) sig.push(stateHash(g));
+        }
+        return { sig: sig.join(), types: new Set(g.enemies.map((e) => e.type)), wave: g.wave };
+      };
+      for (const md of ['classic', 'circle']) {
+        const a = forced(md), b = forced(md);
+        check(`batch 2 mobs in a ${md} run: deterministic, the run goes on`, a.sig === b.sig && a.sig.length > 0 && a.wave >= 3, `wave ${a.wave}`);
+      }
+    }
+    // real «5 of 10»: each run meets five, the other five wait for the endless mode (every 2 waves after the win wave)
+    {
+      const sets = new Set();
+      let ok = true;
+      for (let seed = 1; seed <= 40; seed++) {
+        const g = createGame(seed), five = g.rot.slice(0, 5), rest = g.rot.slice(5);
+        sets.add(five.map((r) => r.type).sort().join());
+        if (g.rot.length !== 10 || rest.some((r, i) => r.wave !== g.winWave + 2 * (i + 1)) || new Set(g.rot.map((r) => r.type)).size !== 10) ok = false;
+      }
+      check('rotation: 5 of 10 per run, the rest come every 2 waves after wave 20, different seeds pick different fives', ok && sets.size > 5, `${sets.size} different sets`);
+    }
+  }
+
   // Golden replay: a fixed bot run must give the same fingerprint until VERSION is bumped.
   // When you change src/sim on purpose: VERSION++ and paste the new hash printed below.
-  const GOLDEN = { version: 53, hash: 2159789739 };
+  const GOLDEN = { version: 56, hash: 3589234247 };
   const gh = stateHash(runBot(4242, 6).s);
   if (VERSION === GOLDEN.version) check('golden replay: sim unchanged at this VERSION (else bump VERSION)', gh === GOLDEN.hash, `got ${gh}`);
   else log(`NOTE golden replay: VERSION ${VERSION} — set GOLDEN = { version: ${VERSION}, hash: ${gh} }`);

@@ -282,9 +282,25 @@ const MAPS = {
   goblin: ['..0..0..', '.050050.', '.055550.', '.5c55c5.', '0455554.', '04444440', '.044440.', '..0..0..'],
   boss: ['..0000..', '.022220.', '02c22c20', '02022020', '02222220', '02344320', '.022220.', '0.0..0.0'],
   king: ['.4.44.4.', '.444444.', '02222220', '02c22c20', '02022020', '02344320', '.022220.', '0.0..0.0'],
+  // rotation mobs: cloud (sky + white), tinman (slate + red plume), drummer (blue + gold drum),
+  // froglet (teal + lime), shellback open / closed (orange shell, lime body)
+  cloud: ['..000...', '.0aaa00.', '0aaaaaa0', '0acaaca0', '0aaaaaa0', '.000000.', '..b.b.b.', '.b.b.b..'],
+  tinman: ['..0220..', '.0eeee0.', '.0e00e0.', '0eeeeee0', '0e3ee3e0', '0eeeeee0', '.0e00e0.', '..0..0..'],
+  drummer: ['..0000..', '.099990.', '.0c99c0.', '.099990.', '04444440', '04c44c40', '04444440', '.0.00.0.'],
+  froglet: ['.00..00.', '0c7007c0', '07777770', '07777770', '077cc770', '.07cc70.', '07700770', '00....00'],
+  shellback: ['..0000..', '.034430.', '03433430', '03343330', '03333330', '.055550.', '.0c55c0.', '..0000..'],
+  roller: ['..0000..', '.022220.', '02233220', '023cc320', '02233220', '.022220.', '..0000..', '.0.00.0.'],
+  mistling: ['..0000..', '.0bbbb0.', '0bcbbcb0', '0bbbbbb0', '0bbbbbb0', '0b0bb0b0', '.0b..b0.', '..0..0..'],
+  gnats: ['........', '.c....c.', 'c.0000.c', '..0ff0..', '..0ff0..', '...00...', '........', '........'],
+  magpie: ['..000...', '.0c0c0..', '.04000..', '0099900.', '0999990.', '.09990.0', '..000.00', '..0.0...'],
+  bonepile: ['..0000..', '.0cccc0.', '.0c00c0.', '..0cc0..', '.0c00c0.', '.0cccc0.', '..0cc0..', '.0c00c0.'],
+  bonepile_pile: ['........', '........', '........', '...0c0..', '.0c0c0c0', '0c0cc0c0', '0cc0cc0c', '.000000.'],
+  shellback_c: ['..0000..', '.034430.', '03433430', '03344330', '03433430', '03333330', '.000000.', '........'],
 };
 export const ENEMY_COLOR = {
   slime: C.green, runner: C.orange, splitter: C.plum, knight: C.silver, healer: C.white, mini: C.lime, goblin: C.yellow, boss: C.red, king: C.red,
+  roller: C.red, mistling: C.cyan, gnats: C.dark, magpie: C.blue, bonepile: C.white,
+  cloud: C.sky, tinman: C.slate, drummer: C.blue, froglet: C.teal, shellback: C.orange,
 };
 const SCALE = { boss: 3, king: 4 };
 

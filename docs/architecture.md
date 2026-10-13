@@ -53,7 +53,7 @@
 | `mapgen.js` | Процедурна карта: лінії, ставки, ферма (`genClassic`, `genCircle`, `placeFarm`, `posAt`) |
 | `queries.js` | Чисті запити до стану: `canPlace`, `towerAt`, `towerStats`, `placeCost`, … |
 | `combat.js` | `damage`, `kill`, `ignite`, `explode`, `spawn`, `pickCards` |
-| `waves.js` | `planLanes`, `startWave` (склад хвилі, боси) |
+| `waves.js` | `planLanes`, `startWave` (склад хвилі, боси, зважений вибір типу за `ENEMIES[].weight`), `planRotation` (сесійна ротація нових мобів `ROTATION` → `state.rot`, подія `newEnemy`) |
 | `commands.js` | Реєстр обробників команд (патерн **Command**): `COMMANDS[type](s, pl, pi, c)` |
 | `sim.js` | `createGame`, `step`, оновлення ворогів/веж/снарядів; **ре-експортує публічний API** (тести й клієнт імпортують лише з `sim.js`) |
 | `types.js` | JSDoc-типи: `GameState`, `Command`, `GameEvent`, `Player` |
@@ -115,6 +115,9 @@
 - `tests/sim.html` — детермінізм, механіки, баланс-бот. `tests/render.html` — смоук рендеру. Обидва мають вивести `ALL PASSED`.
 - `tests/client.html` — смоук клієнтських модулів (імпорти без помилок, шина, валідація повідомлень).
 - CI (job `test` у `.github/workflows/deploy.yml`) запускає всі три в headless Chrome; деплой (`needs: test`) іде лише після зеленого прогону.
+
+## 8a. Нові вороги (ротація)
+10 звичайних «ротаційних» мобів (`ENEMIES[].from`) описані в `docs/mobs-concept.md` — **реалізовано**. Кожен забіг (seeded, `state.rot`) зустрічає 5 з 10 на хвилях 7/9/11/13/15; решта — по одному кожні 2 хвилі після 20-ї (нескінченний режим). Поля даних: `weight`, `gap`, `count`, `fly`, `lead`, `family` (лише дані), `tip`, `about`. Стеля швидкості — `CONFIG.speedCap` (110 px/с). Нова подія для UI: `newEnemy {kind, wave}` (банер «Новий ворог»). Туманець (`mist`) невидимий для прицільних веж, доки його не зачепить площа/ланцюг/вода/вогонь/спори/здібність або він не підійде на `mistSight` (36 px) до будь-якої вежі; тоді подія `reveal`.
 
 ## 9. Угоди
 - Коментарі — англійською поруч із кодом, документація й UI-тексти — українською (як зараз).

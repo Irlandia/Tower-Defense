@@ -101,8 +101,8 @@ export class Renderer {
           for (const p of e.pts.slice(1)) this.burst(p.x, p.y, 4, C.cyan, 50);
           break;
         case 'spores': // a green cloud where spores burst (bloom) or pass to the neighbours (spread)
-          this.rings.push({ x: e.x, y: e.y, r: 3, max: e.r, c: e.burst ? C.orange : C.lime, life: 0.7 });
-          this.burst(e.x, e.y, e.burst ? 24 : 8, e.burst ? C.red : C.lime, 60, -20);
+          this.rings.push({ x: e.x, y: e.y, r: 3, max: e.r, c: e.burst ? C.plum : C.lime, life: 0.7 });
+          this.burst(e.x, e.y, e.burst ? 24 : 8, e.burst ? C.plum : C.lime, 60, -20);
           if (e.burst) this.shake = Math.max(this.shake, 3);
           break;
         case 'meteor':
@@ -151,6 +151,45 @@ export class Renderer {
           this.shake = Math.max(this.shake, 4);
           break;
         }
+        case 'rain': // Дощова хмарка: a ring of drops and steam where fire was put out
+          this.rings.push({ x: e.x, y: e.y, r: 4, max: e.r, c: C.sky, life: 0.6 });
+          this.burst(e.x, e.y - 4, 6, C.cyan, 30, 20);
+          break;
+        case 'shed': // Бляшаний солдатик: a tin plate flies off
+          this.burst(e.x, e.y - 8, 6, C.silver, 70, -30);
+          this.text(e.x, e.y - 26, '-1🛡', C.silver, 1);
+          break;
+        case 'leap': // Жабка: dust where she pushes off
+          this.burst(e.x, e.y + 4, 8, '#a8805e', 40, -10);
+          this.text(e.x, e.y - 22, '!', C.lime, 2);
+          break;
+        case 'shell': // Мушляк shuts / opens
+          this.burst(e.x, e.y - 4, e.on ? 8 : 5, e.on ? C.orange : C.yellow, 40, -15);
+          this.rings.push({ x: e.x, y: e.y, r: 2, max: 14, c: e.on ? C.orange : C.yellow, life: 0.4 });
+          break;
+        case 'reveal': // Туманець is seen for good
+          this.burst(e.x, e.y - 6, 10, C.cyan, 50, -10);
+          this.rings.push({ x: e.x, y: e.y, r: 2, max: 18, c: C.cyan, life: 0.5 });
+          this.text(e.x, e.y - 24, '!', C.cyan, 2);
+          break;
+        case 'pile': // Кістлявчик collapses
+          this.burst(e.x, e.y - 4, 14, C.white, 60, -20);
+          this.text(e.x, e.y - 22, '+' + e.gold, C.yellow, 1);
+          break;
+        case 'rise':
+          this.burst(e.x, e.y - 6, 10, C.white, 50, -30);
+          this.rings.push({ x: e.x, y: e.y, r: 2, max: 16, c: C.white, life: 0.5 });
+          break;
+        case 'magpie': // a coin snatched from the map
+          this.burst(e.x, e.y, 6, C.yellow, 40, -30);
+          break;
+        case 'magpieDrop':
+          this.burst(e.x, e.y - 4, 8 + e.n * 2, C.yellow, 80, -35);
+          break;
+        case 'drum': // Барабанщик: a note over the ones he speeds up
+          this.text(e.x, e.y - 26, '♪', C.blue, 2);
+          this.rings.push({ x: e.x, y: e.y, r: 4, max: 36, c: C.blue, life: 0.4 });
+          break;
         case 'nova':
           this.blueFlash = 0.5;
           this.shake = 4;
@@ -620,7 +659,7 @@ export class Renderer {
     const x = e.px + (e.x - e.px) * alpha;
     const y = e.py + (e.y - e.py) * alpha;
     const frozen = e.slowT > 0 && e.slowF === 0;
-    const look = e.disguised ? "slime" : e.type; // Перевертень in disguise looks like a plain slime
+    const look = e.disguised ? "slime" : e.shellT > 0 ? e.type + "_c" : e.pile > 0 ? "bonepile_pile" : e.type; // Перевертень in disguise looks like a plain slime; Мушляк in his shell
     const bs = e.bk && e.type === "boss" && !e.disguised ? bossSprites(e.bk, BOSSES[e.bk]) : null; // bosses with their own look
     const spr = bs ? (e.flash > 0 ? bs.f : bs.n) : (e.flash > 0 ? FLASH : SPRITES)[look];
     const heavy = !e.disguised && (e.type === "boss" || e.type === "king");
@@ -637,6 +676,8 @@ export class Renderer {
     } else {
       bob = frozen || e.blocked ? 0 : e.type === "runner" ? ((tick >> 1) % 2) * 2 : (((tick + e.id * 3) >> 2) % 2) * 2;
     }
+    if (e.pile > 0) bob = e.pile < 12 ? (e.pile & 1) : 0; // the heap trembles before he gets up
+    if (e.leapT > 0) bob = Math.round(Math.sin(Math.PI * (1 - e.leapT / 8)) * 10); // Жабка: a hop arc
     const dx = Math.round(x - spr.width / 2), dy = Math.round(y - spr.height + 6 - bob);
     ellipse(g, Math.round(x), Math.round(y) + 6, Math.max(2, Math.round(spr.width / 2.6) - (heavy ? Math.floor(bob / 2) : 0)), heavy ? 3 : 2, heavy ? "rgba(0,0,0,0.45)" : "rgba(0,0,0,0.3)");
     if (hovered) ellipse(g, Math.round(x), Math.round(y) + 6, Math.round(spr.width / 2) + 2, 3, 'rgba(255,205,117,0.6)');
@@ -646,10 +687,18 @@ export class Renderer {
       return;
     }
     if (e.immuneT > 0) g.globalAlpha = 0.55 + 0.25 * Math.sin(tick / 2); // ghostly
+    if (e.mist) g.globalAlpha = 0.4 + 0.1 * Math.sin(tick / 4); // Туманець: half see-through until something touches him
     g.drawImage(spr, dx, dy);
     g.globalAlpha = 1;
     if (frozen) g.drawImage(bs ? bs.z : FROZEN[look], dx, dy);
     if (e.disguised && (tick + e.id) % 23 < 2) { g.fillStyle = C.yellow; g.fillRect(dx + 2 + ((tick >> 3) % 4) * 2, dy + 2, 1, 1); } // the only tell: a faint glint
+    // state icons of the rotation mobs
+    if (e.type === "tinman" && e.armor > 0) { g.fillStyle = C.orange; for (let i = 0; i < e.armor; i += 2) g.fillRect(dx + 3 + i, dy - 1, 2, 1); } // plates left
+    if (e.type === "drummer") { const nx = dx + spr.width - 2, ny = dy - 4 - ((tick >> 3) % 2); g.fillStyle = C.ink; g.fillRect(nx - 1, ny + 3, 4, 3); g.fillRect(nx + 2, ny, 1, 5); g.fillStyle = C.yellow; g.fillRect(nx, ny + 3, 2, 2); g.fillRect(nx + 2, ny + 1, 1, 3); } // ♪
+    if (e.mist) { g.fillStyle = C.ink; g.fillRect(dx + 5, dy - 8, 5, 7); g.fillStyle = C.cyan; for (const [qx, qy, qw, qh] of [[6, -7, 3, 1], [8, -6, 1, 2], [7, -4, 1, 1], [7, -2, 1, 1]]) g.fillRect(dx + qx, dy + qy, qw, qh); } // «?»
+    if (e.type === "roller" && e.rollV > 14 && (tick >> 1) % 2) this.parts.push({ x: x - 5, y: y + 5, vx: -20 - e.rollV, vy: -6, life: 0.25, c: "#a8805e" }); // dust of the roll
+    if (e.loot && e.loot.length) { g.fillStyle = C.yellow; for (let i = 0; i < Math.min(4, e.loot.length); i++) g.fillRect(dx + 1 + i * 3, dy - 3, 2, 2); } // the stash
+    if (e.type === "cloud" && (tick + e.id) % 3 === 0) this.parts.push({ x: x + Math.random() * 10 - 5, y: y - 2, vx: 0, vy: 40, life: 0.25, c: C.cyan });
     if (e.shieldT > 0) { g.strokeStyle = (tick >> 1) % 2 ? C.white : C.silver; g.strokeRect(dx - 2.5, dy - 2.5, spr.width + 5, spr.height + 5); }
     if (e.hasteT > 0 && (tick >> 1) % 2) this.parts.push({ x: x - 6 + Math.random() * 4, y: y + Math.random() * 6 - 4, vx: -40, vy: 0, life: 0.2, c: C.lime });
     if (e.wetT > 0 && (tick >> 2) % 3 === 0) { g.fillStyle = C.sky; g.fillRect(dx + 2 + (e.id % 9), dy + spr.height, 1, 3); }
@@ -712,11 +761,57 @@ export class Renderer {
 
   drawZone(z, tick) {
     const g = this.g;
+    if (z.src === 'spore') return this.drawSporeZone(z, tick);
     g.globalAlpha = 0.85 * Math.min(1, z.life / 20);
     ellipse(g, Math.round(z.x), Math.round(z.y), z.r, Math.round(z.r * 0.55), C.red);
     ellipse(g, Math.round(z.x), Math.round(z.y), Math.round(z.r * 0.6), Math.round(z.r * 0.3), C.orange);
     g.globalAlpha = 1;
     if ((tick + Math.round(z.x)) % 3 === 0) this.parts.push({ x: z.x + Math.random() * z.r - z.r / 2, y: z.y, vx: 0, vy: -18, life: 0.4, c: C.yellow });
+  }
+
+  // Spore puddle (Чумна хмара): a "witch ring" of tiny mushrooms around a patch of mycelium with soft gas puffs
+  // drifting over it. Mushrooms sprout as the puddle appears and wilt as it ends, so the remaining time reads at a glance.
+  // Shape (ring, not a filled blob), motion (slow drift, not rising sparks) and palette (plum/lime) differ from fire.
+  drawSporeZone(z, tick) {
+    const g = this.g;
+    const cx = Math.round(z.x), cy = Math.round(z.y), rx = Math.round(z.r), ry = Math.max(2, Math.round(z.r * 0.55));
+    const age = 1 - z.life / z.max;
+    const k = Math.max(0, Math.min(1, age * 6, z.life / (z.max * 0.25))); // 0..1: sprouting in, wilting out
+
+    // mycelium: a sparse dithered patch under the ring
+    g.globalAlpha = 0.5 * k;
+    g.fillStyle = C.teal;
+    for (let dy = -ry; dy <= ry; dy++) {
+      const w = Math.floor(rx * Math.sqrt(Math.max(0, 1 - (dy / (ry + 0.5)) ** 2)));
+      for (let dx = -w; dx <= w; dx++) if (((dx + dy * 2) & 3) === 0) g.fillRect(cx + dx, cy + dy, 1, 1);
+    }
+
+    // the ring of mushrooms: positions are a fixed function of the puddle, so they don't flicker
+    const n = Math.max(8, Math.round(z.r * 0.8)), shown = Math.ceil(n * k);
+    g.globalAlpha = 1;
+    for (let i = 0; i < shown; i++) {
+      const h = Math.sin((i + 1) * 12.9898 + z.x * 0.37 + z.y * 0.71) * 43758.5453;
+      const jit = h - Math.floor(h);
+      const a = ((i + jit * 0.6) / n) * Math.PI * 2;
+      const mx = Math.round(cx + Math.cos(a) * rx * 0.92), my = Math.round(cy + Math.sin(a) * ry * 0.92);
+      if (k < 0.5) { g.fillStyle = C.lime; g.fillRect(mx, my, 1, 1); continue; } // still a sprout
+      g.fillStyle = C.silver; g.fillRect(mx, my, 1, 1); // stem
+      g.fillStyle = jit < 0.5 ? C.plum : C.red; g.fillRect(mx - 1, my - 2, 3, 2); // cap
+      g.fillStyle = C.lime; g.fillRect(mx, my - 2, 1, 1); // spot
+    }
+
+    // gas: three translucent puffs orbiting slowly over the centre
+    for (let i = 0; i < 3; i++) {
+      const a = tick * 0.03 + i * 2.1;
+      const px = Math.round(cx + Math.cos(a) * z.r * 0.35), py = Math.round(cy - 3 + Math.sin(a * 1.3) * ry * 0.4);
+      g.globalAlpha = 0.28 * k;
+      ellipse(g, px, py, Math.round(z.r * 0.3), Math.round(z.r * 0.2), C.lime);
+      g.globalAlpha = 0.25 * k;
+      ellipse(g, px, py, Math.round(z.r * 0.15), Math.round(z.r * 0.1), C.green);
+    }
+    g.globalAlpha = 1;
+    // spores creep sideways and up, slowly
+    if ((tick + cx) % 4 === 0 && k > 0) this.parts.push({ x: z.x + (Math.random() - 0.5) * z.r * 1.4, y: z.y + (Math.random() - 0.5) * ry, vx: (Math.random() - 0.5) * 10, vy: -6, life: 0.9, c: Math.random() < 0.5 ? C.lime : C.plum, s: 1 });
   }
 
   // Aura buffs on a tower: orange sword = damage aura, cyan clock = attack-speed aura.

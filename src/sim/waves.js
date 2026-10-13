@@ -1,5 +1,5 @@
 // Wave planning and composition (enemy packs, bosses, goblin thief).
-import { ENEMIES, UNLOCKS, MODES, CONFIG, BOSSES, BOSS_POOL, TICK_RATE as T } from './data.js';
+import { ENEMIES, UNLOCKS, ROTATION, MODES, CONFIG, BOSSES, BOSS_POOL, TICK_RATE as T } from './data.js';
 import { rand, randInt } from './rng.js';
 import { player } from './queries.js';
 
@@ -18,6 +18,42 @@ export function planLanes(s) {
   const out = [];
   while (out.length < count) out.push(all.splice(randInt(s, all.length), 1)[0]);
   return out.sort();
+}
+
+// Session rotation: the run picks which rotation mobs it meets and on which wave each arrives (seeded, so co-op peers agree).
+// A mob never arrives before its own `from` wave. Unpicked mobs join in endless mode, one every few waves.
+// Called once at the end of createGame: s.rot = [{ wave, type }].
+export function planRotation(s) {
+  const all = Object.keys(ENEMIES).filter((k) => ENEMIES[k].from !== undefined);
+  const slots = ROTATION.slots.slice(0, all.length);
+  const shuffled = () => {
+    const a = [...all];
+    for (let i = a.length - 1; i > 0; i--) { const j = randInt(s, i + 1); [a[i], a[j]] = [a[j], a[i]]; }
+    return a;
+  };
+  const feasible = (set) => set.map((k) => ENEMIES[k].from).sort((a, b) => a - b).every((f, i) => f <= slots[i]);
+  let pick = null;
+  for (let tries = 0; tries < 30 && !pick; tries++) { const c = shuffled().slice(0, slots.length); if (feasible(c)) pick = c; }
+  if (!pick) pick = shuffled().slice(0, slots.length);
+  const rest = [...pick], rot = [];
+  for (const wave of slots) {
+    const ok = rest.filter((k) => ENEMIES[k].from <= wave);
+    const from = ok.length ? ok : rest;
+    const k = from[randInt(s, from.length)];
+    rest.splice(rest.indexOf(k), 1);
+    rot.push({ wave, type: k });
+  }
+  shuffled().filter((k) => !pick.includes(k)).forEach((k, i) => rot.push({ wave: s.winWave + ROTATION.endlessEvery * (i + 1), type: k }));
+  s.rot = rot;
+}
+
+// Weighted draw of an enemy type (ENEMIES[].weight, default 1).
+function drawType(s, pool) {
+  let total = 0;
+  for (const k of pool) total += ENEMIES[k].weight ?? 1;
+  let r = rand(s) * total;
+  for (const k of pool) { r -= ENEMIES[k].weight ?? 1; if (r < 0) return k; }
+  return pool[pool.length - 1];
 }
 
 export function startWave(s) {
@@ -44,7 +80,9 @@ export function startWave(s) {
   const over20 = Math.max(0, w - s.winWave);
   const B = s.brawl || {};
   const hpMul = waveHpMul(s, w);
-  const pool = B.pool || Object.keys(UNLOCKS).filter((k) => UNLOCKS[k] <= w);
+  const rot = B.pool ? [] : s.rot || [];
+  const pool = B.pool || [...Object.keys(UNLOCKS).filter((k) => UNLOCKS[k] <= w), ...rot.filter((r) => r.wave <= w).map((r) => r.type)];
+  for (const r of rot) if (r.wave === w) s.events.push({ type: 'newEnemy', kind: r.type, wave: w }); // «Новий ворог» banner
   // co-op: a bit more enemies so two players still have to work
   const budget = (B.budget || 1) * (8 + w * 6) * (1 + 0.5 * (s.players.length - 1)); // +50% per extra player
   // Every planned lane gets its own stream starting at the same moment (two entries = two
@@ -53,14 +91,21 @@ export function startWave(s) {
     let left = budget / lanes.length;
     let at = s.tick + T;
     // small packs of one type: readable and interesting to counter
+    const follow = pool.filter((k) => !ENEMIES[k].lead);
+    const put = (type) => { // one queue item (a group of `count` units); cost is for the whole group
+      const d = ENEMIES[type];
+      for (let n = 0; n < (d.count || 1); n++) s.queue.push({ type, lane, at: at + n * 2, hpMul });
+      at += d.gap ?? 12;
+      left -= d.cost;
+    };
     while (left > 0) {
-      const type = pool[randInt(s, pool.length)];
+      let type = drawType(s, pool);
       const pack = 2 + randInt(s, 3);
-      for (let i = 0; i < pack && left > 0; i++) {
-        s.queue.push({ type, lane, at, hpMul });
-        at += type === "runner" ? 7 : 12;
-        left -= ENEMIES[type].cost;
+      if (ENEMIES[type].lead && follow.length) { // a leader (Барабанщик) walks first, then a pack of someone else
+        put(type);
+        type = drawType(s, follow);
       }
+      for (let i = 0; i < pack && left > 0; i++) put(type);
       at += T;
     }
   }

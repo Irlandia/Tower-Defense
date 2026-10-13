@@ -6,7 +6,7 @@ export const COLS = 26;
 export const ROWS = 14;
 export const TICK_RATE = 20;
 // Bump on every change to sim/data: co-op peers refuse to play with a different version.
-export const VERSION = 53;
+export const VERSION = 56;
 // Spores: at most this many new infections per tick across the whole map (chain reactions stay readable and cheap).
 export const SPORE_CAP = 6;
 
@@ -25,6 +25,7 @@ export const CONFIG = {
   maxLevel: 3,
   winWave: 20, // survive this wave (final boss) to win
   sellRatio: 0.7,
+  speedCap: 110, // px/s: the final speed of any enemy, whatever the multipliers (laps, haste, brawl)
 };
 
 // Player abilities. A player's loadout (talent tree, src/meta.js) puts them in slots Q / W / E / R.
@@ -152,18 +153,58 @@ export const BARREL = { radius: 48, dmg: 30, dmgPerWave: 6 };
 export const OBSTACLES = { count: 30, tree: 15, rock: 25, chestChance: 0.3, chestGold: 45 };
 export const COIN = { chance: 0.1, life: 8, base: 4 };
 
+// Enemy fields: hp, speed (px/s), armor, gold, cost (wave budget), vs (tower family multipliers).
+// weight = share in the random type draw of a wave (default 1); gap = ticks between units of a pack (default 12);
+// count = units that come as one queue item (cost is for the whole group, default 1); fly = ignores barricades and puddles;
+// family = lore family (iron / spark / slime / bone); lead = a pack leader: comes first, followed by a pack of another type;
+// from = earliest wave of a rotation mob (see ROTATION); tip / about = HUD hint and the «Новий ворог» line.
+// Mechanics of the rotation mobs (read in sim.js / combat.js): rain, shed, beat, leap, shell (batch 1),
+// roll, mist, magpie, rise (batch 2). `family` is lore only: no rule reads it.
 export const ENEMIES = {
-  slime: { name: 'Слиз', hp: 22, speed: 33, armor: 0, gold: 3, cost: 1, vs: { fire: 1.5, arrow: 0.75 } },
-  runner: { name: 'Бігун', hp: 14, speed: 69, armor: 0, gold: 3, cost: 1.2, vs: { arrow: 1.5, cannon: 0.6 } },
-  splitter: { name: 'Ділильник', hp: 40, speed: 30, armor: 0, gold: 4, cost: 2, splits: 'mini', vs: { cannon: 1.4, tesla: 0.7 } },
-  knight: { name: 'Лицар', hp: 50, speed: 24, armor: 4, gold: 6, cost: 2.5, vs: { tesla: 1.5, fire: 0.6 } },
-  healer: { name: 'Цілитель', hp: 35, speed: 30, armor: 0, gold: 6, cost: 3, heal: 5, healRange: 45, vs: { arrow: 1.3, frost: 0.5 } },
-  mini: { name: 'Слизик', hp: 10, speed: 45, armor: 0, gold: 1, cost: 0.5, vs: { cannon: 1.5 } },
-  goblin: { name: 'Гоблін-злодій', hp: 30, speed: 63, armor: 0, gold: 8, cost: 0, coins: 4, steal: 20, vs: { frost: 1.3, fire: 0.75 } },
-  boss: { name: 'Бос', hp: 340, speed: 18, armor: 3, gold: 60, cost: 0, lives: 10, vs: { tesla: 1.2, frost: 0.7 } },
-  king: { name: 'Король слизу', hp: 1400, speed: 14, armor: 5, gold: 0, cost: 0, lives: 20, heal: 20, healRange: 60, vs: { cannon: 1.2, fire: 0.7 } },
+  slime: { name: 'Слиз', family: 'slime', hp: 22, speed: 33, armor: 0, gold: 3, cost: 1, weight: 1, gap: 12, vs: { fire: 1.5, arrow: 0.75 } },
+  runner: { name: 'Бігун', family: 'spark', hp: 14, speed: 69, armor: 0, gold: 3, cost: 1.2, weight: 1, gap: 7, vs: { arrow: 1.5, cannon: 0.6 } },
+  splitter: { name: 'Ділильник', family: 'slime', hp: 40, speed: 30, armor: 0, gold: 4, cost: 2, weight: 1, gap: 12, splits: 'mini', vs: { cannon: 1.4, tesla: 0.7 } },
+  knight: { name: 'Лицар', family: 'iron', hp: 50, speed: 24, armor: 4, gold: 6, cost: 2.5, weight: 1, gap: 12, vs: { tesla: 1.5, fire: 0.6 } },
+  healer: { name: 'Цілитель', family: 'slime', hp: 35, speed: 30, armor: 0, gold: 6, cost: 3, weight: 1, gap: 12, heal: 5, healRange: 45, vs: { arrow: 1.3, frost: 0.5 } },
+  mini: { name: 'Слизик', family: 'slime', hp: 10, speed: 45, armor: 0, gold: 1, cost: 0.5, weight: 1, gap: 12, vs: { cannon: 1.5 } },
+  goblin: { name: 'Гоблін-злодій', family: 'iron', hp: 30, speed: 63, armor: 0, gold: 8, cost: 0, weight: 1, gap: 12, coins: 4, steal: 20, vs: { frost: 1.3, fire: 0.75 } },
+  boss: { name: 'Бос', family: 'slime', hp: 340, speed: 18, armor: 3, gold: 60, cost: 0, lives: 10, vs: { tesla: 1.2, frost: 0.7 } },
+  king: { name: 'Король слизу', family: 'slime', hp: 1400, speed: 14, armor: 5, gold: 0, cost: 0, lives: 20, heal: 20, healRange: 60, vs: { cannon: 1.2, fire: 0.7 } },
 };
-// Wave from which an enemy type can appear.
+// Rotation mobs: each run picks ROTATION.slots.length of them (seeded); they arrive one per slot wave with a banner.
+// The rest of the roster joins in endless mode, one every ROTATION.endlessEvery waves after the win wave.
+// Batch 1 (Хмарка, Бляшанка, Барабанщик, Жабка, Мушляк) and batch 2 (Котун, Туманець, Мошкара, Сорока, Кістлявчик): 5 of 10 per run.
+export const ROTATION = { slots: [7, 9, 11, 13, 15], endlessEvery: 2 };
+Object.assign(ENEMIES, {
+  cloud: { name: 'Дощова хмарка', family: 'spark', from: 7, hp: 40, speed: 26, armor: 0, gold: 5, cost: 2, weight: 0.6, gap: 12,
+    rain: { r: 40, wet: 2, every: 1 }, vs: { tesla: 1.5 },
+    tip: 'мочить усіх поруч і гасить горіння — Тесла, Гармата', about: 'Ніхто її не кликав, але вона все одно розплакалась над вашою обороною.' },
+  tinman: { name: 'Бляшаний солдатик', family: 'iron', from: 9, hp: 40, speed: 26, armor: 6, gold: 6, cost: 2.5, weight: 0.6, gap: 12,
+    shed: 1, tip: 'бляшки відпадають від слабких влучань — Лучник облуплює, Гармата добиває', about: 'Обладунок з консервних бляшанок. Тримається на чесному слові і трьох цвяхах.' },
+  drummer: { name: 'Заводний барабанщик', family: 'iron', from: 12, hp: 32, speed: 30, armor: 0, gold: 6, cost: 3, weight: 0.5, gap: 12, lead: true,
+    beat: { r: 48, mult: 1.2 }, tip: 'іде першим, ті що позаду — на 20% швидші; бий першого', about: 'Тра-та-та! Ключ у спині, ритм у серці, ноти — ні.' },
+  froglet: { name: 'Жабка-стрибунка', family: 'slime', from: 8, hp: 24, speed: 38, armor: 0, gold: 4, cost: 1.5, weight: 0.7, gap: 12,
+    leap: { dist: 48, ticks: 8, cd: 3 }, tip: 'після влучання стрибає вперед; Крига її тримає, Снайпер не промахується', about: 'Квак Великий — її дядько. Жабка ще не цар, але стрибати від стріл уже вміє.' },
+  shellback: { name: 'Мушляк', family: 'iron', from: 9, hp: 45, speed: 22, armor: 1, gold: 6, cost: 2.5, weight: 0.6, gap: 12,
+    shell: { hide: 1.2, armor: 5, cd: 3 }, tip: 'після влучання ховається в мушлю — Гармата, Снайпер, спори, вогонь', about: 'Не боягуз — просто дуже обережний. Мушлю купив на розпродажі в Барона, гарантія — до першої гармати.' },
+});
+Object.assign(ENEMIES, {
+  roller: { name: 'Котун', family: 'iron', from: 10, hp: 30, speed: 18, armor: 2, gold: 5, cost: 2, weight: 0.6, gap: 12,
+    roll: { max: 84, acc: 12 }, tip: 'розкочується до 84; Крига, Барикада й вибухи скидають розгін',
+    about: 'Згорнувся від страху, а розкрутився від задоволення.' },
+  mistling: { name: 'Туманець', family: 'spark', from: 11, hp: 26, speed: 36, armor: 0, gold: 5, cost: 2, weight: 0.5, gap: 12, mist: true, mistSight: 36,
+    tip: 'невидимий для веж, доки його не зачепить площа, ланцюг, вода, вогонь, спори чи не підійде впритул до вежі', about: "Сором'язливий. Як намокне — одразу червоніє і всім видно." },
+  gnats: { name: 'Мошкара', family: 'spark', from: 8, hp: 7, speed: 52, armor: 0, gold: 1, cost: 1.5, weight: 0.6, gap: 12, count: 3, fly: true,
+    vs: { fire: 1.5, tesla: 1.3, cannon: 0.5 }, tip: 'летить по троє, повз Барикаду — Пекло, Тесла, Хуртовина',
+    about: "Літні податки долини. Платити не обов'язково, чухатися — так." },
+  magpie: { name: 'Сорока', family: 'spark', from: 8, hp: 22, speed: 50, armor: 0, gold: 4, cost: 1.5, weight: 0.4, gap: 12, fly: true,
+    magpie: { r: 28 }, tip: "збирає монети з карти; вб'єш — усе висипле назад, втече — монети пропали",
+    about: 'Нічого не краде — просто дуже любить блискуче і погано розуміє слово "моє".' },
+  bonepile: { name: 'Кістлявчик', family: 'bone', from: 13, hp: 34, speed: 28, armor: 1, gold: 3, cost: 2.5, weight: 0.5, gap: 12,
+    rise: { time: 3, timeCircle: 2, hp: 0.4 }, tip: "розсипається в купу кісток і встає; купу б'є лише площа. Вогонь, спори, вибух — не встане",
+    about: 'Вставати після падіння — його кредо. Збирати себе докупи — його ранкова зарядка.' },
+});
+// Wave from which a base enemy type can appear.
 export const UNLOCKS = { slime: 1, runner: 2, splitter: 3, knight: 4, healer: 6 };
 
 // Talents: after every boss kill each player picks one card from a personal draft (never pauses co-op).

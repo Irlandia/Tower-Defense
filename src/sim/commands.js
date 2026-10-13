@@ -150,7 +150,7 @@ export const COMMANDS = {
     const dmg = (BARREL.dmg + s.wave * BARREL.dmgPerWave) * pl.mods.barrel;
     for (const e of s.enemies) {
       if (e.dead || Math.hypot(e.x - b.x, e.y - b.y) > BARREL.radius) continue;
-      damage(s, e, dmg, pi, { pierce: true });
+      damage(s, e, dmg, pi, { pierce: true, blast: true });
       ignite(s, e, 6, 2, pi);
     }
     s.events.push({ type: 'barrel', x: b.x, y: b.y, r: BARREL.radius });
@@ -183,7 +183,7 @@ export const COMMANDS = {
     const dmg = (40 + s.wave * 6) * pl.mods.meteorDmg;
     for (const e of s.enemies) {
       if (e.dead || Math.hypot(e.x - c.x, e.y - c.y) > ABILITIES.meteor.radius) continue;
-      damage(s, e, dmg, pi, { pierce: true });
+      damage(s, e, dmg, pi, { pierce: true, blast: true });
       ignite(s, e, 8, 3, pi);
     }
     s.events.push({ type: 'meteor', x: c.x, y: c.y, r: ABILITIES.meteor.radius, p: pi });
@@ -231,7 +231,7 @@ export const COMMANDS = {
     const A = ABILITIES.quake, dmg = A.dmg + s.wave * A.dmgPerWave;
     for (const e of s.enemies) {
       if (e.dead || Math.hypot(e.x - c.x, e.y - c.y) > A.radius) continue;
-      damage(s, e, dmg, pi, { pierce: true });
+      damage(s, e, dmg, pi, { pierce: true, blast: true });
       e.slowT = Math.round(A.slow * T * (ENEMIES[e.type].lives ? 0.5 : 1));
       e.slowF = A.slowF;
     }

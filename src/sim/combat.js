@@ -38,16 +38,17 @@ export function spawn(s, type, lane, dist, hpMul) {
   const e = {
     id: s.nextId++, type, lane, hp, maxHp: hp, armor: ENEMIES[type].armor, hpMul,
     dist, x: p.x, y: p.y, px: p.x, py: p.y, lap: 0, speedMul: (s.brawl && s.brawl.speed) || 1,
-    slowT: 0, slowF: 1, wetT: 0, burnT: 0, burnDps: 0, burnAcc: 0, burnOwner: 0, flash: 0, dead: false, blocked: false,
+    leapT: 0, leapCd: 0, shellT: 0, shellCd: 0, rollV: 0, pile: 0, risen: false, mist: !!ENEMIES[type].mist, blastTick: -1, slowT: 0, slowF: 1, wetT: 0, burnT: 0, burnDps: 0, burnAcc: 0, burnOwner: 0, flash: 0, dead: false, blocked: false,
     sporeT: 0, sporeStacks: 0, sporeGen: 0, sporeDps: 0, sporeAcc: 0, sporeSeen: -1, sporeOwner: 0, sporeMul: 1, sporeCfg: null,
   };
+  if (ENEMIES[type].magpie) e.loot = [];
   s.enemies.push(e);
   return e;
 }
 
 export function explode(s, x, y, r, dmg, owner, src = null) {
   for (const e of s.enemies) {
-    if (!e.dead && Math.hypot(e.x - x, e.y - y) <= r) damage(s, e, dmg, owner, { pierce: true, src });
+    if (!e.dead && Math.hypot(e.x - x, e.y - y) <= r) damage(s, e, dmg, owner, { pierce: true, src, blast: true });
   }
   s.events.push({ type: 'explode', x, y, r });
 }
@@ -87,7 +88,7 @@ export function resolveSpores(s) {
       const dmg = cfg.burst.dmg * e.sporeStacks * e.sporeMul * m.sporeBurst;
       for (const o of s.enemies) {
         if (o.dead || Math.hypot(o.x - e.x, o.y - e.y) > cfg.burst.r) continue;
-        damage(s, o, ENEMIES[o.type].lives ? dmg / 2 : dmg, e.sporeOwner, { pierce: true, src: 'spore' });
+        damage(s, o, ENEMIES[o.type].lives ? dmg / 2 : dmg, e.sporeOwner, { pierce: true, src: 'spore', blast: true });
       }
       s.events.push({ type: 'spores', x: e.x, y: e.y, r: cfg.burst.r, burst: true });
     } else if (cfg.spread) {
@@ -113,8 +114,18 @@ export function resolveSpores(s) {
 }
 
 
-export function damage(s, e, amount, owner, { pierce = false, crit = false, big = false, quiet = false, src = null } = {}) {
+// Туманець becomes visible for good (area, chain, water, fire, spores, abilities all call this).
+export function reveal(s, e) {
+  if (!e.mist) return;
+  e.mist = false;
+  s.events.push({ type: 'reveal', id: e.id, x: e.x, y: e.y });
+}
+
+// blast = an explosion (cannon, barrel, meteor, quake, steam, spore burst): resets Котун's roll, stops Кістлявчик from rising.
+export function damage(s, e, amount, owner, { pierce = false, crit = false, big = false, quiet = false, blast = false, src = null } = {}) {
   if (e.dead) return;
+  if (e.mist) reveal(s, e);
+  if (blast) { e.blastTick = s.tick; e.rollV = 0; }
   if (e.disguised) { // Перевертень drops the mask at the first hit
     e.disguised = false;
     e.speedMul *= BOSSES[e.bk].skill.speed / e.disguiseMul;
@@ -123,6 +134,7 @@ export function damage(s, e, amount, owner, { pierce = false, crit = false, big 
   const om = player(s, owner).mods;
   const mult = vsMult(e.type, src);
   amount *= mult * (src && e.lap >= 3 ? 1 + om.lapDmg : 1);
+  const bounced = !pierce && amount <= e.armor; // a blow that did not get through the armour
   let d = pierce ? amount : amount - e.armor;
   if (crit) d *= om.critMul;
   d = Math.max(1, Math.round(d));
@@ -135,16 +147,50 @@ export function damage(s, e, amount, owner, { pierce = false, crit = false, big 
     if (e.bk && BOSSES[e.bk].skill.split) for (let i = 0; i < BOSSES[e.bk].skill.split; i++) spawn(s, "splitter", e.lane, Math.max(0, e.dist - 8 - i * 10), e.hpMul * 0.6);
     s.events.push({ type: "bossRage", id: e.id, wave: e.bossWave || s.wave });
   }
+  if (e.hp > 0) hitReactions(s, e, bounced, quiet);
   if (e.hp <= 0) kill(s, e, owner, src);
+}
+
+// What a survivor does after being hit (rotation mobs): Бляшаний солдатик loses a plate on a bounced blow,
+// Жабка hops forward, Мушляк hides in his shell. Only direct hits count (burning, spores and puddles are quiet).
+function hitReactions(s, e, bounced, quiet) {
+  const def = ENEMIES[e.type];
+  if (def.shed && bounced && e.armor > 0) {
+    e.armor = Math.max(0, e.armor - def.shed);
+    s.events.push({ type: 'shed', id: e.id, x: e.x, y: e.y, armor: e.armor });
+  }
+  if (quiet) return;
+  if (def.leap && !(e.leapT > 0) && e.leapCd <= 0 && !(e.slowT > 0) && e.shellT <= 0) {
+    e.leapT = def.leap.ticks;
+    e.leapCd = Math.round(def.leap.cd * T);
+    s.events.push({ type: 'leap', id: e.id, x: e.x, y: e.y });
+  }
+  if (def.shell && !(e.shellT > 0) && e.shellCd <= 0) {
+    e.shellT = Math.round(def.shell.hide * T);
+    e.armor = def.armor + def.shell.armor;
+    s.events.push({ type: 'shell', id: e.id, x: e.x, y: e.y, on: true });
+  }
 }
 
 // The player who lands the killing blow gets the gold.
 // src = tower family of the blow (null: ability, barrel); goes into the death event for run summaries.
 export function kill(s, e, owner, src = null) {
-  e.dead = true;
   const def = ENEMIES[e.type];
   let pl = player(s, owner);
   if (pl.left) pl = s.players.find((q) => !q.left) || pl; // a disconnected player's towers earn for the team
+  // Кістлявчик falls apart into a pile of bones and gets up once, unless he died burning, poisoned or in an explosion.
+  // The pile (hp 1) can only be hit by area damage; any such hit finishes it.
+  if (def.rise && !e.risen && !(e.pile > 0) && !(e.burnT > 0) && !(e.sporeT > 0) && e.blastTick !== s.tick) {
+    e.risen = true;
+    e.hp = 1;
+    e.pile = Math.round((s.mode === 'circle' ? def.rise.timeCircle : def.rise.time) * T);
+    e.slowT = 0; e.wetT = 0;
+    const g = Math.round(def.gold * pl.mods.gold * ((s.brawl && s.brawl.killGold !== undefined) ? s.brawl.killGold : 1));
+    pl.gold += g;
+    s.events.push({ type: 'pile', id: e.id, x: e.x, y: e.y, gold: g, p: s.players[owner] ? owner : 0 });
+    return;
+  }
+  e.dead = true;
   const killGold = s.brawl && s.brawl.killGold !== undefined ? s.brawl.killGold : 1;
   const night = DAY.phases[dayPhase(s)].gold || 1; // night pays more
   const gold = Math.round(def.gold * pl.mods.gold * killGold * night) + (e.lap >= 1 ? pl.mods.hunter : 0);
@@ -168,6 +214,12 @@ export function kill(s, e, owner, src = null) {
       id: s.nextId++, x: e.x + (rand(s) * 24 - 12), y: e.y + (rand(s) * 18 - 9),
       value: Math.round((COIN.base + Math.floor(s.wave / 2)) * ((s.brawl && s.brawl.coinValue) || 1)), life: COIN.life * T,
     });
+  }
+  if (e.loot && e.loot.length) { // Сорока spills everything she collected, plus one coin of her own
+    const one = Math.round((COIN.base + Math.floor(s.wave / 2)) * ((s.brawl && s.brawl.coinValue) || 1));
+    const vals = [...e.loot, one];
+    vals.forEach((value, i) => s.coins.push({ id: s.nextId++, x: e.x + ((i % 3) - 1) * 9, y: e.y + (Math.floor(i / 3) % 3 - 1) * 7, value, life: COIN.life * T }));
+    s.events.push({ type: 'magpieDrop', x: e.x, y: e.y, n: vals.length });
   }
   if (def.splits) {
     const parts = (s.brawl && s.brawl.split) || 2;

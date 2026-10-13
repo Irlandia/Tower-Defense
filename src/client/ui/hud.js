@@ -109,7 +109,8 @@ function infoContent(s) {
       html: `<b>${def.name}</b> · ❤ ${Math.max(0, Math.round(en.hp))}/${en.maxHp}${en.armor ? ` · 🛡 ${en.armor}` : ''}<br>`
         + (weak ? `<span style="color:#a7f070">Слабкий до: ${weak}</span><br>` : '')
         + (res ? `<span style="color:#94b0c2">Опір: ${res}</span>` : '')
-        + (!weak && !res ? '<span class="hint">Без особливих слабкостей</span>' : ''),
+        + (!weak && !res ? '<span class="hint">Без особливих слабкостей</span>' : '')
+        + (def.tip ? `<br><span class="hint">${def.tip}</span>` : ''),
     };
   }
   if (ui.moving) {
@@ -152,8 +153,8 @@ function nextInfo(s) {
   const w = s.wave + 1, B = s.brawl || {}, parts = [];
   const lanes = (s.plan || []).length;
   if (lanes > 1) parts.push(`<b>${lanes}</b> входи одночасно`);
-  const fresh = B.pool ? [] : Object.keys(UNLOCKS).filter((k) => UNLOCKS[k] === w);
-  for (const k of fresh) parts.push(`новий: <b>${ENEMIES[k].name}</b>${ENEMY_TIPS[k] ? ` <i>(${ENEMY_TIPS[k]})</i>` : ''}`);
+  const fresh = B.pool ? [] : [...Object.keys(UNLOCKS).filter((k) => UNLOCKS[k] === w), ...(s.rot || []).filter((r) => r.wave === w).map((r) => r.type)];
+  for (const k of fresh) { const tip = ENEMY_TIPS[k] || ENEMIES[k].tip; parts.push(`новий: <b>${ENEMIES[k].name}</b>${tip ? ` <i>(${tip})</i>` : ''}`); }
   const boss = (s.mission && s.mission.bosses && s.mission.bosses[w]) || (w <= s.winWave && w % (B.bossEvery || 5) === 0);
   if (boss) parts.push(`<span class="ni-boss">${w === s.winWave ? 'ФІНАЛЬНИЙ БОС' : 'БОС'}</span>`);
   return parts.length ? `<small>Хвиля ${w}:</small> ${parts.join(' · ')}` : '';

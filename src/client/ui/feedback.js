@@ -1,6 +1,6 @@
 // Presentation reactions to simulation events and run lifecycle events: sounds, banners, UI resets.
 // No game rules here — flow decisions are made in session.js / loop.js.
-import { BOSSES, SEASONS, bossFor, DAY } from '../../sim/data.js';
+import { BOSSES, SEASONS, ENEMIES, bossFor, DAY } from '../../sim/data.js';
 import { dayPhase } from '../../sim/sim.js';
 import { app, bus, net, sfx, music, me } from '../app.js';
 import { $, hide } from '../dom.js';
@@ -77,6 +77,12 @@ bus.on('sim:events', (events) => {
         break;
       }
       case 'bossRage': sfx.play('leak'); break;
+      case 'newEnemy': { // a rotation mob arrives: shown a moment after the wave title so neither banner is lost
+        const d = ENEMIES[e.kind];
+        setTimeout(() => { sfx.play('card'); banner(`НОВИЙ ВОРОГ: ${d.name.toUpperCase()}`, 'gold', `${d.tip} · «${d.about}»`, 3600); }, 1700);
+        break;
+      }
+      case 'shell': sfx.play('cannon'); break;
       case 'nova': sfx.play('frost'); sfx.play('explode'); break;
       case 'spores': sfx.play(e.burst ? 'explode' : 'frost'); break;
       case 'quake': sfx.play('rumble'); break;

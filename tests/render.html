@@ -6,6 +6,7 @@
 <script type="module">
 // Draws frames in every mode / player count / UI state to catch renderer exceptions (they freeze the game loop).
 import { createGame, step, canPlace } from '../src/sim/sim.js';
+import { spawn } from '../src/sim/combat.js';
 import { TOWER_ORDER, COLS, ROWS } from '../src/sim/data.js';
 import { Renderer } from '../src/render.js';
 import { Critters } from '../src/critters.js';
@@ -63,6 +64,31 @@ try {
   ]) r.draw(s4, 0.5, ui, 0.016);
   out.push('PASS abilities: goldrain / quake previews, overdrive sparks, 4 slots');
 } catch (e) { failed++; out.push('FAIL abilities ' + e.stack); }
+
+// rotation mobs: every look, state icon and juice event must draw without exceptions
+try {
+  const s = createGame(42, { mode: 'classic', season: 'summer' });
+  s.lives = 1e6;
+  const kinds = ['cloud', 'tinman', 'drummer', 'froglet', 'shellback', 'roller', 'mistling', 'gnats', 'magpie', 'bonepile'];
+  kinds.forEach((k, i) => { const e = spawn(s, k, 0, 60 + i * 18, 1); e.speedMul = 0; });
+  const [cloud, tin, drum, frog, shell] = s.enemies;
+  const [roller, mist, , mag, bone] = s.enemies.slice(5);
+  roller.rollV = 40; mag.loot = [5, 5]; bone.pile = 8; mist.mist = true;
+  tin.armor = 4; frog.leapT = 4; shell.shellT = 10; cloud.wetT = 20; shell.flash = 2;
+  s.wave = 7;
+  r.onEvents([
+    { type: 'rain', id: cloud.id, x: cloud.x, y: cloud.y, r: 40, n: 2 }, { type: 'shed', id: tin.id, x: tin.x, y: tin.y, armor: 3 },
+    { type: 'leap', id: frog.id, x: frog.x, y: frog.y }, { type: 'shell', id: shell.id, x: shell.x, y: shell.y, on: true },
+    { type: 'shell', id: shell.id, x: shell.x, y: shell.y, on: false }, { type: 'drum', id: drum.id, x: drum.x, y: drum.y, n: 3 },
+    { type: 'reveal', id: mist.id, x: mist.x, y: mist.y }, { type: 'pile', id: bone.id, x: bone.x, y: bone.y, gold: 3 }, { type: 'rise', id: bone.id, x: bone.x, y: bone.y },
+    { type: 'magpie', id: mag.id, x: mag.x, y: mag.y }, { type: 'magpieDrop', x: mag.x, y: mag.y, n: 3 },
+    { type: 'death', x: cloud.x, y: cloud.y, kind: 'cloud', gold: 5, p: 0 }, { type: 'death', x: tin.x, y: tin.y, kind: 'shellback', gold: 6, p: 0 },
+  ]);
+  for (let i = 0; i < 6; i++) { r.draw(s, 0.5, { me: 0 }, 0.016); step(s); }
+  frog.slowT = 10; frog.slowF = 0; // frozen look of a hopper
+  r.draw(s, 0.5, { me: 0 }, 0.016);
+  out.push('PASS rotation mobs: sprites, state icons and events');
+} catch (e) { failed++; out.push('FAIL rotation mobs ' + e.stack); }
 
 // talent tree screen (src/treeui.js): renders the tree as DOM, buying and refunding redraws it
 try {

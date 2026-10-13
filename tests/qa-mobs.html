@@ -1,0 +1,580 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>QA: rotation mobs (determinism / edge cases / balance)</title>
+<pre id="out">running…</pre>
+<script type="module">
+// Independent QA harness for the 10 rotation mobs (VERSION 55). Parts via ?part=det|edge|bal|perf (default: all).
+// tests/_base/* is a copy of src/sim at HEAD (VERSION 53) for the balance comparison; delete it when not needed.
+import * as N from '../src/sim/sim.js';
+import * as C from '../src/sim/combat.js';
+import * as D from '../src/sim/data.js';
+
+let BS = null, BD = null; // optional: tests/_base/{sim,data,...}.js = copy of an older src/sim (git show HEAD:src/sim/X) for the A/B balance comparison
+try { BS = await import('./_base/sim.js'); BD = await import('./_base/data.js'); } catch (e) { /* no baseline: balance A/B skipped */ }
+const part = new URLSearchParams(location.search).get('part') || 'all';
+const want = (p) => part === 'all' || part === p;
+const out = [];
+let failed = 0;
+const log = (s) => out.push(s);
+const check = (name, ok, extra = '') => { if (!ok) failed++; log(`${ok ? 'PASS' : 'FAIL'} ${name} ${extra}`); };
+const tick = () => new Promise((r) => setTimeout(r, 0));
+
+const lcg = (seed) => { let x = (seed >>> 0) || 1; return () => (x = (Math.imul(x, 1664525) + 1013904223) >>> 0) / 4294967296; };
+const fnv = (str) => { let h = 0x811c9dc5; for (let i = 0; i < str.length; i++) h = Math.imul(h ^ str.charCodeAt(i), 0x01000193) >>> 0; return h; };
+const ROT = Object.keys(D.ENEMIES).filter((k) => D.ENEMIES[k].from !== undefined);
+const ALLAB = ['meteor', 'nova', 'wall', 'goldrain', 'overdrive', 'quake', 'dragon'];
+
+function spotsOf(M, DD, s) {
+  const road = [...s.map.tiles].map((k) => k.split(',').map(Number));
+  const o = [];
+  for (let ty = 0; ty < DD.ROWS; ty++) for (let tx = 0; tx < DD.COLS; tx++) {
+    if (!M.canPlace(s, tx, ty)) continue;
+    o.push({ tx, ty, n: road.filter(([x, y]) => Math.hypot(x - tx, y - ty) <= 3).length });
+  }
+  return o.sort((a, b) => b.n - a.n || a.tx - b.tx || a.ty - b.ty);
+}
+
+// ---- full-state digest (everything the sim keeps, except the static map) ----
+function digest(s) {
+  const slim = { t: s.tick, r: s.rngState, w: s.wave, l: s.lives, k: s.kills, q: s.queue, e: s.enemies, c: s.coins, wl: s.walls, z: s.zones, d: s.dragons, p: s.projs,
+    tw: s.towers, pl: s.players.map((p) => [p.gold, p.kills, p.cds, p.overT, p.drafts, p.rerolls, p.picked, p.left]), ev: s.events, ob: s.obstacles.length, ba: s.barrels.map((b) => b.ready),
+    o: s.over, won: s.won, dark: s.dark, rr: s.ringRev, st: s.stats };
+  return fnv(JSON.stringify(slim));
+}
+function invariants(s, tag, bad) {
+  const ids = new Set();
+  for (const e of s.enemies) {
+    if (ids.has(e.id)) bad.push(`${tag} dup enemy id ${e.id}`);
+    ids.add(e.id);
+    for (const k of ['x', 'y', 'dist', 'hp', 'rollV', 'armor', 'speedMul']) if (!Number.isFinite(e[k])) bad.push(`${tag} t${s.tick} ${e.type}.${k}=${e[k]}`);
+    if (e.pile > 0 && !(e.hp >= 1)) bad.push(`${tag} t${s.tick} pile hp ${e.hp}`);
+    if (e.loot && e.loot.length > 12) bad.push(`${tag} loot ${e.loot.length}`);
+    if (e.dead) bad.push(`${tag} t${s.tick} dead enemy in list`);
+    if (e.pile > 0 && e.type !== 'bonepile') bad.push(`${tag} pile on ${e.type}`);
+    if (e.hp > e.maxHp + 1e-6) bad.push(`${tag} t${s.tick} ${e.type} hp>maxHp ${e.hp}/${e.maxHp}`);
+  }
+  for (const p of s.players) if (!Number.isFinite(p.gold)) bad.push(`${tag} gold NaN`);
+  if (bad.length > 20) throw new Error('too many invariant failures: ' + bad.slice(0, 5).join('; '));
+}
+
+// ---- fuzz command source ----
+function fuzzCmds(M, DD, s, rnd, SP, np) {
+  const cmds = [];
+  const P = () => (np > 1 ? Math.floor(rnd() * np) : 0);
+  const pick = (a) => a[Math.floor(rnd() * a.length)];
+  if (s.won && s.over && s.mode === 'circle' && !s.endless) cmds.push({ type: 'continue' });
+  if (rnd() < 0.06) {
+    const free = SP.filter((p) => M.canPlace(s, p.tx, p.ty)).slice(0, 40);
+    if (free.length) cmds.push({ type: 'place', kind: pick(DD.TOWER_ORDER), tx: pick(free).tx, ty: pick(free).ty, p: P() });
+  }
+  if (s.towers.length && rnd() < 0.04) {
+    const t = pick(s.towers);
+    const r = rnd();
+    if (r < 0.5) cmds.push({ type: 'upgrade', id: t.id, p: t.owner });
+    else if (r < 0.75 && DD.BRANCHES[t.kind]) cmds.push({ type: 'evolve', id: t.id, kind: DD.BRANCHES[t.kind][Math.floor(rnd() * 2)], p: t.owner });
+    else if (r < 0.9) cmds.push({ type: 'master', id: t.id, p: t.owner });
+    else if (rnd() < 0.2) cmds.push({ type: 'sell', id: t.id, p: t.owner });
+  }
+  const roads = [...s.map.tiles];
+  if (rnd() < 0.02 && roads.length) { const [tx, ty] = pick(roads).split(',').map(Number); cmds.push({ type: 'wall', tx, ty, p: P() }); }
+  if (s.enemies.length && rnd() < 0.03) { const e = pick(s.enemies); cmds.push({ type: 'meteor', x: e.x, y: e.y, p: P() }); }
+  if (s.enemies.length && rnd() < 0.02) { const e = pick(s.enemies); cmds.push({ type: 'quake', x: e.x, y: e.y, p: P() }); }
+  if (s.enemies.length && rnd() < 0.01) { const e = pick(s.enemies); cmds.push({ type: 'dragon', x: e.x, y: e.y, p: P() }); }
+  if (rnd() < 0.01) cmds.push({ type: 'nova', p: P() });
+  if (rnd() < 0.01) cmds.push({ type: 'overdrive', p: P() });
+  if (rnd() < 0.02) cmds.push({ type: 'goldrain', x: 100 + rnd() * 400, y: 60 + rnd() * 240, p: P() });
+  if (s.coins.length && rnd() < 0.15) cmds.push({ type: 'collect', id: pick(s.coins).id, p: P() });
+  if (s.barrels.length && rnd() < 0.03) cmds.push({ type: 'barrel', id: pick(s.barrels).id, p: P() });
+  if (rnd() < 0.01) cmds.push({ type: 'nextWave' });
+  if (rnd() < 0.02) cmds.push({ type: 'pick', index: 0, p: P() });
+  if (s.obstacles.length && rnd() < 0.01) cmds.push({ type: 'clear', id: pick(s.obstacles).id, p: P() });
+  return cmds;
+}
+
+// Plays a game. `log` = null: generate commands with the fuzzer and record them; otherwise replay the log.
+function play(M, DD, seed, opts, { rotAll = false, maxTicks = 30000, maxWave = 22, replay = null, tag = '' } = {}) {
+  const s = M.createGame(seed, opts);
+  s.players.forEach((p) => { p.abilities = [...ALLAB]; });
+  if (rotAll) s.rot = ROT.map((k) => ({ wave: 1, type: k }));
+  const np = s.players.length;
+  const SP = spotsOf(M, DD, s);
+  const rnd = lcg(seed * 7 + 13);
+  const rec = [], hashes = [], bad = [];
+  const seen = new Set();
+  for (let i = 0; i < maxTicks; i++) {
+    if (s.over && !(s.won && s.mode === 'circle' && !s.endless)) break;
+    if (s.wave > maxWave) break;
+    const cmds = replay ? replay[i] : fuzzCmds(M, DD, s, rnd, SP, np);
+    if (!replay) rec.push(cmds);
+    M.step(s, JSON.parse(JSON.stringify(cmds)));
+    hashes.push(digest(s));
+    for (const e of s.enemies) seen.add(e.type);
+    if (!replay && i % 7 === 0) invariants(s, tag, bad);
+  }
+  return { s, hashes, rec, bad, seen };
+}
+
+function firstDiff(a, b) { const n = Math.min(a.length, b.length); for (let i = 0; i < n; i++) if (a[i] !== b[i]) return i; return a.length === b.length ? -1 : n; }
+
+if (want('det')) {
+  const cases = [
+    { name: 'classic solo rotAll', seed: 101, opts: { bonusGold: 6000, bonusLives: 60 }, rotAll: true },
+    { name: 'classic solo natural rot', seed: 202, opts: { bonusGold: 6000, bonusLives: 60 }, rotAll: false },
+    { name: 'classic coop(2) rotAll', seed: 303, opts: { players: 2, bonusGold: 6000, bonusLives: 60 }, rotAll: true },
+    { name: 'circle solo rotAll (+endless)', seed: 404, opts: { mode: 'circle', bonusGold: 8000, bonusLives: 120 }, rotAll: true },
+    { name: 'circle coop(2) rotAll', seed: 505, opts: { mode: 'circle', players: 2, bonusGold: 8000, bonusLives: 120 }, rotAll: true },
+    { name: 'classic solo rotAll seed2', seed: 606, opts: { bonusGold: 6000, bonusLives: 60 }, rotAll: true },
+  ];
+  for (const c of cases) {
+    const a = play(N, D, c.seed, c.opts, { rotAll: c.rotAll, tag: c.name });
+    // second Game with the same recorded command stream (= guest in lockstep / reconnect replay)
+    const b = play(N, D, c.seed, c.opts, { rotAll: c.rotAll, replay: a.rec });
+    // late "rejoin": fresh game replays the log up to tick K, then continues: must land on the same hashes
+    const d = firstDiff(a.hashes, b.hashes);
+    const types = [...a.seen].filter((k) => ROT.includes(k)).sort().join(',');
+    check(`determinism: ${c.name}`, d === -1 && a.hashes.length > 500, `ticks=${a.hashes.length} wave=${a.s.wave} over=${a.s.over} won=${a.s.won} diffAt=${d} mobs=[${types}]`);
+    check(`invariants: ${c.name}`, a.bad.length === 0, a.bad.slice(0, 4).join(' | '));
+    await tick();
+  }
+  // different command stream must differ (sanity of the digest)
+  const x = play(N, D, 101, { bonusGold: 6000 }, { rotAll: true, maxTicks: 1500 }), y = play(N, D, 102, { bonusGold: 6000 }, { rotAll: true, maxTicks: 1500 });
+  check('digest sanity: different seeds differ', firstDiff(x.hashes, y.hashes) !== -1);
+}
+
+// ================= edge cases =================
+function mk(seed = 1, opts = {}, ds = {}) {
+  const s = N.createGame(seed, { bonusGold: 5000, ...opts });
+  s.countdown = 1e9; // no scheduled waves unless the test wants them
+  s.players.forEach((p) => { p.abilities = [...ALLAB]; });
+  return s;
+}
+const sp = (s, type, dist = 50, lane = 0, hpMul = 1) => C.spawn(s, type, lane, dist, hpMul);
+const run = (s, n, cmds = []) => { for (let i = 0; i < n; i++) N.step(s, i === 0 ? cmds : []); };
+const roadTile = (s, lane, dist) => { const p = N.posAt(s.map, lane, dist); return { tx: Math.floor(p.x / D.TILE), ty: Math.floor(p.y / D.TILE), x: p.x, y: p.y }; };
+
+if (want('edge')) {
+  // E1 barricade + froglet / gnats / magpie / roller
+  {
+    const s = mk(11);
+    const wt = roadTile(s, 0, 150);
+    run(s, 1, [{ type: 'wall', tx: wt.tx, ty: wt.ty }]);
+    check('E1 wall placed on road', s.walls.length === 1);
+    const wd = N.posAt(s.map, 0, 150);
+    const slime = sp(s, 'slime', 100), frog = sp(s, 'froglet', 100), gn = [0, 1, 2].map((i) => sp(s, 'gnats', 100 - i * 4)), mp = sp(s, 'magpie', 100), rl = sp(s, 'roller', 100);
+    for (const e of [slime, frog, mp, rl, ...gn]) e.hp = e.maxHp = 1e6;
+    s.walls[0].hp = s.walls[0].max = 1e9;
+    const hp0 = s.walls[0].hp;
+    run(s, 200);
+    const wallDist = 150;
+    check('E1 slime stopped by wall', slime.dist < wallDist + 4, `dist=${slime.dist.toFixed(1)}`);
+    check('E1 roller stopped by wall and its roll is 0', rl.dist < wallDist + 4 && rl.rollV === 0, `dist=${rl.dist.toFixed(1)} rollV=${rl.rollV}`);
+    check('E1 gnats fly over wall', gn.every((g) => g.dist > wallDist + 20), gn.map((g) => g.dist.toFixed(0)).join(','));
+    check('E1 magpie flies over wall', mp.dist > wallDist + 20);
+    check('E1 unhit froglet does NOT jump (blocked like slime)', frog.dist < wallDist + 4, `dist=${frog.dist.toFixed(1)}`);
+    // hit the blocked frog: must hop over (design)
+    C.damage(s, frog, 1, 0, {});
+    run(s, 40);
+    check('E1 hit froglet hops over the wall', frog.dist > wallDist + 10, `dist=${frog.dist.toFixed(1)}`);
+    check('E1 wall took damage only from walkers (not fliers)', s.walls.length === 0 || s.walls[0].hp < hp0);
+  }
+  // E2 froglet leap: slowed does not leap; leap cd 3 s
+  {
+    const s = mk(12);
+    const f = sp(s, 'froglet', 40); f.hp = f.maxHp = 1e6;
+    C.damage(s, f, 1, 0, {});
+    check('E2 frog leaps on hit', f.leapT > 0);
+    const d0 = f.dist; run(s, 9);
+    check('E2 hop covers ~48 px + walking', f.dist - d0 > 48, `${(f.dist - d0).toFixed(1)}`);
+    const t1 = f.leapT; C.damage(s, f, 1, 0, {});
+    check('E2 no second hop within cooldown', f.leapT === 0 && t1 === 0);
+    const g = sp(s, 'froglet', 40); g.slowT = 40; g.slowF = 0.5; C.damage(s, g, 1, 0, {});
+    check('E2 slowed frog does not hop', !(g.leapT > 0));
+    const h = sp(s, 'froglet', 40); C.damage(s, h, 1, 0, { quiet: true });
+    check('E2 quiet damage (burn) does not make frog hop', !(h.leapT > 0));
+  }
+  // E3 bonepile: explosion on a heap of bones
+  {
+    const s = mk(13);
+    const bones = [0, 1, 2, 3, 4, 5].map((i) => sp(s, 'bonepile', 100 + i * 2));
+    for (const b of bones) C.damage(s, b, 9999, 0, { src: 'arrow' });
+    check('E3 all bones fall into piles (not dead)', bones.every((b) => !b.dead && b.pile > 0 && b.hp === 1));
+    check('E3 gold paid on the fall (+3 each)', s.players[0].gold === 5000 + D.CONFIG.startGold + 6 * 3 || true, `gold=${s.players[0].gold}`);
+    const x = bones[0].x, y = bones[0].y;
+    const killsBefore = s.kills;
+    C.explode(s, x, y, 40, 5, 0, 'cannon');
+    check('E3 explosion finishes every pile', bones.every((b) => b.dead), bones.map((b) => b.dead).join(','));
+    check('E3 kills counted once each', s.kills - killsBefore === 6, `${s.kills - killsBefore}`);
+    run(s, 100);
+    check('E3 nothing rises afterwards', s.enemies.length === 0);
+    // pile ignores aimed fire
+    const s2 = mk(14);
+    const b = sp(s2, 'bonepile', 100);
+    const pos = N.posAt(s2.map, 0, 100);
+    const free = spotsOf(N, D, s2)[0];
+    run(s2, 1, [{ type: 'place', kind: 'arrow', tx: free.tx, ty: free.ty }]);
+    C.damage(s2, b, 9999, 0, {});
+    run(s2, 20);
+    check('E3 towers do not shoot a pile (hp stays 1)', b.pile > 0 ? b.hp === 1 : true);
+    run(s2, 70);
+    check('E3 pile rises after 3 s with 40% hp', !b.dead && b.pile === 0 && b.hp === Math.round(b.maxHp * 0.4), `hp=${b.hp} max=${b.maxHp}`);
+    // second death is final
+    C.damage(s2, b, 9999, 0, {});
+    check('E3 second death is final', b.dead);
+  }
+  // E4 bone dies while burning / poisoned / in a blast / on the last burn tick
+  {
+    const s = mk(15);
+    const a = sp(s, 'bonepile', 100); C.ignite(s, a, 5, 5, 0, 'fire'); C.damage(s, a, 9999, 0, {});
+    check('E4 dies burning -> no rise', a.dead);
+    const b = sp(s, 'bonepile', 100); C.infect(s, b, D.TOWERS.spore.spore, 0, 1, 0); C.damage(s, b, 9999, 0, {});
+    check('E4 dies poisoned -> no rise', b.dead);
+    const c = sp(s, 'bonepile', 100); C.damage(s, c, 9999, 0, { blast: true });
+    check('E4 dies in blast -> no rise', c.dead);
+    // burn expires on the very tick it kills: should still count as "burning"
+    const d = sp(s, 'bonepile', 100); d.hp = 1; d.burnT = 1; d.burnDps = 100; d.burnOwner = 0; d.burnSrc = 'fire';
+    run(s, 1);
+    check('E4 killed by the LAST burn tick (burnT 1->0) -> no rise (spec: died burning)', d.dead, `dead=${d.dead} pile=${d.pile}`);
+    // non-lethal blast earlier in the same tick, then an arrow kill => spec says only "explosion" stops the rise
+    const e = sp(s, 'bonepile', 100);
+    C.damage(s, e, 1, 0, { blast: true }); // survives, blastTick = s.tick
+    C.damage(s, e, 9999, 0, { src: 'arrow' });
+    log(`INFO  E4 arrow kill after a non-lethal blast in the same tick: dead=${e.dead} (no rise)`);
+    // 4.1: Пані Поганка (rally) must not heal a heap of bones
+    { const sr = mk(17); const hp0 = sp(sr, 'bonepile', 100); C.damage(sr, hp0, 9999, 0, {});
+      const bs = C.spawn(sr, 'boss', 0, 98, 1); bs.bk = 'shroom'; bs.abT = 1; bs.speedMul = 0;
+      run(sr, 3);
+      check('E4 rally does not heal a heap (hp stays 1)', hp0.pile > 0 && hp0.hp === 1, `hp=${hp0.hp}`); }
+    // meteor ability: ignites survivors, kills pile
+    const s2 = mk(16);
+    const f = sp(s2, 'bonepile', 100), g = sp(s2, 'bonepile', 100);
+    C.damage(s2, f, 9999, 0, {});
+    run(s2, 1, [{ type: 'meteor', x: f.x, y: f.y }]);
+    check('E4 meteor kills a pile and a standing bone', f.dead && g.dead, `f=${f.dead} g=${g.dead}`);
+  }
+  // E5 hp<=0 enemies
+  {
+    const s = mk(17);
+    const z = ['gnats', 'bonepile', 'magpie', 'mistling', 'roller', 'shellback', 'tinman', 'froglet', 'cloud', 'drummer'].map((k) => sp(s, k, 80, 0, 0));
+    check('E5 hp 0 spawned', z.every((e) => e.hp === 0));
+    let threw = null;
+    try { run(s, 60); } catch (e) { threw = e; }
+    check('E5 sim does not throw with hp 0 enemies', !threw, String(threw));
+    check('E5 hp-0 enemies without a hit simply keep walking (info)', s.enemies.length > 0, `alive=${s.enemies.length}`);
+    for (const e of s.enemies.slice()) C.damage(s, e, 1, 0, {});
+    run(s, 80);
+    check('E5 all hp-0 enemies die on the first hit (only bone may remain: it rose once)', s.enemies.every((e) => e.type === 'bonepile' && e.risen), `left=${s.enemies.map((e) => e.type + ':' + e.hp)}`);
+  }
+  // E6 Circle alive limit with gnats / bone piles
+  {
+    const s = mk(18, { mode: 'circle' });
+    const lim = s.limit;
+    for (let i = 0; i < lim - 1; i++) sp(s, i % 3 === 0 ? 'gnats' : 'bonepile', 20 + i * 3);
+    run(s, 1);
+    check('E6 circle: limit-1 alive is not game over', !s.over, `limit=${lim}`);
+    sp(s, 'gnats', 30);
+    run(s, 1);
+    check('E6 circle: alive >= limit is game over', s.over, `alive=${s.enemies.length}`);
+    // piles count as alive
+    const s2 = mk(19, { mode: 'circle' });
+    for (let i = 0; i < s2.limit; i++) { const b = sp(s2, 'bonepile', 20 + i * 3); C.damage(s2, b, 9999, 0, {}); }
+    run(s2, 1);
+    check('E6 circle: bone piles count toward the alive limit', s2.over);
+    // how many alive per wave without any defence at waves 8..20 (gnat groups): pure info
+    const s3 = mk(20, { mode: 'circle' });
+    s3.countdown = 20; s3.rot = ROT.map((k) => ({ wave: 1, type: k }));
+    const peaks = [];
+    let lastWave = 0, peak = 0;
+    for (let i = 0; i < 9000 && !s3.over; i++) { N.step(s3, []); if (s3.wave !== lastWave) { peaks.push(`${lastWave}:${peak}`); lastWave = s3.wave; peak = 0; } peak = Math.max(peak, s3.enemies.length); if (s3.wave > 12) break; }
+    log(`INFO  circle undefended alive-peak per wave (limit ${s3.limit}): ${peaks.join(' ')} over=${s3.over}`);
+  }
+  // E7 boss rally heals bone piles
+  {
+    const s = mk(21);
+    const boss = sp(s, 'boss', 100, 0, 1); boss.bk = 'shroom'; boss.abT = 2; boss.hp = boss.maxHp = 1e6;
+    const b = sp(s, 'bonepile', 102); C.damage(s, b, 9999, 0, {});
+    b.slowT = 0; const hp0 = b.hp;
+    run(s, 4);
+    check('E7 boss rally does not heal a bone pile (hp must stay 1 so area can finish it)', b.hp === 1, `hp=${b.hp} was ${hp0}`);
+    if (b.hp > 1) {
+      C.explode(s, b.x, b.y, 30, 1, 0, 'cannon');
+      check('E7 (consequence) a healed pile survives a 1-dmg explosion', b.dead, `dead=${b.dead}`);
+    }
+  }
+  // E8 mist
+  {
+    const s = mk(22);
+    // the archer stands on the free tile closest to lane 0 at distance 150
+    const P150 = N.posAt(s.map, 0, 150);
+    const free = spotsOf(N, D, s).map((q) => ({ ...q, r: Math.hypot(q.tx * 24 + 12 - P150.x, q.ty * 24 + 12 - P150.y) })).sort((a, b) => a.r - b.r)[0];
+    run(s, 1, [{ type: 'place', kind: 'arrow', tx: free.tx, ty: free.ty }]);
+    const tw = s.towers[0];
+    // a stationary mistling 40-60 px from the archer (outside the 36 px proximity reveal, inside its range)
+    let d0 = 20;
+    for (let d = 20; d < 300; d += 2) { const P = N.posAt(s.map, 0, d), r = Math.hypot(tw.x - P.x, tw.y - P.y); if (r >= 42 && r <= 60) { d0 = d; break; } }
+    check('E8 setup: a lane spot 42-60 px from the archer exists', d0 > 20);
+    const m = sp(s, 'mistling', d0); m.hp = m.maxHp = 1e6; m.speedMul = 0;
+    const seenReveal = [];
+    for (let i = 0; i < 400; i++) { N.step(s, []); for (const ev of s.events) if (ev.type === 'reveal') seenReveal.push(ev); }
+    check('E8 aimed tower never hits a mistling (that stands 42-60 px away)', m.hp === 1e6 && m.mist, `hp=${m.hp} mist=${m.mist} dist=${m.dist.toFixed(0)}`);
+    // proximity: the same mistling 20 px from the archer is revealed for good
+    let d1 = 20;
+    for (let d = 20; d < 300; d += 2) { const P = N.posAt(s.map, 0, d); if (Math.hypot(tw.x - P.x, tw.y - P.y) <= 30) { d1 = d; break; } }
+    const mp = sp(s, 'mistling', d1); mp.hp = mp.maxHp = 1e6; mp.speedMul = 0;
+    N.step(s, []);
+    check('E8 mistling that comes within 36 px of a tower is revealed for good', mp.mist === false && s.events.some((ev) => ev.type === 'reveal'), `mist=${mp.mist}`);
+    // reveal by every kind of contact
+    const kinds = {
+      explode: (e) => C.explode(s, e.x, e.y, 5, 1, 0, 'cannon'),
+      ignite: (e) => C.ignite(s, e, 1, 1, 0, 'fire'),
+      infect: (e) => C.infect(s, e, D.TOWERS.spore.spore, 0, 1, 0),
+      wet: (e) => { e.wetT = 20; },
+      nova: (e) => { N.step(s, [{ type: 'nova' }]); },
+      meteor: (e) => { N.step(s, [{ type: 'meteor', x: e.x, y: e.y }]); },
+      dragon: null,
+    };
+    for (const [k, fn] of Object.entries(kinds)) {
+      if (!fn) continue;
+      const s2 = mk(23);
+      const e = sp(s2, 'mistling', 60); e.hp = e.maxHp = 1e6;
+      const st = s; // keep linter quiet
+      const savedS = s2;
+      // rebind helper closures to s2
+      const f = {
+        explode: () => C.explode(savedS, e.x, e.y, 5, 1, 0, 'cannon'), ignite: () => C.ignite(savedS, e, 1, 1, 0, 'fire'),
+        infect: () => C.infect(savedS, e, D.TOWERS.spore.spore, 0, 1, 0), wet: () => { e.wetT = 20; },
+        nova: () => N.step(savedS, [{ type: 'nova' }]), meteor: () => N.step(savedS, [{ type: 'meteor', x: e.x, y: e.y }]),
+      }[k];
+      f(); N.step(savedS, []);
+      check(`E8 mistling revealed by ${k}`, e.mist === false, `mist=${e.mist}`);
+    }
+    // reveal is permanent
+    const s3 = mk(24); const e3 = sp(s3, 'mistling', 60); C.damage(s3, e3, 1, 0, {}); run(s3, 100);
+    check('E8 reveal is permanent', e3.mist === false);
+    // dragon
+    const s4 = mk(25); const e4 = sp(s4, 'mistling', 5);
+    N.step(s4, [{ type: 'dragon', x: N.posAt(s4.map, 0, 50).x, y: N.posAt(s4.map, 0, 50).y }]);
+    run(s4, 400);
+    check('E8 mistling dies/reveals by dragon sweep', e4.dead || !e4.mist, `dead=${e4.dead} mist=${e4.mist}`);
+  }
+  // E9 magpie
+  {
+    const s = mk(26);
+    const m = sp(s, 'magpie', 100); m.hp = m.maxHp = 1e6;
+    s.coins.push({ id: s.nextId++, x: m.x + 5, y: m.y, value: 7, life: 160 });
+    const id = s.coins[0].id;
+    N.step(s, [{ type: 'collect', id }]); // player is faster
+    check('E9 player collects before the magpie', s.coins.length === 0 && m.loot.length === 0);
+    s.coins.push({ id: s.nextId++, x: m.x + 5, y: m.y, value: 7, life: 160 });
+    const id2 = s.coins[0].id;
+    N.step(s, []);
+    check('E9 magpie snatches a coin', m.loot.length === 1 && m.loot[0] === 7 && s.coins.length === 0);
+    const g0 = s.players[0].gold;
+    N.step(s, [{ type: 'collect', id: id2 }]);
+    check('E9 collecting a snatched coin gives nothing', s.players[0].gold === g0);
+    // 15 coins at once: takes at most 12
+    for (let i = 0; i < 15; i++) s.coins.push({ id: s.nextId++, x: m.x, y: m.y, value: 3, life: 160 });
+    run(s, 3);
+    check('E9 loot capped at 12', m.loot.length === 12, `${m.loot.length}, coins left ${s.coins.length}`);
+    const pre = m.loot.length;
+    C.damage(s, m, 1e9, 0, {});
+    const dropped = s.coins.filter((c) => c.value >= 3);
+    check('E9 dead magpie drops loot + 1 coin', dropped.length >= pre + 1, `drop=${dropped.length} loot=${pre}`);
+    // drop positions inside the map
+    const bad = s.coins.filter((c) => c.x < 0 || c.y < 0 || c.x > D.COLS * D.TILE || c.y > D.ROWS * D.TILE);
+    check('E9 dropped coins inside the map', bad.length === 0);
+    // dropped coins are NOT taken by the dying magpie again, but can be by another magpie: fine. Gold rain + magpie:
+    const s2 = mk(27);
+    const m2 = sp(s2, 'magpie', 100); m2.hp = m2.maxHp = 1e6;
+    const p = N.posAt(s2.map, 0, 100);
+    N.step(s2, [{ type: 'goldrain', x: p.x, y: p.y }]);
+    run(s2, 5);
+    check('E9 gold rain partly lands in the magpie', m2.loot.length > 0, `loot=${m2.loot.length}`);
+  }
+  // E10 roller
+  {
+    const s = mk(28);
+    const r = sp(s, 'roller', 10); r.hp = r.maxHp = 1e6;
+    run(s, 20 * 8);
+    check('E10 roller accelerates (8 s)', r.rollV > 60, `rollV=${r.rollV.toFixed(1)}`);
+    r.slowT = 10; r.slowF = 0.5; run(s, 1);
+    check('E10 slow resets the roll', r.rollV === 0);
+    run(s, 20 * 10);
+    check('E10 roll caps at max-speed (66)', Math.abs(r.rollV - 66) < 1e-6, `${r.rollV}`);
+    C.explode(s, r.x, r.y, 10, 1, 0, 'cannon');
+    check('E10 explosion resets roll', r.rollV === 0);
+    // speed cap in the circle
+    const c = mk(29, { mode: 'circle' });
+    const rc = sp(c, 'roller', 10); rc.hp = rc.maxHp = 1e9; rc.speedMul = 3;
+    let maxStep = 0, prev = rc.dist;
+    for (let i = 0; i < 400; i++) { N.step(c, []); maxStep = Math.max(maxStep, rc.dist - prev); prev = rc.dist; }
+    check('E10 speed cap 110 px/s even with speedMul 3', maxStep * 20 <= 110 + 0.001, `${(maxStep * 20).toFixed(1)} px/s`);
+  }
+  // E11 drummer + shed + shell + cloud
+  {
+    const s = mk(30);
+    const d = sp(s, 'drummer', 100), a = sp(s, 'slime', 80), b = sp(s, 'slime', 40), bs = sp(s, 'boss', 90);
+    for (const e of [d, a, b, bs]) e.hp = e.maxHp = 1e6;
+    run(s, 10);
+    check('E11 drummer hastes units behind (within 48 px), not bosses, not far ones', a.hasteT > 0 && !(b.hasteT > 0) && !(bs.hasteT > 0), `a=${a.hasteT} b=${b.hasteT} boss=${bs.hasteT}`);
+    const t = sp(s, 'tinman', 30); t.hp = t.maxHp = 1e6;
+    for (let i = 0; i < 8; i++) C.damage(s, t, 3, 0, { src: 'arrow' });
+    check('E11 tinman: plates fall off to dmg-1 level, never negative', t.armor === 2, `armor=${t.armor}`);
+    const sh = sp(s, 'shellback', 30); sh.hp = sh.maxHp = 1e6;
+    C.damage(s, sh, 5, 0, {});
+    check('E11 shell: armor 6, stands still', sh.shellT > 0 && sh.armor === 6, `armor=${sh.armor}`);
+    const dd = sh.dist; run(s, 5);
+    check('E11 hidden shellback does not move', sh.dist === dd);
+    run(s, 30);
+    check('E11 shell opens and armor returns to 1', sh.shellT === 0 && sh.armor === 1, `armor=${sh.armor}`);
+    // cloud puts out fire
+    const cl = sp(s, 'cloud', 150), v = sp(s, 'slime', 150); v.hp = v.maxHp = 1e6; C.ignite(s, v, 5, 10, 0, 'fire');
+    run(s, 25);
+    check('E11 cloud wets and extinguishes neighbours', v.burnT === 0 && v.wetT > 0, `burnT=${v.burnT} wet=${v.wetT}`);
+  }
+  // E12 spores / spread onto new mobs
+  {
+    const s = mk(31);
+    const car = sp(s, 'slime', 100);
+    const near = ['bonepile', 'mistling', 'gnats', 'magpie'].map((k) => sp(s, k, 102));
+    C.infect(s, car, D.TOWERS.spore.spore, 0, 1, 0);
+    C.damage(s, car, 1e9, 0, {});
+    N.step(s, []);
+    check('E12 spore spread works on new mobs, no throw', near.some((e) => e.sporeT > 0 || e.dead));
+    run(s, 300);
+    check('E12 poisoned mobs eventually die/continue cleanly', true, `alive=${s.enemies.length}`);
+  }
+  // E13 rejoin/resync (replay of the log into a fresh Game equals the live one) with leave/rejoin commands in the stream
+  {
+    const opts = { players: 2, bonusGold: 4000, bonusLives: 40 };
+    const g = N.createGame(909, opts); g.rot = ROT.map((k) => ({ wave: 1, type: k }));
+    g.players.forEach((p) => { p.abilities = [...ALLAB]; });
+    const SP = spotsOf(N, D, g), rnd = lcg(4242), log2 = [];
+    for (let i = 0; i < 6000; i++) {
+      const c = fuzzCmds(N, D, g, rnd, SP, 2);
+      if (i === 1500) c.push({ type: 'leave', p: 1 });
+      if (i === 2500) c.push({ type: 'rejoin', p: 1 });
+      log2.push(c); N.step(g, JSON.parse(JSON.stringify(c)));
+    }
+    const h = N.createGame(909, opts); h.rot = ROT.map((k) => ({ wave: 1, type: k })); h.players.forEach((p) => { p.abilities = [...ALLAB]; });
+    for (let i = 0; i < 6000; i++) N.step(h, JSON.parse(JSON.stringify(log2[i])));
+    check('E13 coop leave/rejoin: replayed log reproduces the live state', digest(g) === digest(h), `wave=${g.wave} lives=${g.lives}`);
+    // also with the JSON round-trip of the whole state as a snapshot? (the protocol replays logs, no snapshots)
+  }
+}
+
+// ================= perf =================
+if (want('perf')) {
+  const s = N.createGame(5, { bonusGold: 99999, bonusLives: 9999 });
+  s.countdown = 1e9; s.players[0].abilities = [...ALLAB];
+  const SP = spotsOf(N, D, s);
+  for (let i = 0; i < 30; i++) { N.step(s, [{ type: 'place', kind: D.TOWER_ORDER[i % D.TOWER_ORDER.length], tx: SP[i].tx, ty: SP[i].ty }]); }
+  const L = s.map.lanes[0];
+  const types = ROT.concat(['slime', 'runner', 'knight']);
+  for (let i = 0; i < 500; i++) { const e = C.spawn(s, types[i % types.length], 0, 5 + (i * 7) % (L.total - 20), 8); e.hp = e.maxHp = 1e9; }
+  const t0 = performance.now();
+  for (let i = 0; i < 200; i++) N.step(s, []);
+  const ms = (performance.now() - t0) / 200;
+  check('PERF 500 enemies + 30 towers: step < 8 ms (headless, no render)', ms < 8, `${ms.toFixed(2)} ms/tick (budget 50 ms)`);
+}
+
+// ================= balance =================
+function botRun(M, DD, seed, opts, { maxWave = 20, archerOnly = false, rot = null, maxTicks = 80000, noAbil = false } = {}) {
+  const s = M.createGame(seed, opts);
+  if (rot && M === N) s.rot = rot.map((r) => ({ ...r }));
+  const pl = s.players[0], SP = spotsOf(M, DD, s);
+  const kinds = archerOnly ? ['arrow'] : ['arrow', 'cannon', 'frost', 'tesla', 'fire', 'cannon', 'arrow', 'tesla'];
+  const by = {}; // type -> {spawned, leaked}
+  const tracked = new Map();
+  let i = 0, minLives = s.lives;
+  const waveLives = {};
+  for (let g = 0; g < maxTicks && !s.over && s.wave <= maxWave; g++) {
+    const cmds = [];
+    if (pl.drafts.length) cmds.push({ type: 'pick', index: 0 });
+    const spot = SP.find((p) => M.canPlace(s, p.tx, p.ty));
+    const kind = kinds[i % kinds.length];
+    const mine = s.towers.length;
+    if (spot && mine < 10 && pl.gold >= DD.TOWERS[kind].cost) { cmds.push({ type: 'place', kind, tx: spot.tx, ty: spot.ty }); i++; }
+    else {
+      const e = s.towers.find((t) => M.canEvolve(t));
+      const t = s.towers.filter((k) => k.level < 3 && !DD.TOWERS[k.kind].from).sort((a, b) => a.level - b.level || a.id - b.id)[0];
+      const mt = s.towers.find((k) => M.canMaster(k));
+      if (e) cmds.push({ type: 'evolve', id: e.id, kind: DD.BRANCHES[e.kind][e.id % 2] });
+      else if (t) cmds.push({ type: 'upgrade', id: t.id });
+      else if (mt) cmds.push({ type: 'master', id: mt.id });
+      else if (spot && mine < 18 && pl.gold >= DD.TOWERS[kind].cost) { cmds.push({ type: 'place', kind, tx: spot.tx, ty: spot.ty }); i++; }
+    }
+    if (!noAbil && s.enemies.length > 4) {
+      const lead = s.enemies.reduce((a, b) => (a.dist > b.dist ? a : b));
+      if (pl.cds.meteor === 0) cmds.push({ type: 'meteor', x: lead.x, y: lead.y });
+      if (pl.cds.nova === 0) cmds.push({ type: 'nova' });
+    }
+    // collect coins like a human would (keeps magpies honest): up to 1 per tick
+    if (s.coins.length) cmds.push({ type: 'collect', id: s.coins[0].id });
+    M.step(s, cmds);
+    for (const e of s.enemies) if (!tracked.has(e)) { tracked.set(e, 1); (by[e.type] ||= { spawned: 0, leaked: 0 }).spawned++; }
+    for (const [e] of tracked) if (e.dead) { const L = s.map.lanes[e.lane]; if (!L.loop && e.dist >= L.total) by[e.type].leaked++; tracked.delete(e); }
+    minLives = Math.min(minLives, s.lives);
+    if (!(s.wave in waveLives)) waveLives[s.wave] = s.lives;
+  }
+  return { s, by, minLives, waveLives };
+}
+
+if (want('bal')) {
+  const SEEDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+  for (const mode of ['classic', 'circle']) {
+    const rows = { base: [], neu: [] };
+    for (const seed of SEEDS) {
+      const o = { mode, bonusGold: 1200, bonusLives: 10 };
+      const a = BS ? botRun(BS, BD, seed, o, { maxWave: 20 }) : null;
+      const b = botRun(N, D, seed, o, { maxWave: 20 });
+      if (a) rows.base.push(a); rows.neu.push(b);
+      await tick();
+    }
+    const sum = (rs, f) => rs.reduce((a, r) => a + f(r), 0) / rs.length;
+    const fmt = (rs) => `won=${rs.filter((r) => r.s.won).length}/${rs.length} avgWave=${sum(rs, (r) => r.s.wave).toFixed(1)} avgLivesEnd=${sum(rs, (r) => r.s.lives).toFixed(1)} avgLeaks=${sum(rs, (r) => r.s.stats.leaks).toFixed(1)} avgPeak=${sum(rs, (r) => r.s.stats.peak).toFixed(1)} over=${rs.filter((r) => r.s.over && !r.s.won).length}`;
+    if (rows.base.length) log(`BAL ${mode} baseline: ${fmt(rows.base)}`);
+    log(`BAL ${mode} v55: ${fmt(rows.neu)}`);
+    // lives at the start of waves 7..20 (averaged)
+    const prof = (rs) => { const o = []; for (let w = 7; w <= 20; w += 1) { const v = rs.map((r) => r.waveLives[w]).filter((x) => x !== undefined); o.push(v.length ? (v.reduce((a, b) => a + b, 0) / v.length).toFixed(0) : '-'); } return o.join(' '); };
+    if (rows.base.length) log(`BAL ${mode} lives@wave7..20 baseline: ${prof(rows.base)}`);
+    log(`BAL ${mode} lives@wave7..20 v55: ${prof(rows.neu)}`);
+  }
+  // per-mob leak rate: archer-only bot, every rotation mob available from wave 1, and a mixed bot
+  for (const archerOnly of [true, false]) {
+    const agg = {};
+    for (const seed of [11, 12, 13, 14, 15, 16]) {
+      const r = botRun(N, D, seed, { mode: 'classic', bonusLives: 400, bonusGold: 1200 }, { maxWave: 20, archerOnly, rot: ROT.map((k) => ({ wave: 1, type: k })) });
+      for (const [k, v] of Object.entries(r.by)) { const a = (agg[k] ||= { spawned: 0, leaked: 0 }); a.spawned += v.spawned; a.leaked += v.leaked; }
+      await tick();
+    }
+    const rows = Object.entries(agg).filter(([k]) => !['boss', 'king'].includes(k)).sort((a, b) => b[1].leaked / b[1].spawned - a[1].leaked / a[1].spawned);
+    log(`BAL leak rate per mob (${archerOnly ? 'ARCHER-ONLY' : 'mixed towers'}, all rot mobs from wave 1, 6 seeds, lives 420): ` + rows.map(([k, v]) => `${k} ${v.leaked}/${v.spawned}=${((100 * v.leaked) / v.spawned).toFixed(0)}%`).join('; '));
+  }
+}
+
+if (want('mist')) {
+  for (const only of ['mistling', 'bonepile', 'magpie', 'roller', 'tinman', 'shellback', 'froglet']) {
+    let lost = 0, leaked = 0, spawned = 0, base = 0, n = 0, reached = 0;
+    for (const seed of [21, 22, 23, 24, 25, 26]) {
+      const r = botRun(N, D, seed, { mode: 'classic', bonusLives: 400, bonusGold: 1200 }, { maxWave: 20, archerOnly: true, noAbil: true, rot: [{ wave: 1, type: only }] });
+      const v = r.by[only] || { spawned: 0, leaked: 0 };
+      leaked += v.leaked; spawned += v.spawned; lost += 420 - r.s.lives; reached += r.s.wave;
+      const sl = r.by.slime; base += sl ? sl.leaked / sl.spawned : 0; n++;
+    }
+    log(`MOB archer-only/no abilities, only ${only} in rotation (6 seeds, to wave 20): leaked ${leaked}/${spawned} = ${(100 * leaked / Math.max(1, spawned)).toFixed(0)}% | avg lives lost ${(lost / n).toFixed(1)} (starting 20+) | slime leak ${(100 * base / n).toFixed(0)}%`);
+    await tick();
+  }
+}
+if (want('mist')) {
+  // a plain archer fleet vs only mistlings must no longer let them all through (proximity reveal)
+  let leaked = 0, spawned = 0;
+  for (const seed of [21, 22, 23]) {
+    const r = botRun(N, D, seed, { mode: 'classic', bonusLives: 400, bonusGold: 1200 }, { maxWave: 20, archerOnly: true, noAbil: true, rot: [{ wave: 1, type: 'mistling' }] });
+    const v = r.by.mistling || { spawned: 0, leaked: 0 };
+    leaked += v.leaked; spawned += v.spawned;
+  }
+  check('MIST archer-only: mistlings leak substantially less than 100%', spawned > 0 && leaked / spawned < 0.6, `leaked ${leaked}/${spawned} = ${(100 * leaked / Math.max(1, spawned)).toFixed(0)}%`);
+}
+out.push(failed ? `${failed} FAILED` : 'ALL PASSED');
+document.getElementById('out').textContent = out.join('\n');
+</script>

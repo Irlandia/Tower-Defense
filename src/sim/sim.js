@@ -11,8 +11,8 @@ import {
 import { rand, randInt } from './rng.js';
 import { center, key, genClassic, genCircle, placeFarm, posAt } from './mapgen.js';
 import { isFree, player, family, towerStats, missionStars, towerDef } from './queries.js';
-import { spawn, ignite, damage, explode, infect, resolveSpores } from './combat.js';
-import { planLanes, startWave, waveHpMul } from './waves.js';
+import { spawn, ignite, damage, explode, infect, resolveSpores, reveal } from './combat.js';
+import { planLanes, startWave, waveHpMul, planRotation } from './waves.js';
 import { applyCmd } from './commands.js';
 
 export { posAt } from './mapgen.js';
@@ -128,6 +128,7 @@ export function createGame(seed, opts = {}) {
     if (!isFree(s, tx, ty) || nearSpawn(tx, ty) || nearCastle(tx, ty)) continue;
     s.obstacles.push({ id: s.nextId++, tx, ty, kind: rand(s) < sea.trees ? "tree" : "rock", chest: rand(s) < (sea.chest || OBSTACLES.chestChance), v: randInt(s, 3) });
   }
+  planRotation(s); // which rotation mobs this run meets and when (last, so the map of a seed stays as it was)
   return s;
 }
 
@@ -216,8 +217,7 @@ function updateEnemy(s, e) {
   if (e.flash > 0) e.flash--;
   if (e.slowT > 0) e.slowT--;
   if (e.wetT > 0) e.wetT--;
-  if (e.burnT > 0) {
-    e.burnT--;
+  if (e.burnT > 0) { // the timer runs down after the damage: a death by the last burn tick still counts as «died burning»
     e.burnAcc += e.burnDps / T;
     if (e.burnAcc >= 1) {
       const d = Math.floor(e.burnAcc);
@@ -225,9 +225,9 @@ function updateEnemy(s, e) {
       damage(s, e, d, e.burnOwner, { pierce: true, quiet: true, src: e.burnSrc });
       if (e.dead) return;
     }
+    if (e.burnT > 0) e.burnT--;
   }
   if (e.sporeT > 0) {
-    e.sporeT--;
     e.sporeAcc += e.sporeDps / T;
     if (e.sporeAcc >= 1) {
       const d = Math.floor(e.sporeAcc);
@@ -235,15 +235,16 @@ function updateEnemy(s, e) {
       damage(s, e, d, e.sporeOwner, { pierce: true, quiet: true, src: 'spore' });
       if (e.dead) return;
     }
+    if (e.sporeT > 0) e.sporeT--;
   }
   if (s.brawl) {
     if (s.brawl.alwaysWet) e.wetT = Math.max(e.wetT, 2); // the storm keeps everyone soaked
-    if (s.brawl.regen && s.tick % T === 0) e.hp = Math.min(e.maxHp, e.hp + Math.round(e.maxHp * s.brawl.regen));
+    if (s.brawl.regen && s.tick % T === 0 && !(e.pile > 0)) e.hp = Math.min(e.maxHp, e.hp + Math.round(e.maxHp * s.brawl.regen));
   }
   if (def.heal && s.tick % T === 0) {
     let healed = false;
     for (const o of s.enemies) {
-      if (o === e || o.dead || o.hp >= o.maxHp) continue;
+      if (o === e || o.dead || o.hp >= o.maxHp || o.pile > 0) continue;
       if (Math.hypot(o.x - e.x, o.y - e.y) > def.healRange) continue;
       o.hp = Math.min(o.maxHp, o.hp + Math.round(def.heal * e.hpMul));
       healed = true;
@@ -253,14 +254,46 @@ function updateEnemy(s, e) {
   if (e.bk) bossSkill(s, e);
   if (e.dead) return;
   if (e.hasteT > 0) e.hasteT--;
-  const speed = def.speed * e.speedMul * (e.slowT > 0 ? e.slowF : 1) * (e.dashT > 0 ? BOSSES[e.bk].skill.mult : 1) * (e.hasteT > 0 ? e.hasteF : 1);
+  if (e.mist && (e.wetT > 0 || e.burnT > 0 || e.sporeT > 0)) reveal(s, e); // water, fire or spores show Туманець
+  // ... and so does walking up to any tower (of any player): not even a plain archer lets him pass unseen
+  if (e.mist && s.towers.some((t) => Math.hypot(t.x - e.x, t.y - e.y) <= ENEMIES[e.type].mistSight)) reveal(s, e);
+  if (e.pile > 0) { // Кістлявчик lies in a heap; when the time is up he gets up with part of his health
+    if (--e.pile === 0) {
+      e.hp = Math.max(1, Math.round(e.maxHp * def.rise.hp));
+      s.events.push({ type: 'rise', id: e.id, x: e.x, y: e.y });
+    }
+    return;
+  }
+  if (def.magpie) for (const c of s.coins) { // Сорока snatches coins lying on the map
+    if (c.life <= 0 || e.loot.length >= 12 || Math.hypot(c.x - e.x, c.y - e.y) > def.magpie.r) continue;
+    c.life = 0;
+    e.loot.push(c.value);
+    s.events.push({ type: 'magpie', id: e.id, x: c.x, y: c.y });
+  }
+  if (def.roll) { // Котун: speeds up while nothing disturbs him; slowing, freezing and barricades drop the roll
+    if (e.slowT > 0 || e.blocked) e.rollV = 0;
+    else e.rollV = Math.min(def.roll.max - def.speed, e.rollV + def.roll.acc / T);
+  }
+  if (e.leapCd > 0) e.leapCd--;
+  if (e.shellCd > 0) e.shellCd--;
+  if (e.shellT > 0 && --e.shellT === 0) { // Мушляк comes out; for a while he cannot hide again
+    e.armor = def.armor;
+    e.shellCd = Math.round(def.shell.cd * T);
+    s.events.push({ type: 'shell', id: e.id, x: e.x, y: e.y, on: false });
+  }
+  if (def.rain && (s.tick + e.id) % Math.round(def.rain.every * T) === 0) rain(s, e, def.rain);
+  if (def.beat && (s.tick + e.id) % 5 === 0) drumBeat(s, e, def.beat);
+  // Жабка's hop: a few extra pixels per tick, over barricades; Мушляк in his shell stands still
+  const hop = e.leapT > 0 ? def.leap.dist / def.leap.ticks : 0;
+  if (e.leapT > 0) e.leapT--;
+  const speed = e.shellT > 0 ? 0 : Math.min(CONFIG.speedCap, (def.speed + e.rollV) * e.speedMul * (e.slowT > 0 ? e.slowF : 1) * (e.dashT > 0 ? BOSSES[e.bk].skill.mult : 1) * (e.hasteT > 0 ? e.hasteF : 1));
   // Вихор: enemies already on the ring walk it backwards (wrapping inside lap 0 never counts as a lap)
   const back = s.ringRev && L.loop && e.dist > L.loopStart;
-  let nd = e.dist + (back ? -speed : speed) / T;
+  let nd = e.dist + (back ? -(speed / T + hop) : speed / T + hop);
   if (back && nd <= L.loopStart) nd += L.loopLen;
   const next = posAt(s.map, e.lane, nd);
-  // Barricades stop enemies walking into them; enemies chew through the wall.
-  const wall = s.walls.find((w) => w.hp > 0 && Math.hypot(next.x - w.x, next.y - w.y) < 16 && Math.hypot(next.x - w.x, next.y - w.y) < Math.hypot(e.x - w.x, e.y - w.y));
+  // Barricades stop enemies walking into them; enemies chew through the wall. Fliers and hoppers pass over it.
+  const wall = def.fly || hop > 0 ? null : s.walls.find((w) => w.hp > 0 && Math.hypot(next.x - w.x, next.y - w.y) < 16 && Math.hypot(next.x - w.x, next.y - w.y) < Math.hypot(e.x - w.x, e.y - w.y));
   e.blocked = !!wall;
   if (wall) {
     wall.hp -= (def.lives || 1) * 0.5;
@@ -294,6 +327,34 @@ function updateEnemy(s, e) {
 }
 
 // Each boss has a signature move on a timer (see BOSSES[].skill in data.js).
+// Дощова хмарка: soaks everyone around (and puts out their fire).
+function rain(s, e, cfg) {
+  let n = 0;
+  for (const o of s.enemies) {
+    if (o === e || o.dead || Math.hypot(o.x - e.x, o.y - e.y) > cfg.r) continue;
+    o.wetT = Math.max(o.wetT, Math.round(cfg.wet * T));
+    o.burnT = 0;
+    n++;
+  }
+  if (n) s.events.push({ type: 'rain', id: e.id, x: e.x, y: e.y, r: cfg.r, n });
+}
+
+// Заводний барабанщик: the units walking right behind him run faster (max with other hastes, never bosses or drummers).
+function drumBeat(s, e, cfg) {
+  const L = s.map.lanes[e.lane];
+  let n = 0;
+  for (const o of s.enemies) {
+    if (o === e || o.dead || o.lane !== e.lane || ENEMIES[o.type].lives || ENEMIES[o.type].beat) continue;
+    let d = e.dist - o.dist;
+    if (L.loop && o.dist > L.loopStart && e.dist > L.loopStart) d = ((d % L.loopLen) + L.loopLen) % L.loopLen;
+    if (d < 0 || d > cfg.r) continue;
+    o.hasteF = Math.max(o.hasteT > 0 ? o.hasteF : 1, cfg.mult);
+    o.hasteT = Math.max(o.hasteT || 0, 6);
+    n++;
+  }
+  if (n && (s.tick + e.id) % T < 5) s.events.push({ type: 'drum', id: e.id, x: e.x, y: e.y, n });
+}
+
 function bossSkill(s, e) {
   const sk = BOSSES[e.bk].skill;
   if (e.disguised) return; // Перевертень keeps quiet until unmasked
@@ -343,7 +404,7 @@ function bossSkill(s, e) {
       break;
     }
     case "rally": // heals every enemy around
-      for (const o of s.enemies) if (!o.dead && o !== e && Math.hypot(o.x - e.x, o.y - e.y) <= sk.range) o.hp = Math.min(o.maxHp, o.hp + Math.round(o.maxHp * sk.pct));
+      for (const o of s.enemies) if (!o.dead && !(o.pile > 0) && o !== e && Math.hypot(o.x - e.x, o.y - e.y) <= sk.range) o.hp = Math.min(o.maxHp, o.hp + Math.round(o.maxHp * sk.pct));
       break;
     case "shield":
       e.armor = ENEMIES[e.type].armor + sk.armor;
@@ -390,12 +451,14 @@ function updateZone(s, z) {
   z.life--;
   if (z.life % 5) return;
   for (const e of s.enemies) {
-    if (!e.dead && Math.hypot(e.x - z.x, e.y - z.y) <= z.r) damage(s, e, z.dps / 4, z.owner, { pierce: true, quiet: true, src: z.src });
+    if (!e.dead && !ENEMIES[e.type].fly && Math.hypot(e.x - z.x, e.y - z.y) <= z.r) damage(s, e, z.dps / 4, z.owner, { pierce: true, quiet: true, src: z.src });
   }
 }
 
-function inRange(s, x, y, range) {
-  return s.enemies.filter((e) => !e.dead && e.dist >= 0 && !(e.hideT > 0) && Math.hypot(e.x - x, e.y - y) <= range);
+// Aimed fire sees only visible enemies (not burrowed, not Туманець, not a bone pile); `all` also takes the hidden ones
+// as a separate list for area towers (pulse).
+function inRange(s, x, y, range, all = false) {
+  return s.enemies.filter((e) => !e.dead && e.dist >= 0 && !(e.hideT > 0) && (all || (!e.mist && !(e.pile > 0))) && Math.hypot(e.x - x, e.y - y) <= range);
 }
 
 function updateTower(s, t) {
@@ -405,7 +468,7 @@ function updateTower(s, t) {
   if (t.cd > 0) { t.cd--; return; }
   const def = towerDef(t); // mastery replaces stats and specials
   const st = towerStats(s, t);
-  const targets = inRange(s, t.x, t.y, st.range);
+  const targets = inRange(s, t.x, t.y, st.range, !!def.pulse);
   if (!targets.length) return;
   // "first" = furthest along its lane; snipers pick the toughest
   targets.sort(def.target === 'strong' ? (a, b) => b.hp - a.hp || a.id - b.id : (a, b) => b.dist - a.dist || a.id - b.id);
@@ -457,7 +520,7 @@ function zap(s, t, first, st, def) {
   while (jumps-- > 0) {
     let next = null, nd = Infinity;
     for (const e of s.enemies) {
-      if (e.dead || hit.includes(e)) continue;
+      if (e.dead || e.pile > 0 || hit.includes(e)) continue;
       const d = Math.hypot(e.x - cur.x, e.y - cur.y);
       if (d <= def.chainRange && d < nd) { next = e; nd = d; }
     }
@@ -483,7 +546,7 @@ function zap(s, t, first, st, def) {
 
 function updateProj(s, p) {
   p.px = p.x; p.py = p.y;
-  const target = s.enemies.find((e) => e.id === p.target && !e.dead) || null;
+  const target = s.enemies.find((e) => e.id === p.target && !e.dead && !(e.pile > 0)) || null;
   if (target) { p.tx = target.x; p.ty = target.y - 6; }
   const dx = p.tx - p.x, dy = p.ty - p.y;
   const d = Math.hypot(dx, dy);
@@ -541,7 +604,7 @@ function hit(s, p, target) {
         const dmg = CONFIG.steamDmg * lvMul * m.steam;
         const radius = CONFIG.steamRadius * m.steamR;
         for (const e of s.enemies) {
-          if (!e.dead && Math.hypot(e.x - target.x, e.y - target.y) <= radius) damage(s, e, dmg, p.owner, { pierce: true, src });
+          if (!e.dead && Math.hypot(e.x - target.x, e.y - target.y) <= radius) damage(s, e, dmg, p.owner, { pierce: true, src, blast: true });
         }
         s.events.push({ type: 'steam', x: target.x, y: target.y });
       } else {
