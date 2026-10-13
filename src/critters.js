@@ -781,19 +781,29 @@ Object.assign(Critters.prototype, {
       g.beginPath(); g.ellipse(sp.x, sp.y, sp.r * 1.6, sp.r * 0.6, 0, 0, Math.PI * 2); g.stroke();
     }
     const m = this.mermaid;
-    if (!m || m.state === 'away' || m.x === undefined) return;
-    // her rock on the shore
+    if (!m || m.x === undefined) return;
+    // her rock on the shore (stays when she is away)
     g.fillStyle = '#566c86'; g.fillRect(Math.round(m.x) - 7, Math.round(m.y) - 2, 14, 5);
     g.fillStyle = '#94b0c2'; g.fillRect(Math.round(m.x) - 6, Math.round(m.y) - 3, 9, 3);
+    if (m.state === 'away') return;
     const key = m.state === 'scared' ? 'scared' : m.comb ? 'comb' : 'sit';
     const spr = MER_SPR[key][m.dir > 0 ? 0 : 1];
-    // rising out of / diving into the water: only the top part shows
-    let rise = 1;
-    if (m.state === 'rise') rise = 1 - m.t / 0.7;
-    if (m.state === 'dive') rise = Math.max(0, m.t / 0.5);
-    const h = Math.max(1, Math.round(spr.height * rise));
-    const dx = Math.round(m.x - spr.width / 2), dy = Math.round(m.y - h - 1);
-    g.drawImage(spr, 0, 0, spr.width, h, dx, dy, spr.width, h);
+    // leaping like a fish: an arc between the rock and the water, turning head-first; she vanishes in the splash
+    if (m.state === 'rise' || m.state === 'dive') {
+      const dive = m.state === 'dive', p = Math.min(1, Math.max(0, dive ? 1 - m.t / 0.5 : 1 - m.t / 0.7));
+      const wx = m.wx * TILE + 12, wy = m.wy * TILE + 16;
+      const [ax, ay, bx, by] = dive ? [m.x, m.y - 6, wx, wy] : [wx, wy, m.x, m.y - 6];
+      const px = ax + (bx - ax) * p, py = ay + (by - ay) * p - Math.sin(Math.PI * p) * 20;
+      const turn = (dive ? p : 1 - p) * 2.6 * (m.dir > 0 ? 1 : -1) * (dive ? 1 : -1);
+      g.save();
+      g.globalAlpha = dive ? Math.min(1, (1 - p) * 4) : Math.min(1, p * 4); // in and out of the water
+      g.translate(Math.round(px), Math.round(py)); g.rotate(turn);
+      g.drawImage(spr, -Math.round(spr.width / 2), -Math.round(spr.height / 2));
+      g.restore();
+      return;
+    }
+    const dx = Math.round(m.x - spr.width / 2), dy = Math.round(m.y - spr.height - 1);
+    g.drawImage(spr, dx, dy);
     if (m.state === 'sit' || m.state === 'scared') { // hand mirror
       const mx = m.dir > 0 ? dx + spr.width : dx - 3, my = dy + 5;
       g.fillStyle = '#ffcd75'; g.fillRect(mx, my, 3, 4); g.fillStyle = '#c7f2ff'; g.fillRect(mx + 1, my + 1, 1, 2);

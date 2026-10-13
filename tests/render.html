@@ -64,6 +64,20 @@ try {
   out.push('PASS abilities: goldrain / quake previews, overdrive sparks, 4 slots');
 } catch (e) { failed++; out.push('FAIL abilities ' + e.stack); }
 
+// decoration: the ent stroll and the mermaid's leaps draw in every phase without errors
+try {
+  const se = createGame(4, { season: 'spring' });
+  r.draw(se, 0.5, { me: 0 }, 0.016);
+  const tree = se.obstacles.find((o) => o.kind === 'tree');
+  for (const phase of ['wake', 'walk', 'look', 'back', 'sink']) {
+    r.ent = { id: tree.id, dx: 1, dy: 0, phase, t: 0.5, x: 6, y: 0, lift: 3, say: 'Хм…' };
+    r.draw(se, 0.5, { me: 0 }, 0.016);
+  }
+  const m = r.critters.mermaid;
+  if (m) for (const state of ['rise', 'sit', 'scared', 'dive', 'away']) { m.state = state; m.t = 0.3; r.draw(se, 0.5, { me: 0, mouse: { x: m.x || 0, y: m.y || 0 } }, 0.016); }
+  out.push(`PASS decor: ent (5 phases) and mermaid (${m ? 'all states' : 'no pond spot on this map'}) draw`);
+} catch (e) { failed++; out.push('FAIL decor ' + e.stack); }
+
 // talent tree screen (src/treeui.js): renders the tree as DOM, buying and refunding redraws it
 try {
   Meta.setPersist(false);
