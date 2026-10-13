@@ -191,7 +191,7 @@ export function kill(s, e, owner, src = null) {
     return;
   }
   e.dead = true;
-  const killGold = s.brawl && s.brawl.killGold !== undefined ? s.brawl.killGold : 1;
+  const killGold = (s.brawl && s.brawl.killGold !== undefined ? s.brawl.killGold : 1) * (s.endMods && s.endless ? s.endMods.gold : 1); // endless: less gold per kill
   const night = DAY.phases[dayPhase(s)].gold || 1; // night pays more
   const gold = Math.round(def.gold * pl.mods.gold * killGold * night) + (e.lap >= 1 ? pl.mods.hunter : 0);
   pl.gold += gold;

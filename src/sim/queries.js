@@ -1,5 +1,5 @@
 // Pure read-only queries on the game state. Used by the simulation, the renderer and the client UI.
-import { TOWERS, CONFIG, OBSTACLES, ABILITIES, AURA, BRANCHES, ENEMIES, BOSSES, TICK_RATE as T, COLS, ROWS, DAY , MASTERY, MASTERED } from './data.js';
+import { TOWERS, CONFIG, OBSTACLES, ABILITIES, AURA, BRANCHES, ENEMIES, BOSSES, TICK_RATE as T, COLS, ROWS, DAY , MASTERY, MASTERED, ENDLESS } from './data.js';
 import { key } from './mapgen.js';
 
 export function isFree(s, tx, ty) {
@@ -164,4 +164,22 @@ export function canMaster(t) {
 /** Price of the final upgrade for player p (tree «Майстер-зброяр», card «Майстерня»). */
 export function masterCost(s, p, t) {
   return Math.round(MASTERY[t.kind].cost * (1 - Math.min(0.6, player(s, p).mods.masterDisc || 0)));
+}
+
+/** Endless circle pressure for the current wave (identity outside endless). Recomputed at every wave start (s.endMods). */
+export function endlessMods(s) {
+  const id = { n: 0, armor: 0, speed: 1, gold: 1, regen: 0, bossHp: 1 };
+  if (!s.endless) return id;
+  const E = ENDLESS, n = Math.max(0, s.wave - s.winWave);
+  const out = { n, armor: Math.floor(n / E.armorEvery), speed: Math.min(E.speedMax, 1 + E.speedPerWave * n), gold: Math.max(E.goldMin, E.goldPerWave ** n), regen: 0, bossHp: 1 };
+  for (const cid of s.curses || []) {
+    const c = E.curses.find((k) => k.id === cid);
+    if (!c) continue;
+    if (c.armor) out.armor += c.armor;
+    if (c.speed) out.speed *= c.speed;
+    if (c.regen) out.regen += c.regen;
+    if (c.gold) out.gold *= c.gold;
+    if (c.bossHp) out.bossHp *= c.bossHp;
+  }
+  return out;
 }

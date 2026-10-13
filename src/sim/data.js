@@ -6,7 +6,7 @@ export const COLS = 26;
 export const ROWS = 14;
 export const TICK_RATE = 20;
 // Bump on every change to sim/data: co-op peers refuse to play with a different version.
-export const VERSION = 57;
+export const VERSION = 58;
 // Spores: at most this many new infections per tick across the whole map (chain reactions stay readable and cheap).
 export const SPORE_CAP = 6;
 
@@ -137,7 +137,22 @@ export const BRANCHES = {
 // Game modes. Circle: enemies loop forever and stack up; too many alive = defeat.
 export const MODES = {
   classic: { name: "Класика", desc: "Вороги йдуть до замку. Пропустив — втратив життя." },
-  circle: { name: "Коло", desc: "Вороги крутяться по колу й накопичуються. Забагато живих — поразка.", maxAlive: 45, lapSpeed: 0.06, lapHeal: 0.1, lapMax: 8, endlessBossEvery: 2, endlessHpGrowth: 1.12 },
+  circle: { name: "Коло", desc: "Вороги крутяться по колу й накопичуються. Забагато живих — поразка.", maxAlive: 45, lapSpeed: 0.06, lapHeal: 0.1, lapMax: 8, endlessBossEvery: 2, endlessHpGrowth: 1.15 },
+};
+
+// Endless circle: pressure that a big defence still feels. Per endless wave (n = waves past the win):
+// more enemies (budget), armour every few waves, a little speed, less gold per kill; and every `curseEvery`
+// waves a random curse that stays for the rest of the run.
+export const ENDLESS = {
+  budgetGrowth: 1.07, armorEvery: 4, speedPerWave: 0.02, speedMax: 1.4, goldPerWave: 0.97, goldMin: 0.4, curseEvery: 5,
+  curses: [
+    { id: 'armor', name: 'Броньовані', desc: '+2 броні всім ворогам', armor: 2 },
+    { id: 'swift', name: 'Швидкі', desc: 'вороги на 15% швидші', speed: 1.15 },
+    { id: 'regen', name: 'Живучі', desc: 'вороги відновлюють 1% здоровʼя щосекунди', regen: 0.01 },
+    { id: 'crowd', name: 'Тісне коло', desc: 'ліміт живих ворогів −5', limit: -5 },
+    { id: 'greed', name: 'Жадібність', desc: '−20% золота за вбивства', gold: 0.8 },
+    { id: 'giant', name: 'Велетні', desc: 'боси мають +40% здоровʼя', bossHp: 1.4 },
+  ],
 };
 
 export const MAPGEN = { lanes3Chance: 0.45, ponds: [1, 2], barrels: 4 };

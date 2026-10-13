@@ -1,6 +1,6 @@
 // Presentation reactions to simulation events and run lifecycle events: sounds, banners, UI resets.
 // No game rules here — flow decisions are made in session.js / loop.js.
-import { BOSSES, SEASONS, ENEMIES, bossFor, DAY } from '../../sim/data.js';
+import { BOSSES, SEASONS, ENEMIES, bossFor, DAY, ENDLESS } from '../../sim/data.js';
 import { dayPhase } from '../../sim/sim.js';
 import { app, bus, net, sfx, music, me } from '../app.js';
 import { $, hide } from '../dom.js';
@@ -87,6 +87,7 @@ bus.on('sim:events', (events) => {
       case 'nova': sfx.play('frost'); sfx.play('explode'); break;
       case 'spores': sfx.play(e.burst ? 'explode' : 'frost'); break;
       case 'quake': sfx.play('rumble'); break;
+      case 'curse': { const c = ENDLESS.curses.find((k) => k.id === e.id); if (c) { sfx.play('rumble'); banner(`Прокляття: ${c.name}`, 'boss', c.desc, 2800); } break; }
       case 'dragon': sfx.play('explode'); if (mine(e)) banner('ДРАКОН!', 'gold', 'летить уздовж дороги', 1400); break;
       case 'goldrain': if (mine(e)) sfx.play('sell'); break;
       case 'overdrive': if (mine(e)) { sfx.play('card'); banner('ОВЕРДРАЙВ!', 'gold', 'твої вежі стріляють швидше', 1600); } break;

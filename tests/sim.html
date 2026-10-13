@@ -715,6 +715,25 @@ try {
   check('new enemies are in the wave pool by wave 13', ['bat', 'ant', 'shell', 'toad', 'ghost', 'sponge', 'bloater'].every((k) => unl.includes(k) && UNLOCKS[k] <= 13));
   }
 
+  { // Endless circle: pressure grows (armour, speed, more enemies, less gold) and curses stack every 5 waves
+    const en = createGame(9, { mode: 'circle' });
+    en.wave = en.winWave; en.endless = true; en.lives = 1e6; en.limit = 1e6;
+    const budgetAt = (g) => g.queue.filter((q) => !ENEMIES[q.type].lives).length;
+    en.countdown = 1; step(en); // wave +1
+    const q1 = budgetAt(en), m1 = en.endMods;
+    en.queue = []; en.enemies = [];
+    for (let i = 0; i < 9; i++) { en.countdown = 1; step(en); en.queue.length && i < 8 && (en.queue = []); en.enemies = []; }
+    const m10 = en.endMods;
+    check('endless: armour, speed and gold pressure grow', m10.armor > m1.armor && m10.speed > m1.speed && m10.gold < m1.gold, JSON.stringify(m10));
+    check('endless: more enemies per wave', budgetAt(en) > q1, `${q1} -> ${budgetAt(en)}`);
+    check('endless: a curse every 5 waves (2 after 10)', (en.curses || []).length === 2, (en.curses || []).join());
+    step(en); for (let i = 0; i < 60 && !en.enemies.length; i++) step(en);
+    const e0 = en.enemies.find((e) => !ENEMIES[e.type].lives);
+    check('endless: spawned enemies carry the armour', !e0 || e0.armor >= ENEMIES[e0.type].armor + m10.armor, e0 && `${e0.type} armor ${e0.armor}`);
+    const nc = createGame(9, { mode: 'circle' });
+    check('endless: no pressure before endless', !nc.endMods || nc.endMods.armor === 0);
+  }
+
   // Time of day: start phase from the seed, moves every DAY.every waves; night = shorter sight, more gold
   const starts = new Set([1, 2, 3, 4, 5, 6, 7, 8].map((sd) => dayPhase(createGame(sd))));
   check('day: runs start at different times of day', starts.size >= 3, [...starts].join());
@@ -1275,7 +1294,7 @@ try {
 
   // Golden replay: a fixed bot run must give the same fingerprint until VERSION is bumped.
   // When you change src/sim on purpose: VERSION++ and paste the new hash printed below.
-  const GOLDEN = { version: 57, hash: 2070823479 };
+  const GOLDEN = { version: 58, hash: 2070823479 };
   const gh = stateHash(runBot(4242, 6).s);
   if (VERSION === GOLDEN.version) check('golden replay: sim unchanged at this VERSION (else bump VERSION)', gh === GOLDEN.hash, `got ${gh}`);
   else log(`NOTE golden replay: VERSION ${VERSION} — set GOLDEN = { version: ${VERSION}, hash: ${gh} }`);

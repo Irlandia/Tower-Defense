@@ -1,7 +1,7 @@
 // Wave planning and composition (enemy packs, bosses, goblin thief).
-import { ENEMIES, UNLOCKS, ROTATION, MODES, CONFIG, BOSSES, BOSS_POOL, TICK_RATE as T } from './data.js';
+import { ENEMIES, UNLOCKS, ROTATION, MODES, CONFIG, BOSSES, BOSS_POOL, ENDLESS, TICK_RATE as T } from './data.js';
 import { rand, randInt } from './rng.js';
-import { player } from './queries.js';
+import { player, endlessMods } from './queries.js';
 
 // HP multiplier of the regular enemies of wave w (also used for packs that bosses bring along).
 export function waveHpMul(s, w) {
@@ -78,13 +78,23 @@ export function startWave(s) {
   }
   const lanes = s.plan;
   const over20 = Math.max(0, w - s.winWave);
+  // endless circle: every few waves a new curse that stays; then this wave's pressure (armour, speed, gold, ...)
+  if (s.endless && over20 > 0 && over20 % ENDLESS.curseEvery === 0) {
+    const have = s.curses || (s.curses = []);
+    const fresh = ENDLESS.curses.filter((c) => !have.includes(c.id));
+    const c = (fresh.length ? fresh : ENDLESS.curses)[randInt(s, (fresh.length ? fresh : ENDLESS.curses).length)];
+    have.push(c.id);
+    if (c.limit) s.limit = Math.max(10, s.limit + c.limit);
+    s.events.push({ type: 'curse', id: c.id, wave: w });
+  }
+  s.endMods = endlessMods(s);
   const B = s.brawl || {};
   const hpMul = waveHpMul(s, w);
   const rot = B.pool ? [] : s.rot || [];
   const pool = B.pool || [...Object.keys(UNLOCKS).filter((k) => UNLOCKS[k] <= w), ...rot.filter((r) => r.wave <= w).map((r) => r.type)];
   for (const r of rot) if (r.wave === w) s.events.push({ type: 'newEnemy', kind: r.type, wave: w }); // «Новий ворог» banner
   // co-op: a bit more enemies so two players still have to work
-  const budget = (B.budget || 1) * (8 + w * 6) * (1 + 0.5 * (s.players.length - 1)); // +50% per extra player
+  const budget = (B.budget || 1) * (8 + w * 6) * (1 + 0.5 * (s.players.length - 1)) * (s.endless ? ENDLESS.budgetGrowth ** over20 : 1); // +50% per extra player; endless: ever more
   // Every planned lane gets its own stream starting at the same moment (two entries = two
   // simultaneous attacks, not alternating packs); the wave budget is split between them.
   for (const lane of lanes) {
@@ -116,7 +126,7 @@ export function startWave(s) {
     s.queue.push({ type: 'goblin', lane: lanes[randInt(s, lanes.length)], at: mid, hpMul });
     s.queue.sort((a, b) => a.at - b.at);
   }
-  const bossHp = (B.bossHp || 1) * (1 + Math.max(0, w / 5 - 1) * 0.9) * s.opts.hpMul * MODES.circle.endlessHpGrowth ** over20;
+  const bossHp = (B.bossHp || 1) * (1 + Math.max(0, w / 5 - 1) * 0.9) * s.opts.hpMul * MODES.circle.endlessHpGrowth ** over20 * s.endMods.bossHp;
   // Bosses: one per player, arriving 3 s into the wave (right with the announcement), staggered by 2 s
   // and spread over the lanes. Endless: every couple of waves, more of them the deeper you go.
   let bosses = 0, kind = () => "boss";

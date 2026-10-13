@@ -1,6 +1,6 @@
 // Heads-up display around the canvas: build bar, ability buttons, wave/gold counters, info panel.
 // Every dynamic block is rebuilt only when its cache key changes.
-import { TOWERS, TOWER_ORDER, ABILITIES, CONFIG, MODES, ENEMIES, TICK_RATE, UNLOCKS, DAY } from '../../sim/data.js';
+import { TOWERS, TOWER_ORDER, ABILITIES, CONFIG, MODES, ENEMIES, TICK_RATE, UNLOCKS, DAY, ENDLESS } from '../../sim/data.js';
 import { placeCost, isLocked, abilityMax, hasWall, dayPhase } from '../../sim/sim.js';
 import { PLAYER_COLORS } from '../../render.js';
 import * as Meta from '../../meta.js';
@@ -153,6 +153,16 @@ const ENEMY_TIPS = {
 };
 let nextKey = null;
 function nextInfo(s) {
+  // endless circle: what the run has piled up so far (always shown, waves come fast there)
+  if (s.endless && s.endMods) {
+    const m = s.endMods, bits = [];
+    if (m.armor) bits.push(`броня +${m.armor}`);
+    if (m.speed > 1.001) bits.push(`швидкість +${Math.round((m.speed - 1) * 100)}%`);
+    if (m.gold < 0.999) bits.push(`золото −${Math.round((1 - m.gold) * 100)}%`);
+    const curses = (s.curses || []).map((id) => ENDLESS.curses.find((c) => c.id === id)).filter(Boolean);
+    return `<small>Нескінченність +${m.n}:</small> ${bits.join(' · ') || 'розминка'}`
+      + (curses.length ? `<br><span class="ni-boss">☠ ${curses.map((c) => c.name).join(', ')}</span>` : '');
+  }
   if (s.queue.length || s.over || s.wave >= s.winWave) return '';
   const w = s.wave + 1, B = s.brawl || {}, parts = [];
   const lanes = (s.plan || []).length;

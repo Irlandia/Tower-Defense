@@ -152,6 +152,7 @@ export function step(s, cmds = [], advance = true) {
   while (s.queue.length && s.queue[0].at <= s.tick) {
     const q = s.queue.shift();
     const e = spawn(s, q.type, q.lane, 0, q.hpMul);
+    if (s.endMods && s.endless) { e.armor += s.endMods.armor; e.baseArmor = e.armor; e.speedMul *= s.endMods.speed; } // endless pressure
     e.bossWave = s.wave;
     if (ENEMIES[q.type].lives) {
       e.bk = q.bk || bossKey(s.wave);
@@ -242,6 +243,7 @@ function updateEnemy(s, e) {
     }
     if (e.sporeT > 0) e.sporeT--;
   }
+  if (s.endMods && s.endMods.regen && s.tick % T === 0) e.hp = Math.min(e.maxHp, e.hp + Math.round(e.maxHp * s.endMods.regen)); // curse «Живучі»
   if (s.brawl) {
     if (s.brawl.alwaysWet) e.wetT = Math.max(e.wetT, 2); // the storm keeps everyone soaked
     if (s.brawl.regen && s.tick % T === 0 && !(e.pile > 0)) e.hp = Math.min(e.maxHp, e.hp + Math.round(e.maxHp * s.brawl.regen));
@@ -377,7 +379,7 @@ function bossSkill(s, e) {
   if (e.dashT > 0) e.dashT--;
   if (e.magnetT > 0) e.magnetT--;
   if (e.hideT > 0) e.hideT--;
-  if (e.shieldT > 0 && --e.shieldT === 0) e.armor = ENEMIES[e.type].armor;
+  if (e.shieldT > 0 && --e.shieldT === 0) e.armor = e.baseArmor ?? ENEMIES[e.type].armor;
   if (e.immuneT > 0) { e.immuneT--; e.slowT = 0; e.wetT = 0; e.burnT = 0; } // ghost: nothing sticks
   if (e.slowT > 0 && e.slowF === 0) return; // frozen bosses cannot act
   if (--e.abT > 0) return;
@@ -412,7 +414,7 @@ function bossSkill(s, e) {
       for (const o of s.enemies) if (!o.dead && !(o.pile > 0) && o !== e && Math.hypot(o.x - e.x, o.y - e.y) <= sk.range) o.hp = Math.min(o.maxHp, o.hp + Math.round(o.maxHp * sk.pct));
       break;
     case "shield":
-      e.armor = ENEMIES[e.type].armor + sk.armor;
+      e.armor = (e.baseArmor ?? ENEMIES[e.type].armor) + sk.armor;
       e.shieldT = Math.round(sk.dur * T);
       break;
     case "haste": // everyone around (and the boss) runs faster for a while
