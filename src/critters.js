@@ -941,7 +941,7 @@ Object.assign(Critters.prototype, {
   // a grass point beside the water reachable in a straight line from home without touching roads/water
   fishingSpot() {
     const F = this.farm, W = this.map.water;
-    if (!W.size || this.season === 'winter') return null; // frozen in winter
+    if (!W.size) return null; // (in winter: ice fishing through a hole)
     let best = null, bd = Infinity;
     for (const k of W) {
       const [wx, wy] = k.split(',').map(Number);
@@ -1004,6 +1004,10 @@ Object.assign(Critters.prototype, {
     const tipX = hx + fm.dir * 9, tipY = hy - 8;
     g.fillStyle = '#8a6248';
     for (let i = 0; i <= 9; i++) g.fillRect(Math.round(hx + fm.dir * i), Math.round(hy - i * 0.9), 1, 1); // the rod
+    if (this.season === 'winter') { // an ice hole under the float
+      g.fillStyle = '#1a1c2c'; g.beginPath(); g.ellipse(f.bx + 0.5, f.by + 1, 5, 2.5, 0, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#29366f'; g.beginPath(); g.ellipse(f.bx + 0.5, f.by + 1, 4, 1.8, 0, 0, Math.PI * 2); g.fill();
+    }
     const bite = f.biteT < 0.6;
     const bx = f.bx, by = f.by + (bite ? 2 : Math.round(Math.sin(t * 3)));
     g.strokeStyle = 'rgba(244,244,244,0.7)'; g.beginPath(); g.moveTo(tipX + 0.5, tipY + 0.5); g.quadraticCurveTo((tipX + bx) / 2, Math.max(tipY, by) + 4, bx + 0.5, by + 0.5); g.stroke();

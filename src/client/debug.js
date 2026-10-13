@@ -22,7 +22,7 @@ export function runDemoIfRequested() {
   }
   if (!q.has('demo')) return false;
   const dm = q.get('demo');
-  app.season = q.get('season') || 'random';
+  app.season = q.get('season') || (q.has('fish') ? 'summer' : 'random'); // &fish: a summer pond unless a season is given
   app.mode = dm === 'campaign' ? 'campaign' : dm === 'brawl' ? 'brawl' : dm && dm.startsWith('circle') ? 'circle' : 'classic';
   const players = dm === 'circle2' ? 2 : dm === 'circle4' ? 4 : 1;
   const opts = Meta.gameOpts(meta, app.diff, app.mode, players, app.season);
