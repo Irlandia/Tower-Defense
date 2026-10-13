@@ -99,6 +99,8 @@ export function renderMenu() {
   const L = Meta.level(meta);
   $('lvl').textContent = L;
   $('xpLine').textContent = L < Meta.MAX_LEVEL ? `${meta.xp - Meta.xpForLevel(L)} / ${Meta.levelCost(L)} до рівня ${L + 1}` : 'максимальний рівень';
+  $('xpFill').style.width = (L < Meta.MAX_LEVEL ? Math.min(100, (100 * (meta.xp - Meta.xpForLevel(L))) / Meta.levelCost(L)) : 100) + '%';
+  renderHero();
   for (const t of document.querySelectorAll('.menu-tabs [data-tab]')) t.classList.toggle('active', t.dataset.tab === app.menuTab);
   for (const s of document.querySelectorAll('.menu-tab')) s.classList.toggle('hidden', s.dataset.tab !== app.menuTab);
   renderModes();
@@ -245,7 +247,43 @@ $('diffSel').addEventListener('change', (e) => { app.diff = e.target.value; rend
 $('toMenu').addEventListener('click', () => enterLobby()); // the run is kept: 'Повернутися до гри' resumes it
 
 // ---------- wardrobe ----------
-$('wardrobeBtn').addEventListener('click', () => { sfx.unlock(); sfx.play('click'); app.menuTab = 'wardrobe'; renderMenu(); });
+// ---------- the hero card and the menu's mood ----------
+// Your avatar, big, bobbing on its own little stage (click it to change clothes).
+let heroKey = '';
+function renderHero() {
+  const code = myAvatarCode();
+  if (code === heroKey) return;
+  heroKey = code;
+  const box = $('heroAv');
+  box.querySelector('canvas')?.remove();
+  box.prepend(portrait(code, 2));
+}
+$('heroAv').addEventListener('click', () => { sfx.unlock(); sfx.play('click'); app.menuTab = 'wardrobe'; renderMenu(); });
+// the logo letters bob in a wave
+for (const el of [$('menu').querySelector('h1')]) {
+  const wave = (node, start) => [...node.childNodes].reduce((i, n) => {
+    if (n.nodeType !== 3) return wave(n, i);
+    const frag = document.createDocumentFragment();
+    for (const ch of n.textContent) { const s = document.createElement('i'); s.className = 'wave'; s.textContent = ch; s.style.animationDelay = `${i++ * 0.09}s`; frag.append(s); }
+    n.replaceWith(frag);
+    return i;
+  }, start);
+  wave(el, 0);
+}
+// drifting pixel fireflies behind the menu
+{
+  const fx = document.createElement('div');
+  fx.className = 'menu-fx';
+  const COLORS = ['#ffcd75', '#a7f070', '#73eff7', '#f4b6d2'];
+  for (let i = 0; i < 26; i++) {
+    const p = document.createElement('i');
+    p.style.cssText = `left:${Math.random() * 100}%;top:${Math.random() * 100}%;background:${COLORS[i % 4]};animation-duration:${8 + Math.random() * 10}s,${1.5 + Math.random() * 2}s;animation-delay:${-Math.random() * 10}s,${-Math.random() * 2}s`;
+    fx.append(p);
+  }
+  $('menu').prepend(fx);
+}
+
+$('wardrobeBtn').addEventListener('click',() => { sfx.unlock(); sfx.play('click'); app.menuTab = 'wardrobe'; renderMenu(); });
 bus.on('menu:goto', (tab) => { app.menuTab = tab; renderMenu(); });
 
 // ---------- bus ----------

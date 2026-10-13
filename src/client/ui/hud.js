@@ -12,6 +12,8 @@ import { selectBuild, useAbility, nextWave, toggleSpeed, togglePause } from './a
 import { openTalent, renderTalent } from './talents.js';
 import { updatePop } from './popup.js';
 import { sideProgress } from './story.js';
+import { avatarCode as myAvatarCode } from './wardrobe.js';
+import { mini } from '../../avatar.js';
 
 let infoKey = '';
 export function resetInfo() { infoKey = ''; }
@@ -165,6 +167,7 @@ function nextInfo(s) {
 /** Per-frame refresh of every HUD element (cheap: DOM is touched only when a value changed). */
 export function updateUI() {
   const s = app.state;
+  drawHudAvatar();
   const pl = P();
   for (const b of document.querySelectorAll('.tower-btn')) {
     b.classList.toggle('active', ui.build === b.dataset.kind);
@@ -201,3 +204,15 @@ export function updateUI() {
 }
 
 bus.on('frame', () => { if (app.running) updateUI(); });
+
+// your avatar next to the wave title (redrawn only when the outfit changes)
+let hudAvKey = '';
+function drawHudAvatar() {
+  const code = myAvatarCode();
+  if (code === hudAvKey) return;
+  hudAvKey = code;
+  const c = $('hudAv'), g = c.getContext('2d');
+  g.imageSmoothingEnabled = false;
+  g.clearRect(0, 0, c.width, c.height);
+  g.drawImage(mini(code), 0, 0, 14, 22);
+}

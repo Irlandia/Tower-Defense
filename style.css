@@ -641,3 +641,59 @@ details.camp-brief summary::-webkit-details-marker { display: none; }
 .pod.me .pod-block { box-shadow: inset -4px -4px 0 rgba(0, 0, 0, .3), inset 4px 4px 0 rgba(255, 255, 255, .35), 0 0 0 3px var(--cyan); }
 #board .pod-name small { color: #1a1c2c; opacity: .8; }
 #board .pod-name b { color: #1a1c2c; }
+
+/* ===== menu with more mood: hero card, waving logo, fireflies, lively tiles ===== */
+#menu { background: radial-gradient(ellipse at 50% 35%, rgba(41, 54, 111, .78), rgba(26, 28, 44, .96) 70%); }
+#menu::after { content: ''; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 120px 40px rgba(0, 0, 0, .55); } /* vignette */
+.menu-inner { position: relative; z-index: 1; }
+.menu-fx { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 0; }
+.menu-fx i { position: absolute; width: 3px; height: 3px; opacity: .7; box-shadow: 0 0 6px currentColor; animation: fxFloat linear infinite, fxBlink ease-in-out infinite; }
+@keyframes fxFloat { from { transform: translate(0, 0); } 50% { transform: translate(18px, -40px); } to { transform: translate(-6px, -90px); } }
+@keyframes fxBlink { 0%, 100% { opacity: .15; } 50% { opacity: .9; } }
+
+#menu h1 i.wave { display: inline-block; font-style: normal; animation: logoWave 2.4s ease-in-out infinite; }
+@keyframes logoWave { 0%, 100% { transform: translateY(0); } 30% { transform: translateY(-6px); } 60% { transform: translateY(1px); } }
+
+.hero-card { display: flex; align-items: center; gap: 12px; padding: 6px 12px 6px 6px; background: #1f2438;
+  box-shadow: inset -3px -3px 0 #333c57, inset 3px 3px 0 #000, 0 0 0 2px #29366f, 0 6px 0 rgba(0,0,0,.3); }
+.hero-av { position: relative; width: 50px; height: 66px; padding: 2px 4px 0; display: flex; align-items: flex-end; justify-content: center;
+  background: linear-gradient(180deg, #41a6f6 0%, #73eff7 55%, #38b764 56%, #257179 100%);
+  box-shadow: inset -3px -3px 0 #1a1c2c, inset 3px 3px 0 #94b0c2, 0 0 0 2px #1a1c2c; cursor: pointer; overflow: hidden; }
+.hero-av canvas { position: relative; z-index: 1; image-rendering: pixelated; animation: heroBob 1.6s ease-in-out infinite; margin-bottom: 4px; }
+.hero-av:hover canvas { animation: heroHop .5s ease-in-out infinite; }
+.hero-av .hero-shadow { position: absolute; bottom: 5px; left: 50%; width: 34px; height: 6px; margin-left: -17px; background: rgba(0,0,0,.3); border-radius: 50%; animation: heroShadow 1.6s ease-in-out infinite; }
+@keyframes heroBob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+@keyframes heroHop { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+@keyframes heroShadow { 0%, 100% { transform: scaleX(1); } 50% { transform: scaleX(.8); } }
+.hero-info { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
+.hero-card .xp-badge { display: grid; grid-template-columns: auto 1fr; align-items: center; column-gap: 8px; row-gap: 3px; box-shadow: none; padding: 0; background: none; }
+.hero-card .lvl-chip { color: var(--cyan); font-weight: 800; }
+.xp-bar { height: 8px; background: #1a1c2c; box-shadow: inset 0 0 0 1px #333c57; min-width: 120px; }
+.xp-bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #38b764, #a7f070); transition: width .6s; }
+.hero-card #xpLine { grid-column: 1 / -1; color: var(--silver); font-size: 12px; font-weight: 600; }
+
+.mode-tile { transition: transform .15s, box-shadow .15s; }
+.mode-tile:hover { transform: translateY(-3px); }
+.mode-tile:hover canvas, .mode-tile:hover .mode-ico { animation: icoHop .45s ease-in-out; }
+.mode-tile.active { animation: tileGlow 2.2s ease-in-out infinite; }
+@keyframes icoHop { 50% { transform: translateY(-5px) scale(1.1); } }
+@keyframes tileGlow { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.15); } }
+#playSolo:not(:disabled), #coopStart:not(:disabled) { animation: playPulse 1.8s ease-in-out infinite; }
+@keyframes playPulse { 0%, 100% { filter: brightness(1); transform: scale(1); } 50% { filter: brightness(1.12); transform: scale(1.015); } }
+
+/* your avatar in the game panel */
+#hudAv { float: left; margin: -2px 8px 0 -2px; image-rendering: pixelated; }
+/* header grid: the hero card on the left, the logo and the tagline centred; stacked on narrow screens */
+.menu-head { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; column-gap: 12px; row-gap: 2px; }
+.menu-head h1 { grid-column: 2; grid-row: 1; }
+.menu-head .tag { grid-column: 2; grid-row: 2; }
+.menu-head .hero-card { grid-column: 1; grid-row: 1 / span 2; justify-self: start; }
+.hero-card .nickbox input { width: 96px; font-size: 14px; }
+.hero-card .nickbox button { padding: 5px 8px; }
+.hero-card .xp-bar { min-width: 60px; }
+@media (max-width: 900px) {
+  .menu-head { grid-template-columns: 1fr; justify-items: center; }
+  .menu-head h1, .menu-head .tag, .menu-head .hero-card { grid-column: 1; grid-row: auto; justify-self: center; }
+}
+.menu-head .hero-card { flex-direction: row; flex-wrap: nowrap; align-items: center; text-align: left; }
+.menu-head h1, .menu-head .tag { text-align: center; justify-self: center; }

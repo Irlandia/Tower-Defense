@@ -25,15 +25,17 @@
           <header class="menu-head">
             <h1>PIXEL<span>TD</span></h1>
             <p class="tag">Вистій хвилі. Прокачуй таланти. Грай з друзями.</p>
-            <div class="head-right">
-              <div class="nickbox">
-                <span class="nick-ico">👤</span>
+            <div class="head-right hero-card">
+              <button id="heroAv" class="hero-av" title="Твій герой — клікни, щоб переодягнути"><span class="hero-shadow"></span></button>
+              <div class="hero-info">
+                <div class="nickbox">
                 <input id="nick" maxlength="16" placeholder="Твій нік" autocomplete="off">
                 <button id="nickSave" title="Зберегти нік">✓</button>
                 <button id="wardrobeBtn" title="Шафа: змінити вигляд героя">👕</button>
+                </div>
+                <small id="nickMsg" class="hint"></small>
+                <div class="xp-badge"><span class="lvl-chip">Рівень <b id="lvl">0</b></span><div class="xp-bar"><i id="xpFill"></i></div><span id="xpLine"></span></div>
               </div>
-              <small id="nickMsg" class="hint"></small>
-              <div class="xp-badge">Рівень <b id="lvl">0</b> <span id="xpLine"></span></div>
             </div>
           </header>
 
@@ -110,6 +112,7 @@
 
     <aside id="ui">
       <div class="panel-head">
+        <canvas id="hudAv" width="14" height="22" title="Твій герой"></canvas>
         <div id="waveInfo">Хвиля 0 / 20</div>
         <div class="progress"><div id="waveBar"></div></div>
         <div id="coopInfo" class="hidden"></div>
