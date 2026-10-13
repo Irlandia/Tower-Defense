@@ -401,7 +401,7 @@ export class Renderer {
         this.critters.draw(g, it.critter);
       } else if (it.house) {
         drawFarmHouse(g, s.map.farm.house[0] * TILE, s.map.farm.house[1] * TILE, s.season, s.tick);
-      } else if (it.farmer || it.dog || it.bowl || it.valeria) {
+      } else if (it.farmer || it.dog || it.bowl || it.valeria || it.kid || it.mom) {
         this.critters.drawFarm(g, it);
       } else if (it.castle) {
         drawCastle(g, s.map.castle[0] * TILE, s.map.castle[1] * TILE);

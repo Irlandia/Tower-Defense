@@ -101,7 +101,13 @@ try {
   }
   const m = r.critters.mermaid;
   if (m) for (const state of ['rise', 'sit', 'scared', 'dive', 'away']) { m.state = state; m.t = 0.3; r.draw(se, 0.5, { me: 0, mouse: { x: m.x || 0, y: m.y || 0 } }, 0.016); }
-  out.push(`PASS decor: ent (5 phases) and mermaid (${m ? 'all states' : 'no pond spot on this map'}) draw`);
+  const F = r.critters.farm;
+  if (F) for (const [t, carried] of [[0.5, false], [2.5, false], [3, true]]) {
+    F.kid = { x: F.home.x + 6, y: F.home.y + 1, dir: 1, t, say: 'Агу!', sayT: 1, carried };
+    F.mom = t >= 2 ? { x: F.home.x + 3, y: F.home.y + 1, dir: 1, state: carried ? 'carry' : 'run', say: 'Кирилло!', sayT: 1 } : null;
+    r.draw(se, 0.5, { me: 0 }, 0.016);
+  }
+  out.push(`PASS decor: farm kid scene, ent (5 phases) and mermaid (${m ? 'all states' : 'no pond spot on this map'}) draw`);
 } catch (e) { failed++; out.push('FAIL decor ' + e.stack); }
 
 // talent tree screen (src/treeui.js): renders the tree as DOM, buying and refunding redraws it

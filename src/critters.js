@@ -447,6 +447,7 @@ Object.assign(Critters.prototype, {
     for (const k of [fm, dog]) if (k.sayT > 0) k.sayT -= dt;
     for (const p of F.sparks) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += (p.heart ? -10 : 50) * dt; p.life -= dt; }
     F.sparks = F.sparks.filter((p) => p.life > 0);
+    this.updateKid(dt);
     // farmer: walk to a spot, work there, repeat (sometimes a break at home)
     fm.t -= dt;
     if (fm.state === 'walk') {
@@ -528,6 +529,7 @@ Object.assign(Critters.prototype, {
   drawFarmSay(g) {
     this.drawValeriaSay();
     this.drawWaterSay();
+    this.drawKidSay();
     const F = this.farm;
     if (!F) return;
     for (const k of [F.farmer, F.dog]) {
@@ -542,11 +544,14 @@ Object.assign(Critters.prototype, {
     if (!F) return out;
     out.push({ y: F.farmer.y, farmer: true }, { y: F.dog.y, dog: true });
     if (F.bowl) out.push({ y: F.bowl.y - 1, bowl: true });
+    if (F.kid) out.push({ y: F.kid.y, kid: true });
+    if (F.mom) out.push({ y: F.mom.y + 0.5, mom: true });
     return out;
   },
 
   drawFarm(g, it) {
     if (it.valeria) { this.drawValeria(g); return; }
+    if (it.kid || it.mom) { this.drawKidScene(g, it); return; }
     const F = this.farm;
     if (!F) return;
     const say = (k, x, y) => {
@@ -821,5 +826,90 @@ Object.assign(Critters.prototype, {
   drawWaterSay() {
     const m = this.mermaid;
     if (m && m.sayT > 0 && m.say && m.sayAt && m.state !== 'away') say(m.sayAt[0], m.sayAt[1], m.say, '', '#f4b6d2');
+  },
+});
+
+// ---------- the farm family: little Кирилло sneaks out, mum runs after him and carries him home ----------
+// Decoration only. About once a minute: the toddler crawls out of the door and away; 2 s later mum runs out,
+// shouts, picks him up and carries him back inside.
+const FAM_COL = { b: '#f2c6a0', h: '#ffcd75', B: '#73eff7', w: '#f4f4f4', k: '#1a1c2c', m: '#8a4a2a', d: '#b13e53', a: '#f4f4f4', s: '#f2c6a0', r: '#ef7d57' };
+const FAMILY = {
+  kid_a: ['.hh..', 'hbbh.', '.bkb.', 'BBBBb', 'b.B.b'], // crawling, two frames
+  kid_b: ['.hh..', 'hbbh.', '.bkb.', 'BBBB.', '.bB.b'],
+  mom_stand: ['.mmm.', 'mmmmm', 'msssm', '.sks.', '.sss.', 'ddadd', 'ddadd', 'sdadd', '.ddd.', '.ddd.', '.k.k.'],
+  mom_run: ['.mmm.', 'mmmmm', 'msssm', '.sks.', '.sss.', 'ddadd', 'ddadds', 'sdadd.', '.ddd.', '.d.d.', 'k...k'],
+  mom_carry: ['.mmm..', 'mmmmm.', 'msssm.', '.sks..', '.sss.h', 'ddaddb', 'dsBBBb', '.dadd.', '.ddd..', '.d.d..', 'k...k.'],
+};
+function famSprite(rows, flip) {
+  const w = Math.max(...rows.map((r) => r.length));
+  const cv = document.createElement('canvas');
+  cv.width = w; cv.height = rows.length;
+  const g = cv.getContext('2d');
+  rows.forEach((row, y) => { for (let x = 0; x < row.length; x++) { const c = FAM_COL[row[x]]; if (!c) continue; g.fillStyle = c; g.fillRect(flip ? w - 1 - x : x, y, 1, 1); } });
+  return cv;
+}
+const FAM_SPR = Object.fromEntries(Object.entries(FAMILY).map(([k, rows]) => [k, [famSprite(rows, false), famSprite(rows, true)]]));
+const MOM_SHOUT = ['Кирилло, ти куда знов тікаєш?!', 'Кирилло! Ану додому!', 'Кирилло, куди це ти зібрався?!'];
+const KID_SAY = ['Агу!', 'Хі-хі!', 'Ням?'];
+
+Object.assign(Critters.prototype, {
+  updateKid(dt) {
+    const F = this.farm;
+    if (!F) return;
+    const door = { x: F.home.x, y: F.home.y + 1 };
+    F.kidWait = (F.kidWait ?? (this.kidDemo ? 1 : 40 + Math.random() * 30)) - dt;
+    if (!F.kid && F.kidWait <= 0) {
+      const dir = Math.random() < 0.5 ? -1 : 1;
+      F.kid = { x: door.x, y: door.y, dir, t: 0, say: KID_SAY[Math.floor(Math.random() * KID_SAY.length)], sayT: 1.2 };
+      F.mom = null;
+      F.kidWait = this.kidDemo ? 9 : 55 + Math.random() * 15; // about once a minute
+    }
+    const kid = F.kid;
+    if (!kid) return;
+    kid.t += dt; kid.sayT -= dt;
+    if (!kid.carried) kid.x += kid.dir * 7 * dt; // a determined little crawl
+    if (!F.mom && kid.t >= 2) F.mom = { x: door.x, y: door.y, dir: kid.dir, state: 'run', say: MOM_SHOUT[Math.floor(Math.random() * MOM_SHOUT.length)], sayT: 2.4 };
+    const mom = F.mom;
+    if (!mom) return;
+    mom.sayT -= dt;
+    if (mom.state === 'run') {
+      const dx = kid.x - mom.x;
+      mom.dir = dx >= 0 ? 1 : -1;
+      mom.x += Math.sign(dx) * Math.min(Math.abs(dx), 34 * dt);
+      if (Math.abs(dx) < 3) { mom.state = 'carry'; kid.carried = true; kid.say = null; }
+    } else if (mom.state === 'carry') {
+      const dx = door.x - mom.x;
+      mom.dir = dx >= 0 ? 1 : -1;
+      mom.x += Math.sign(dx) * Math.min(Math.abs(dx), 20 * dt);
+      kid.x = mom.x; kid.y = mom.y;
+      if (Math.abs(dx) < 1) { F.kid = null; F.mom = null; } // back inside
+    }
+  },
+
+  drawKidScene(g, it) {
+    const F = this.farm;
+    if (it.kid && F.kid && !F.kid.carried) {
+      const k = F.kid, frame = Math.floor(performance.now() / 220) % 2 ? 'kid_a' : 'kid_b';
+      const spr = FAM_SPR[frame][k.dir > 0 ? 0 : 1];
+      const x = Math.round(k.x - 2), y = Math.round(k.y - spr.height);
+      g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(x, Math.round(k.y), 5, 1);
+      g.drawImage(spr, x, y);
+      k.sayAt = [k.x, y - 2];
+    }
+    if (it.mom && F.mom) {
+      const m = F.mom, key = m.state === 'carry' ? 'mom_carry' : Math.floor(performance.now() / 120) % 2 ? 'mom_run' : 'mom_stand';
+      const spr = FAM_SPR[key][m.dir > 0 ? 0 : 1];
+      const x = Math.round(m.x - 3), y = Math.round(m.y - spr.height);
+      g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(x, Math.round(m.y), 6, 2);
+      g.drawImage(spr, x, y);
+      m.sayAt = [m.x, y - 3];
+    }
+  },
+
+  drawKidSay() {
+    const F = this.farm;
+    if (!F) return;
+    if (F.mom && F.mom.sayT > 0 && F.mom.sayAt) say(F.mom.sayAt[0], F.mom.sayAt[1], F.mom.say, '', '#f4b6d2');
+    else if (F.kid && F.kid.sayT > 0 && F.kid.say && F.kid.sayAt) say(F.kid.sayAt[0], F.kid.sayAt[1], F.kid.say, '', '#73eff7');
   },
 });
