@@ -4,7 +4,7 @@ import { TICK_RATE, TOWERS, BRANCHES, CONFIG, AURA, MASTERY } from '../../sim/da
 import { family, towerStats, upgradeCost, canEvolve, sellValue, sellRatioOf, clearCost, auraCost, canMaster, masterCost, towerDef } from '../../sim/sim.js';
 import { W, MX, MY, PLAYER_COLORS } from '../../render.js';
 import { TILE } from '../../sim/data.js';
-import { app, ui, canvas, me, P } from '../app.js';
+import { app, ui, canvas, me, P, bus } from '../app.js';
 import { $, esc } from '../dom.js';
 import { nickOf } from '../roster.js';
 import { send } from '../session.js';
@@ -116,7 +116,7 @@ export function updatePop() {
   const pop = $('pop');
   const t = selTower();
   const o = selObstacle();
-  if (!t && !o) { if (popKey) { pop.className = 'hidden'; popKey = ''; } return; }
+  if (!t && !o) { if (popKey || pop.className !== 'hidden') { pop.className = 'hidden'; popKey = ''; } return; } // also after a reset (new run)
   const gold = P().gold;
   const { key, html } = t ? towerHtml(t, gold) : obstacleHtml(o, gold);
   if (key !== popKey) {
@@ -131,3 +131,7 @@ export function updatePop() {
 export function hidePop() {
   $('pop').className = 'hidden';
 }
+
+// The popup only refreshes while a run is going: close it whenever the run ends, restarts or leaves for the menu,
+// or it would hang over the end screen / the next level (tower ids restart in a new run).
+for (const evt of ['run:start', 'run:end', 'menu:show']) bus.on(evt, () => { ui.selected = null; ui.moving = null; hidePop(); popKey = ''; });

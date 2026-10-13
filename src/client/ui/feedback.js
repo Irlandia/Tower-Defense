@@ -58,6 +58,7 @@ bus.on('sim:events', (events) => {
       case 'evolve': case 'master': sfx.play('card'); resetPopup(); break;
       case 'sell': case 'coin': case 'chest': if (mine(e)) sfx.play('sell'); break;
       case 'leak': case 'stolen': sfx.play('leak'); break;
+      case 'pop': sfx.play('explode'); break;
       case 'lap': sfx.play('click'); break;
       case 'wave':
         sfx.play('wave');

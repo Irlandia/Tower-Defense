@@ -92,8 +92,9 @@ function fuzzCmds(M, DD, s, rnd, SP, np) {
 }
 
 // Plays a game. `log` = null: generate commands with the fuzzer and record them; otherwise replay the log.
-function play(M, DD, seed, opts, { rotAll = false, maxTicks = 30000, maxWave = 22, replay = null, tag = '' } = {}) {
+function play(M, DD, seed, opts, { rotAll = false, startWave = 0, maxTicks = 30000, maxWave = 22, replay = null, tag = '' } = {}) {
   const s = M.createGame(seed, opts);
+  if (startWave) s.wave = startWave; // all base types (UNLOCKS) are in the pool from wave 13
   s.players.forEach((p) => { p.abilities = [...ALLAB]; });
   if (rotAll) s.rot = ROT.map((k) => ({ wave: 1, type: k }));
   const np = s.players.length;
@@ -123,15 +124,17 @@ if (want('det')) {
     { name: 'classic coop(2) rotAll', seed: 303, opts: { players: 2, bonusGold: 6000, bonusLives: 60 }, rotAll: true },
     { name: 'circle solo rotAll (+endless)', seed: 404, opts: { mode: 'circle', bonusGold: 8000, bonusLives: 120 }, rotAll: true },
     { name: 'circle coop(2) rotAll', seed: 505, opts: { mode: 'circle', players: 2, bonusGold: 8000, bonusLives: 120 }, rotAll: true },
+    { name: 'classic ALL 17 mobs (10 rotation + 7 base from wave 13)', seed: 707, opts: { bonusGold: 9000, bonusLives: 80 }, rotAll: true, startWave: 13, maxWave: 18 },
+    { name: 'circle ALL 17 mobs', seed: 808, opts: { mode: 'circle', bonusGold: 9000, bonusLives: 150 }, rotAll: true, startWave: 13, maxWave: 18 },
     { name: 'classic solo rotAll seed2', seed: 606, opts: { bonusGold: 6000, bonusLives: 60 }, rotAll: true },
   ];
   for (const c of cases) {
-    const a = play(N, D, c.seed, c.opts, { rotAll: c.rotAll, tag: c.name });
+    const a = play(N, D, c.seed, c.opts, { rotAll: c.rotAll, startWave: c.startWave || 0, maxWave: c.maxWave || 22, tag: c.name });
     // second Game with the same recorded command stream (= guest in lockstep / reconnect replay)
-    const b = play(N, D, c.seed, c.opts, { rotAll: c.rotAll, replay: a.rec });
+    const b = play(N, D, c.seed, c.opts, { rotAll: c.rotAll, startWave: c.startWave || 0, maxWave: c.maxWave || 22, replay: a.rec });
     // late "rejoin": fresh game replays the log up to tick K, then continues: must land on the same hashes
     const d = firstDiff(a.hashes, b.hashes);
-    const types = [...a.seen].filter((k) => ROT.includes(k)).sort().join(',');
+    const types = [...a.seen].filter((k) => ROT.includes(k) || ['bat', 'ant', 'shell', 'toad', 'ghost', 'sponge', 'bloater'].includes(k)).sort().join(',');
     check(`determinism: ${c.name}`, d === -1 && a.hashes.length > 500, `ticks=${a.hashes.length} wave=${a.s.wave} over=${a.s.over} won=${a.s.won} diffAt=${d} mobs=[${types}]`);
     check(`invariants: ${c.name}`, a.bad.length === 0, a.bad.slice(0, 4).join(' | '));
     await tick();

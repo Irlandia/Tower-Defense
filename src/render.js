@@ -1,5 +1,5 @@
 // Canvas renderer + visual juice. Reads sim state, never mutates it.
-import { TILE, COLS, ROWS, TICK_RATE, TOWERS, CONFIG, ABILITIES, BARREL, BOSSES, bossFor, DAY } from './sim/data.js';
+import { TILE, COLS, ROWS, TICK_RATE, TOWERS, CONFIG, ABILITIES, BARREL, BOSSES, bossFor, DAY, ENEMIES } from './sim/data.js';
 import { towerStats, canPlace, posAt, isRoad, canMove, dayPhase, family } from './sim/sim.js';
 import {
   C, SPRITES, FLASH, FROZEN, ENEMY_COLOR, drawTower, drawCastle, drawCave, drawNum, numWidth, drawIcon,
@@ -202,6 +202,11 @@ export class Renderer {
           this.burst(e.x, e.y, 24, '#c28569', 80, -20);
           this.shake = Math.max(this.shake, 3);
           break;
+        case 'pop': // Пухир popped: a sticky green cloud that stuns towers nearby
+          this.rings.push({ x: e.x, y: e.y, r: 2, max: e.r, c: C.lime, life: 0.8 });
+          this.burst(e.x, e.y - 6, 26, C.lime, 80, -10);
+          this.shake = Math.max(this.shake, 2);
+          break;
         case 'master': // the final upgrade: a bigger golden burst
           this.rings.push({ x: e.x, y: e.y, r: 2, max: 56, c: C.orange, life: 1.2 });
           this.burst(e.x, e.y - 8, 30, C.orange, 110, -30);
@@ -310,8 +315,9 @@ export class Renderer {
   draw(s, alpha, ui, dt) {
     SAY.length = 0; // HTML labels are re-queued every frame
     const g = this.g;
-    if (this.mapRef !== s.map) { this.mapRef = s.map; this.bg = makeBackground(s.map, s.season); this.critters.reset(s.map, s.season, s.mission && s.mission.npc); this.season = s.season; this.weather = s.brawl && s.brawl.weather; }
+    if (this.mapRef !== s.map) { this.mapRef = s.map; this.bg = makeBackground(s.map, s.season); this.ents = []; this.entWait = this.entDemo ? 0.5 : undefined; this.critters.taken = new Set([...(s.barrels || []), ...(s.obstacles || [])].map((o) => o.tx + "," + o.ty)); this.critters.reset(s.map, s.season, s.mission && s.mission.npc); this.season = s.season; this.weather = s.brawl && s.brawl.weather; }
     this.critters.update(Math.min(dt, 0.1), s.enemies);
+    this.updateEnt(s, Math.min(dt, 0.1));
     this.updateFx(dt);
     g.save();
     g.fillStyle = C.ink;
@@ -332,6 +338,8 @@ export class Renderer {
     g.drawImage(this.bg, 0, 0);
     this.drawWater(s);
     this.critters.drawFish(g);
+    this.critters.mouse = ui.mouse; // the mermaid hides from the cursor
+    this.critters.drawWater(g);
     if (!s.queue.length && !s.over) this.drawLanePreview(s);
 
     // relocation: highlight every free tile the tower can move to
@@ -381,7 +389,8 @@ export class Renderer {
     const hov = (tx, ty) => ui.hover && ui.hover.tx === tx && ui.hover.ty === ty;
     for (const it of items) {
       if (it.o) {
-        drawObstacle(g, it.o, it.o.tx * TILE, it.o.ty * TILE, s.season);
+        if (this.entOf(it.o.id)) this.drawEnt(g, it.o, s.season); // a tree that woke up for a stroll
+        else drawObstacle(g, it.o, it.o.tx * TILE, it.o.ty * TILE, s.season);
         if (hov(it.o.tx, it.o.ty)) this.outline(it.o.tx * TILE, it.o.ty * TILE);
       } else if (it.b) {
         drawBarrel(g, it.b.tx * TILE, it.b.ty * TILE, it.b.ready, s.tick);
@@ -678,9 +687,11 @@ export class Renderer {
     }
     if (e.pile > 0) bob = e.pile < 12 ? (e.pile & 1) : 0; // the heap trembles before he gets up
     if (e.leapT > 0) bob = Math.round(Math.sin(Math.PI * (1 - e.leapT / 8)) * 10); // Жабка: a hop arc
-    const dx = Math.round(x - spr.width / 2), dy = Math.round(y - spr.height + 6 - bob);
+    const fly = ENEMIES[e.type] && ENEMIES[e.type].flying ? 9 + Math.round(Math.sin((tick + e.id * 5) / 3) * 2) : 0; // flyers hover above their shadow
+    const dx = Math.round(x - spr.width / 2), dy = Math.round(y - spr.height + 6 - bob - fly);
     ellipse(g, Math.round(x), Math.round(y) + 6, Math.max(2, Math.round(spr.width / 2.6) - (heavy ? Math.floor(bob / 2) : 0)), heavy ? 3 : 2, heavy ? "rgba(0,0,0,0.45)" : "rgba(0,0,0,0.3)");
     if (hovered) ellipse(g, Math.round(x), Math.round(y) + 6, Math.round(spr.width / 2) + 2, 3, 'rgba(255,205,117,0.6)');
+    if (e.hideT > 0 && ENEMIES[e.type] && ENEMIES[e.type].phase) { g.globalAlpha = 0.25; g.drawImage(spr, dx, dy); g.globalAlpha = 1; return; } // Привидик: see-through, towers lose it
     if (e.hideT > 0) { // burrowed: only a moving mound of earth
       ellipse(g, Math.round(x), Math.round(y) + 4, 9, 4, "#8a6248"); ellipse(g, Math.round(x), Math.round(y) + 3, 6, 2, "#c28569");
       if ((tick >> 1) % 2) this.parts.push({ x: x + Math.random() * 12 - 6, y: y + 2, vx: Math.random() * 30 - 15, vy: -30, life: 0.3, c: "#8a6248" });
@@ -874,6 +885,88 @@ export class Renderer {
         this.jaggedLine({ x: t.x, y: t.y - 12 }, { x: e.x, y: e.y - 8 });
       }
     }
+  }
+
+  // Ent (decoration only): now and then one tree wakes up, stands on little legs, strolls to a free
+  // neighbouring tile, looks around and walks back to dig into its own spot. The real tree never moves,
+  // so building and clearing are unaffected.
+  updateEnt(s, dt) {
+    this.ents = this.ents || [];
+    if (!this.ents.length) {
+      this.entWait = (this.entWait ?? 20 + Math.random() * 20) - dt;
+      if (this.entWait > 0 || !s.obstacles) return;
+      // ?demo&ent: every 5 s, four trees at once, each in another season's look
+      this.entWait = this.entDemo ? 5 : 25 + Math.random() * 35;
+      const busy = (x, y) => s.map.tiles.has(x + ',' + y) || s.map.water.has(x + ',' + y) || s.obstacles.some((o) => o.tx === x && o.ty === y)
+        || s.towers.some((t) => t.tx === x && t.ty === y) || (s.barrels || []).some((b) => b.tx === x && b.ty === y) || x < 0 || y < 0 || x >= COLS || y >= ROWS;
+      const trees = s.obstacles.filter((o) => o.kind === 'tree').sort(() => Math.random() - 0.5);
+      const want = this.entDemo ? 4 : 1, seasons = ['spring', 'summer', 'autumn', 'winter'];
+      for (const o of trees) {
+        if (this.ents.length >= want) break;
+        const n = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dy]) => !busy(o.tx + dx, o.ty + dy)
+          && !this.ents.some((e) => e.tx === o.tx + dx && e.ty === o.ty + dy));
+        if (!n.length) continue;
+        const [dx, dy] = n[Math.floor(Math.random() * n.length)];
+        this.ents.push({ id: o.id, tx: o.tx + dx, ty: o.ty + dy, dx, dy, phase: 'wake', t: 0.9, x: 0, y: 0, lift: 0, say: null,
+          season: this.entDemo ? seasons[this.ents.length] : null });
+      }
+      return;
+    }
+    const WALK = 1.8, next = { wake: ['walk', WALK], walk: ['look', 1.8], look: ['back', WALK], back: ['sink', 0.9], sink: [null, 0] };
+    for (const E of this.ents) {
+      const o = s.obstacles.find((k) => k.id === E.id);
+      if (!o) { E.done = true; continue; } // cleared by a player: the walk is over
+      E.t -= dt;
+      if (E.phase === 'wake') E.lift = 5 * (1 - E.t / 0.9);
+      if (E.phase === 'sink') E.lift = 5 * (E.t / 0.9);
+      if (E.phase === 'walk') { const p = 1 - E.t / WALK; E.x = E.dx * TILE * p; E.y = E.dy * TILE * p; }
+      if (E.phase === 'back') { const p = E.t / WALK; E.x = E.dx * TILE * p; E.y = E.dy * TILE * p; }
+      if (E.phase === 'look' && !E.said) { E.said = true; E.say = ['Хм…', 'Ох, ноги затерпли', 'Гарна днина', 'Тут теж непогано', 'Шшш…'][Math.floor(Math.random() * 5)]; }
+      if ((E.phase === 'wake' || E.phase === 'sink') && Math.random() < 0.5) this.parts.push({ x: o.tx * TILE + 6 + Math.random() * 12, y: o.ty * TILE + 22, vx: Math.random() * 30 - 15, vy: -30, life: 0.4, c: '#8a6248' });
+      if (E.t <= 0) {
+        const [ph, time] = next[E.phase];
+        if (!ph) E.done = true;
+        else { E.phase = ph; E.t = time; }
+      }
+    }
+    this.ents = this.ents.filter((E) => !E.done);
+  }
+
+  entOf(id) { return this.ents && this.ents.find((E) => E.id === id); }
+
+  drawEnt(g, o, season) {
+    const E = this.entOf(o.id), x = o.tx * TILE + Math.round(E.x), y = o.ty * TILE + Math.round(E.y);
+    const look = E.season || season;
+    const walking = E.phase === 'walk' || E.phase === 'back';
+    const step = walking ? Math.floor(performance.now() / 150) % 2 : 0;
+    const up = E.phase === 'wake' || E.phase === 'sink' ? E.lift / 5 : 1; // 0..1 how far it stood up
+    const lift = Math.round(4 * up);
+    // gentle body sway while walking (every other step), a shiver while (un)rooting
+    const sway = walking ? step : (E.phase === 'wake' || E.phase === 'sink') ? Math.floor(performance.now() / 60) % 2 : 0;
+    ellipse(g, x + 12, y + 22, 9, 2, 'rgba(0,0,0,0.3)'); // its shadow stays on the ground
+    // the tree sprite has its ground shadow baked into its bottom 6 px: cut them off while lifted
+    const base = y + 23 - lift; // where the sprite's bottom is now
+    g.save();
+    if (lift > 0) { g.beginPath(); g.rect(x - 12, y - 60, TILE + 24, base - 6 - (y - 60)); g.clip(); }
+    drawObstacle(g, o, x + sway, y - lift, look);
+    g.restore();
+    // little root legs grow out of the trunk: they share the sway and step in turns
+    if (lift > 0) {
+      const lx = x + sway + 10, top = base - 8;
+      const l1 = walking && step ? 1 : 0, l2 = walking && !step ? 1 : 0; // the lifted foot
+      g.fillStyle = '#5a3e2c';
+      g.fillRect(lx, top, 2, y + 23 - top - l1);
+      g.fillRect(lx + 3, top, 2, y + 23 - top - l2);
+      g.fillStyle = '#8a6248'; // feet
+      g.fillRect(lx - 1, y + 22 - l1, 3, 1);
+      g.fillRect(lx + 3, y + 22 - l2, 3, 1);
+    }
+    // sleepy eyes on the trunk (open while it is up and about)
+    const ey = base - 11, ex = x + 9 + sway;
+    const blink = E.phase === 'look' && Math.floor(performance.now() / 700) % 4 === 0;
+    g.fillStyle = '#1a1c2c'; g.fillRect(ex, ey, 2, blink ? 1 : 2); g.fillRect(ex + 4, ey, 2, blink ? 1 : 2);
+    if (!blink) { g.fillStyle = '#f4f4f4'; g.fillRect(ex, ey, 1, 1); g.fillRect(ex + 4, ey, 1, 1); }
+    if (E.phase === 'look' && E.say) say(x + 12, y - lift - 18, E.say, '', '#a7f070');
   }
 
   // Mastered tower: drawn off-screen first so it can get a pulsing golden outline from its own silhouette,

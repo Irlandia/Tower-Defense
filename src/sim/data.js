@@ -6,7 +6,7 @@ export const COLS = 26;
 export const ROWS = 14;
 export const TICK_RATE = 20;
 // Bump on every change to sim/data: co-op peers refuse to play with a different version.
-export const VERSION = 56;
+export const VERSION = 57;
 // Spores: at most this many new infections per tick across the whole map (chain reactions stay readable and cheap).
 export const SPORE_CAP = 6;
 
@@ -155,7 +155,7 @@ export const COIN = { chance: 0.1, life: 8, base: 4 };
 
 // Enemy fields: hp, speed (px/s), armor, gold, cost (wave budget), vs (tower family multipliers).
 // weight = share in the random type draw of a wave (default 1); gap = ticks between units of a pack (default 12);
-// count = units that come as one queue item (cost is for the whole group, default 1); fly = ignores barricades and puddles;
+// count = units that come as one queue item (cost is for the whole group, default 1); flying = walks over barricades and puddles;
 // family = lore family (iron / spark / slime / bone); lead = a pack leader: comes first, followed by a pack of another type;
 // from = earliest wave of a rotation mob (see ROTATION); tip / about = HUD hint and the «Новий ворог» line.
 // Mechanics of the rotation mobs (read in sim.js / combat.js): rain, shed, beat, leap, shell (batch 1),
@@ -168,6 +168,16 @@ export const ENEMIES = {
   healer: { name: 'Цілитель', family: 'slime', hp: 35, speed: 30, armor: 0, gold: 6, cost: 3, weight: 1, gap: 12, heal: 5, healRange: 45, vs: { arrow: 1.3, frost: 0.5 } },
   mini: { name: 'Слизик', family: 'slime', hp: 10, speed: 45, armor: 0, gold: 1, cost: 0.5, weight: 1, gap: 12, vs: { cannon: 1.5 } },
   goblin: { name: 'Гоблін-злодій', family: 'iron', hp: 30, speed: 63, armor: 0, gold: 8, cost: 0, weight: 1, gap: 12, coins: 4, steal: 20, vs: { frost: 1.3, fire: 0.75 } },
+  // More types, added by the other branch (each asks for a different tower): flying (walls and puddles don't stop it,
+  // explosions graze it for 30%), phase (blinks out of sight), deathStun (popping stuns towers around), sporeImmune
+  // (no infection), dry (never wet or slowed).
+  bat: { name: 'Кажан', family: 'spark', hp: 18, speed: 58, armor: 0, gold: 3, cost: 1.3, weight: 1, gap: 12, flying: true, vs: { arrow: 1.4, tesla: 1.3, cannon: 0.5 } },
+  ant: { name: 'Мураха', family: 'slime', hp: 7, speed: 48, armor: 0, gold: 1, cost: 0.35, weight: 1, gap: 12, vs: { fire: 1.6, spore: 1.5, cannon: 1.3, arrow: 0.8 } },
+  shell: { name: 'Панцирник', family: 'iron', hp: 70, speed: 20, armor: 8, gold: 8, cost: 3, weight: 1, gap: 12, vs: { spore: 1.5, cannon: 1.3, arrow: 0.6, fire: 0.8 } },
+  toad: { name: 'Мухоморчик', family: 'slime', hp: 40, speed: 30, armor: 0, gold: 5, cost: 2, weight: 1, gap: 12, sporeImmune: true, vs: { fire: 1.6, spore: 0.2 } },
+  ghost: { name: 'Привидик', family: 'bone', hp: 30, speed: 36, armor: 0, gold: 5, cost: 2, weight: 1, gap: 12, phase: { every: 3, dur: 1 }, vs: { frost: 1.4, tesla: 1.3, arrow: 0.8 } },
+  sponge: { name: 'Губка', family: 'slime', hp: 55, speed: 28, armor: 0, gold: 6, cost: 2.5, weight: 1, gap: 12, dry: true, vs: { fire: 1.4, frost: 0.5, tesla: 0.8 } },
+  bloater: { name: 'Пухир', family: 'slime', hp: 45, speed: 26, armor: 0, gold: 6, cost: 2.5, weight: 1, gap: 12, deathStun: { r: 36, time: 1.5 }, vs: { arrow: 1.4, spore: 1.2 } },
   boss: { name: 'Бос', family: 'slime', hp: 340, speed: 18, armor: 3, gold: 60, cost: 0, lives: 10, vs: { tesla: 1.2, frost: 0.7 } },
   king: { name: 'Король слизу', family: 'slime', hp: 1400, speed: 14, armor: 5, gold: 0, cost: 0, lives: 20, heal: 20, healRange: 60, vs: { cannon: 1.2, fire: 0.7 } },
 };
@@ -194,18 +204,18 @@ Object.assign(ENEMIES, {
     about: 'Згорнувся від страху, а розкрутився від задоволення.' },
   mistling: { name: 'Туманець', family: 'spark', from: 11, hp: 26, speed: 36, armor: 0, gold: 5, cost: 2, weight: 0.5, gap: 12, mist: true, mistSight: 36,
     tip: 'невидимий для веж, доки його не зачепить площа, ланцюг, вода, вогонь, спори чи не підійде впритул до вежі', about: "Сором'язливий. Як намокне — одразу червоніє і всім видно." },
-  gnats: { name: 'Мошкара', family: 'spark', from: 8, hp: 7, speed: 52, armor: 0, gold: 1, cost: 1.5, weight: 0.6, gap: 12, count: 3, fly: true,
+  gnats: { name: 'Мошкара', family: 'spark', from: 8, hp: 7, speed: 52, armor: 0, gold: 1, cost: 1.5, weight: 0.6, gap: 12, count: 3, flying: true,
     vs: { fire: 1.5, tesla: 1.3, cannon: 0.5 }, tip: 'летить по троє, повз Барикаду — Пекло, Тесла, Хуртовина',
     about: "Літні податки долини. Платити не обов'язково, чухатися — так." },
-  magpie: { name: 'Сорока', family: 'spark', from: 8, hp: 22, speed: 50, armor: 0, gold: 4, cost: 1.5, weight: 0.4, gap: 12, fly: true,
+  magpie: { name: 'Сорока', family: 'spark', from: 8, hp: 22, speed: 50, armor: 0, gold: 4, cost: 1.5, weight: 0.4, gap: 12, flying: true,
     magpie: { r: 28 }, tip: "збирає монети з карти; вб'єш — усе висипле назад, втече — монети пропали",
     about: 'Нічого не краде — просто дуже любить блискуче і погано розуміє слово "моє".' },
   bonepile: { name: 'Кістлявчик', family: 'bone', from: 13, hp: 34, speed: 28, armor: 1, gold: 3, cost: 2.5, weight: 0.5, gap: 12,
     rise: { time: 3, timeCircle: 2, hp: 0.4 }, tip: "розсипається в купу кісток і встає; купу б'є лише площа. Вогонь, спори, вибух — не встане",
     about: 'Вставати після падіння — його кредо. Збирати себе докупи — його ранкова зарядка.' },
 });
-// Wave from which a base enemy type can appear.
-export const UNLOCKS = { slime: 1, runner: 2, splitter: 3, knight: 4, healer: 6 };
+// Wave from which a base enemy type can appear (rotation mobs have their own schedule: ROTATION).
+export const UNLOCKS = { slime: 1, runner: 2, splitter: 3, knight: 4, bat: 5, healer: 6, ant: 7, shell: 8, toad: 9, ghost: 10, sponge: 12, bloater: 13 };
 
 // Talents: after every boss kill each player picks one card from a personal draft (never pauses co-op).
 // Three rarities: common (solid stat), rare (changes how a tower plays), epic (builds a run around it, max 1).

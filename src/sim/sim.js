@@ -215,6 +215,11 @@ function updateEnemy(s, e) {
   const L = s.map.lanes[e.lane];
   e.px = e.x; e.py = e.y;
   if (e.flash > 0) e.flash--;
+  if (def.phase) { // Привидик: blinks out of the towers' sight every few seconds
+    if (e.hideT > 0) e.hideT--;
+    e.phT = (e.phT ?? def.phase.every * T) - 1;
+    if (e.phT <= 0) { e.hideT = Math.round(def.phase.dur * T); e.phT = Math.round(def.phase.every * T); }
+  }
   if (e.slowT > 0) e.slowT--;
   if (e.wetT > 0) e.wetT--;
   if (e.burnT > 0) { // the timer runs down after the damage: a death by the last burn tick still counts as «died burning»
@@ -292,8 +297,8 @@ function updateEnemy(s, e) {
   let nd = e.dist + (back ? -(speed / T + hop) : speed / T + hop);
   if (back && nd <= L.loopStart) nd += L.loopLen;
   const next = posAt(s.map, e.lane, nd);
-  // Barricades stop enemies walking into them; enemies chew through the wall. Fliers and hoppers pass over it.
-  const wall = def.fly || hop > 0 ? null : s.walls.find((w) => w.hp > 0 && Math.hypot(next.x - w.x, next.y - w.y) < 16 && Math.hypot(next.x - w.x, next.y - w.y) < Math.hypot(e.x - w.x, e.y - w.y));
+  // Barricades stop enemies walking into them; enemies chew through the wall. Flyers and hoppers pass over it.
+  const wall = def.flying || hop > 0 ? null : s.walls.find((w) => w.hp > 0 && Math.hypot(next.x - w.x, next.y - w.y) < 16 && Math.hypot(next.x - w.x, next.y - w.y) < Math.hypot(e.x - w.x, e.y - w.y));
   e.blocked = !!wall;
   if (wall) {
     wall.hp -= (def.lives || 1) * 0.5;
@@ -332,7 +337,7 @@ function rain(s, e, cfg) {
   let n = 0;
   for (const o of s.enemies) {
     if (o === e || o.dead || Math.hypot(o.x - e.x, o.y - e.y) > cfg.r) continue;
-    o.wetT = Math.max(o.wetT, Math.round(cfg.wet * T));
+    if (!ENEMIES[o.type].dry) o.wetT = Math.max(o.wetT, Math.round(cfg.wet * T)); // Губка never gets wet
     o.burnT = 0;
     n++;
   }
@@ -451,7 +456,7 @@ function updateZone(s, z) {
   z.life--;
   if (z.life % 5) return;
   for (const e of s.enemies) {
-    if (!e.dead && !ENEMIES[e.type].fly && Math.hypot(e.x - z.x, e.y - z.y) <= z.r) damage(s, e, z.dps / 4, z.owner, { pierce: true, quiet: true, src: z.src });
+    if (!e.dead && !ENEMIES[e.type].flying && Math.hypot(e.x - z.x, e.y - z.y) <= z.r) damage(s, e, z.dps / 4, z.owner, { pierce: true, quiet: true, src: z.src });
   }
 }
 
@@ -505,6 +510,7 @@ function pulse(s, t, def, st, targets) {
 }
 
 function applyCold(e, def, m) {
+  if (ENEMIES[e.type].dry) return; // Губка: soaks it all up, never wet or slowed
   const boss = !!ENEMIES[e.type].lives;
   e.slowT = Math.round(def.slowTime * T * (boss && def.freeze ? 0.4 : 1));
   e.slowF = def.slow;

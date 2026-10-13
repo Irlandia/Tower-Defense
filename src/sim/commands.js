@@ -246,7 +246,7 @@ export const COMMANDS = {
       if (e.dead) continue;
       e.slowT = Math.round(freeze * T * (ENEMIES[e.type].lives ? 0.5 : 1));
       e.slowF = 0;
-      e.wetT = Math.round(a.wet * T);
+      if (!ENEMIES[e.type].dry) e.wetT = Math.round(a.wet * T); // Губка never gets wet
       e.burnT = 0;
     }
     s.events.push({ type: 'nova', p: pi });

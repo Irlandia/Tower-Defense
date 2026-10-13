@@ -84,6 +84,25 @@ check('ui: back to menu with resume', !hidden('menu') && !hidden('resume'), 'men
 d.getElementById('resume').click();
 await wait(600);
 check('ui: resume hides menu', hidden('menu'));
+// tower popup must not hang over the end screen / the next level
+{
+  const s = A.app.state, P = await frame.contentWindow.eval("import('/src/client/ui/popup.js')"), SS = await frame.contentWindow.eval("import('/src/client/session.js')");
+  s.players[0].gold = 999;
+  let spot = null;
+  for (let ty = 0; ty < 14 && !spot; ty++) for (let tx = 0; tx < 26 && !spot; tx++) if (!s.map.tiles.has(tx + ',' + ty) && !s.obstacles.some((o) => o.tx === tx && o.ty === ty) && (await frame.contentWindow.eval("import('/src/sim/sim.js')")).canPlace(s, tx, ty)) spot = [tx, ty];
+  SS.send({ type: 'place', kind: 'arrow', tx: spot[0], ty: spot[1] });
+  L.simulate(t0 + 41 * 50 + 1000);
+  A.ui.selected = 't' + s.towers[s.towers.length - 1].id;
+  P.updatePop();
+  const shown = !d.getElementById('pop').classList.contains('hidden');
+  A.bus.emit('run:end', { won: false, earned: 0, record: false, level: 1, levelUp: false });
+  check('ui: tower popup closes when the run ends', shown && d.getElementById('pop').classList.contains('hidden') && !A.ui.selected, `shown=${shown}`);
+  A.ui.selected = 't' + s.towers[s.towers.length - 1].id; P.updatePop();
+  A.bus.emit('run:start');
+  P.updatePop();
+  check('ui: and when the next level starts', d.getElementById('pop').classList.contains('hidden'));
+  d.getElementById('modal').classList.add('hidden');
+}
 // run summary: the loop counts events; a boss kill ends up in the bestiary at the end of the run
 const S = await frame.contentWindow.eval("import('/src/client/summary.js')");
 check('summary: counts the running game', S.summary.kills === A.app.state.kills, `summary=${S.summary.kills} state=${A.app.state.kills}`);

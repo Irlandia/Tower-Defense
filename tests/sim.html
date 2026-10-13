@@ -4,12 +4,12 @@
 <pre id="out">running…</pre>
 <script type="module">
 import { createGame, step, canPlace, canEvolve, isRoad, posAt, towerStats, vsMult, pickCards, placeCost, isLocked, missionStars } from '../src/sim/sim.js';
-import { TOWERS, TOWER_ORDER, BRANCHES, COLS, ROWS, CARDS, BRAWLS, brawlOf } from '../src/sim/data.js';
+import { TOWERS, TOWER_ORDER, BRANCHES, COLS, ROWS, CARDS, BRAWLS, brawlOf, ENEMIES, UNLOCKS } from '../src/sim/data.js';
 import { ABILITIES } from '../src/sim/data.js';
 import * as Meta from '../src/meta.js';
 import { sellRatioOf, abilityMax, stateHash, dayPhase, nightSight, canMaster, masterCost, towerDef } from '../src/sim/sim.js';
 import { kill, spawn, damage, infect, ignite, explode } from '../src/sim/combat.js';
-import { VERSION, BOSSES, BOSS_POOL, CAMPAIGN, ENEMIES, UNLOCKS, ROTATION, CONFIG } from '../src/sim/data.js';
+import { VERSION, BOSSES, BOSS_POOL, CAMPAIGN, ROTATION, CONFIG } from '../src/sim/data.js';
 const CAMPAIGN_NPC = CAMPAIGN.find((m) => m.id === 7).npc;
 Meta.setPersist(false); // tests never write the player's real save
 
@@ -680,6 +680,41 @@ try {
   rp.countdown = 1; step(rp);
   check('repair: full at a wave start', wl.hp === wl.max);
 
+  { // New enemy types: each mechanic does what it says (own scope)
+  const foe = (type, seed = 31) => {
+    const g = createGame(seed, { bonusGold: 5000 });
+    g.queue = [{ type, lane: 0, at: g.tick + 1, hpMul: 5 }]; g.countdown = 1e9; step(g);
+    const e = g.enemies[0]; e.dist = g.map.lanes[0].total / 2; const p = posAt(g.map, 0, e.dist); e.x = p.x; e.y = p.y;
+    return { g, e };
+  };
+  const { g: bg1, e: bat } = foe('bat');
+  const batHp0 = bat.hp;
+  explode(bg1, bat.x, bat.y, 30, 100, 0, 'cannon');
+  check('bat: explosions only graze flyers (30%)', batHp0 - bat.hp <= 100 * 0.3 * 0.5 + 1 && batHp0 - bat.hp > 0, `${batHp0 - bat.hp}`);
+  const { g: bg2, e: bat2 } = foe('bat');
+  const ahead = posAt(bg2.map, 0, bat2.dist + 10);
+  bg2.walls.push({ id: 999, owner: 0, tx: Math.floor(ahead.x / 24), ty: Math.floor(ahead.y / 24), x: ahead.x, y: ahead.y, hp: 50, max: 50 });
+  const d0 = bat2.dist; for (let i = 0; i < 20; i++) step(bg2);
+  check('bat: flies over barricades', bat2.dist > d0 + 20 && !bat2.blocked);
+  const { g: tg, e: toad } = foe('toad');
+  infect(tg, toad, TOWERS.plague.spore, 0, 1, 0);
+  check('toad: spores do not take', !(toad.sporeT > 0));
+  const { g: sg, e: sponge } = foe('sponge');
+  step(sg, [{ type: 'nova', p: 0 }]);
+  check('sponge: never wet', !(sponge.wetT > 0));
+  const { g: gg, e: ghost } = foe('ghost');
+  let hidden = 0; for (let i = 0; i < 80; i++) { step(gg); if (ghost.hideT > 0) hidden++; }
+  check('ghost: blinks out of sight now and then (~1 s of every 3)', hidden >= 15 && hidden <= 35, `hidden ${hidden}/80`);
+  const { g: pg, e: blo } = foe('bloater');
+  const [px4, py4] = free(pg, 30).map(([x, y]) => [x, y]).sort((a, b) => Math.hypot(a[0] * 24 + 12 - blo.x, a[1] * 24 + 12 - blo.y) - Math.hypot(b[0] * 24 + 12 - blo.x, b[1] * 24 + 12 - blo.y))[0];
+  step(pg, [{ type: 'place', kind: 'arrow', tx: px4, ty: py4, p: 0 }]);
+  const near = Math.hypot(pg.towers[0].x - blo.x, pg.towers[0].y - blo.y) <= ENEMIES.bloater.deathStun.r;
+  kill(pg, blo, 0);
+  check('bloater: popping stuns towers nearby', !near || pg.towers[0].stunT > 0, `near=${near}`);
+  const unl = Object.keys(UNLOCKS);
+  check('new enemies are in the wave pool by wave 13', ['bat', 'ant', 'shell', 'toad', 'ghost', 'sponge', 'bloater'].every((k) => unl.includes(k) && UNLOCKS[k] <= 13));
+  }
+
   // Time of day: start phase from the seed, moves every DAY.every waves; night = shorter sight, more gold
   const starts = new Set([1, 2, 3, 4, 5, 6, 7, 8].map((sd) => dayPhase(createGame(sd))));
   check('day: runs start at different times of day', starts.size >= 3, [...starts].join());
@@ -881,7 +916,7 @@ try {
     }
     // count / gap / fly: temporary test types so batch 2 (Мошкара) can rely on them
     {
-      ENEMIES.t_swarm = { name: 'T', hp: 7, speed: 52, armor: 0, gold: 1, cost: 1.5, weight: 1e6, gap: 5, count: 3, fly: true };
+      ENEMIES.t_swarm = { name: 'T', hp: 7, speed: 52, armor: 0, gold: 1, cost: 1.5, weight: 1e6, gap: 5, count: 3, flying: true };
       UNLOCKS.t_swarm = 1;
       try {
         const g = createGame(8); g.queue = []; g.lives = 1e6;
@@ -1125,7 +1160,7 @@ try {
     // 6. Мошкара: three at once, fly, cost per group, cannon x0.5
     {
       const d = ENEMIES.gnats;
-      check('gnats: count 3, fly, vs fire 1.5 / tesla 1.3 / cannon 0.5', d.count === 3 && d.fly && vsMult('gnats', 'fire') === 1.5 && vsMult('gnats', 'tesla') === 1.3 && vsMult('gnats', 'cannon') === 0.5);
+      check('gnats: count 3, fly, vs fire 1.5 / tesla 1.3 / cannon 0.5', d.count === 3 && d.flying && vsMult('gnats', 'fire') === 1.5 && vsMult('gnats', 'tesla') === 1.3 && vsMult('gnats', 'cannon') === 0.5);
       const g = createGame(3); g.rot = [{ wave: 1, type: 'gnats' }]; g.lives = 1e6;
       let units = 0, groupsOk = true;
       for (let i = 0; i < 20; i++) {
@@ -1240,7 +1275,7 @@ try {
 
   // Golden replay: a fixed bot run must give the same fingerprint until VERSION is bumped.
   // When you change src/sim on purpose: VERSION++ and paste the new hash printed below.
-  const GOLDEN = { version: 56, hash: 3589234247 };
+  const GOLDEN = { version: 57, hash: 2070823479 };
   const gh = stateHash(runBot(4242, 6).s);
   if (VERSION === GOLDEN.version) check('golden replay: sim unchanged at this VERSION (else bump VERSION)', gh === GOLDEN.hash, `got ${gh}`);
   else log(`NOTE golden replay: VERSION ${VERSION} — set GOLDEN = { version: ${VERSION}, hash: ${gh} }`);
