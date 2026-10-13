@@ -25,3 +25,7 @@ buildAbilities();
 fit();
 if (!runDemoIfRequested()) enterLobby();
 startLoop();
+
+// the game is ready: fade the boot screen out (it lives in index.html so it shows before any module loads)
+const boot = document.getElementById('boot');
+if (boot) { boot.classList.add("done"); setTimeout(() => boot.remove(), 600); } // a timer, not rAF: hidden tabs get no frames

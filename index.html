@@ -8,10 +8,56 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=Nunito:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <!-- boot screen: inline so it shows at once, before the game's styles and modules arrive -->
+  <style>
+    #boot { position: fixed; inset: 0; z-index: 1000; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+      background: radial-gradient(ellipse at 50% 40%, #29366f, #1a1c2c 70%); color: #f4f4f4; font: 600 15px Nunito, system-ui, sans-serif; transition: opacity .45s; }
+    #boot.done { opacity: 0; pointer-events: none; }
+    #boot .bt-slime { width: 6px; height: 6px; margin: 0 48px 48px 0; animation: btHop .7s ease-in-out infinite; }
+    #boot .bt-shadow { width: 40px; height: 6px; margin-top: -26px; background: rgba(0,0,0,.35); border-radius: 50%; animation: btShadow .7s ease-in-out infinite; }
+    @keyframes btHop { 0%, 100% { transform: translateY(0) scale(1.08, .9); } 45% { transform: translateY(-26px) scale(.94, 1.06); } }
+    @keyframes btShadow { 0%, 100% { transform: scaleX(1); } 45% { transform: scaleX(.6); opacity: .5; } }
+    #boot .bt-logo { font: 700 40px 'Pixelify Sans', monospace; color: #ffcd75; text-shadow: 3px 3px 0 #b13e53, 6px 6px 0 #1a1c2c; letter-spacing: 3px; }
+    #boot .bt-logo span { color: #73eff7; text-shadow: 3px 3px 0 #41a6f6, 6px 6px 0 #1a1c2c; }
+    #boot .bt-bar { width: 220px; height: 10px; background: #1a1c2c; box-shadow: 0 0 0 2px #333c57; overflow: hidden; }
+    #boot .bt-bar i { display: block; height: 100%; width: 40%; background: linear-gradient(90deg, #38b764, #a7f070); animation: btBar 1.1s ease-in-out infinite; }
+    @keyframes btBar { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+    #boot .bt-tip { max-width: 420px; text-align: center; color: #94b0c2; min-height: 2.6em; line-height: 1.35; padding: 0 16px; }
+    #boot .bt-slow { display: none; color: #ffcd75; }
+    #boot.slow .bt-slow { display: block; }
+    #boot button { margin-left: 8px; padding: 4px 10px; font: inherit; color: #1a1c2c; background: #ffcd75; border: 0; cursor: pointer; }
+  </style>
   <link rel="stylesheet" href="style.css">
   <script src="vendor/peerjs.min.js"></script> <!-- PeerJS 1.5.4, vendored (no third-party CDN at runtime) -->
 </head>
 <body>
+  <div id="boot" aria-live="polite">
+    <div class="bt-slime"></div><div class="bt-shadow"></div>
+    <div class="bt-logo">PIXEL<span>TD</span></div>
+    <div class="bt-bar"><i></i></div>
+    <div class="bt-tip"></div>
+    <div class="bt-slow">Довго вантажиться… <button onclick="location.reload()">Оновити сторінку</button></div>
+  </div>
+  <script>
+    // boot screen: a pixel slime built from box-shadows, a random tip, and a hint if loading takes too long
+    (function () {
+      var map = ['..0000..', '.066660.', '06k66k60', '0666w660', '06655660', '06666660', '.000000.'], col = { '0': '#1a1c2c', '6': '#38b764', '5': '#a7f070', k: '#1a1c2c', w: '#f4f4f4' }, px = 6, sh = [];
+      map.forEach(function (row, y) { for (var x = 0; x < row.length; x++) if (col[row[x]]) sh.push((x * px) + 'px ' + (y * px) + 'px 0 ' + col[row[x]]); });
+      document.querySelector('#boot .bt-slime').style.boxShadow = sh.join(',');
+      var tips = ['Крига робить ворогів мокрими — Тесла бʼє їх удвічі сильніше.', 'Виклик хвилі раніше дає бонусне золото.', 'Вогонь по мокрих ворогах — вибух пари!',
+        'Бочки на карті вибухають раз на хвилю: клікни, коли поруч натовп.', 'За кожного боса — талант на вибір.', 'Дві однакові вежі в Казино зливаються в сильнішу.'];
+      document.querySelector('#boot .bt-tip').textContent = '💡 ' + tips[Math.floor(Math.random() * tips.length)];
+      setTimeout(function () { var b = document.getElementById('boot'); if (b && !b.classList.contains('done')) b.classList.add('slow'); }, 20000);
+      // a script failed to load or crashed while starting: say so instead of spinning forever
+      window.addEventListener('error', function (e) {
+        var b = document.getElementById('boot');
+        if (!b || b.classList.contains('done')) return;
+        b.classList.add('slow');
+        b.querySelector('.bt-slow').firstChild.textContent = 'Не вдалося завантажити гру. ';
+        console.error('boot:', e.message || (e.target && e.target.src));
+      }, true);
+    })();
+  </script>
   <main id="layout">
     <div id="stage">
       <canvas id="game" width="640" height="360"></canvas>

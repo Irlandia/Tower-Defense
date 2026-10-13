@@ -66,49 +66,120 @@ function swamp(g, t) {
   if (Math.floor(t * 4) % 2) { g.fillStyle = '#f4f4f4'; g.fillRect(140, 30, 1, 10); g.fillRect(141, 40, 1, 8); } // a flash of lightning
 }
 
-// flashback in sepia: Дід Панас rolls logs into the stream, the water stops, the field turns green
+// Left: the farm, Дід Панас carries logs and builds a dam across the stream; a pond fills, the field greens.
+// A hill in the middle. Right: past the hill the stream runs dry, the swamp shrinks to cracked mud, a sad slime.
 function dam(g, t) {
-  grass(g, 60); sun(g, t);
-  const stop = Math.min(1, t / 2.5); // how far the dam is built
-  g.fillStyle = '#3b5dc9'; g.fillRect(0, 70, 120, 10); // the stream from the hills…
-  g.fillStyle = '#3b5dc9'; g.globalAlpha = 1 - stop; g.fillRect(120, 70, 120, 10); g.globalAlpha = 1; // …that dries up beyond the dam
-  g.fillStyle = '#a8805e'; g.globalAlpha = stop; g.fillRect(120, 70, 120, 10); g.globalAlpha = 1;
-  for (let i = 0; i < Math.round(stop * 4); i++) { g.fillStyle = '#8a6248'; g.fillRect(114, 64 + i * 4, 10, 3); g.fillStyle = '#5a3e2c'; g.fillRect(114, 66 + i * 4, 10, 1); } // logs
-  g.fillStyle = '#a7f070'; for (let i = 0; i < 8; i++) g.fillRect(20 + i * 10, 86 - Math.round(stop * 4), 2, 3 + Math.round(stop * 4)); // the thirsty field drinks
-  g.fillStyle = '#ffcd75'; g.fillRect(100, 58 + bob(t), 7, 3); g.fillStyle = '#f2c6a0'; g.fillRect(101, 61 + bob(t), 5, 4); g.fillStyle = '#b13e53'; g.fillRect(100, 65, 7, 6); g.fillStyle = '#3b5dc9'; g.fillRect(101, 71, 5, 6); // Дід Панас (young-ish)
-  // old photo look: sepia wash and a vignette
-  g.fillStyle = 'rgba(138,98,72,0.35)'; g.fillRect(0, 0, W, H);
-  g.fillStyle = 'rgba(26,28,44,0.35)'; g.fillRect(0, 0, W, 6); g.fillRect(0, H - 6, W, 6); g.fillRect(0, 0, 6, H); g.fillRect(W - 6, 0, 6, H);
+  const k = Math.min(1, t / 3); // how far the dam is built
+  // sky and far hills
+  g.fillStyle = '#73eff7'; g.fillRect(0, 0, W, 60);
+  g.fillStyle = '#ffcd75'; g.fillRect(24, 10, 12, 12); g.fillStyle = '#fff4d6'; g.fillRect(26, 12, 4, 4);
+  g.fillStyle = '#38b764'; g.fillRect(0, 56, W, H - 56); // ground
+  // the hill in the middle that hides the swamp from the farm
+  g.fillStyle = '#257179'; g.beginPath(); g.moveTo(126, 84); g.quadraticCurveTo(151, 22, 176, 84); g.closePath(); g.fill();
+  g.fillStyle = '#2f9e57'; g.beginPath(); g.moveTo(130, 84); g.quadraticCurveTo(151, 30, 172, 84); g.closePath(); g.fill();
+  g.fillStyle = '#a7f070'; for (let i = 0; i < 6; i++) g.fillRect(138 + i * 5, 62 + Math.abs(i - 2.5) * 4, 2, 1); // grass on the hill
+  // ---- left: the stream comes from the left edge to the dam at x=96 ----
+  g.fillStyle = '#3b5dc9'; g.fillRect(0, 84, 96, 10);
+  g.fillStyle = '#41a6f6'; for (let i = 0; i < 6; i++) g.fillRect(((i * 17 + Math.floor(t * 20)) % 90), 87, 5, 1); // ripples
+  // the pond grows behind the dam
+  const pond = Math.round(4 + k * 10);
+  g.fillStyle = '#3b5dc9'; g.fillRect(60, 84 - pond, 36, pond);
+  g.fillStyle = '#41a6f6'; g.fillRect(62, 84 - pond, 30, 1);
+  // the field: wheat that grows as the water arrives
+  for (let i = 0; i < 9; i++) {
+    const h = 3 + Math.round(k * 6), x = 8 + i * 6;
+    g.fillStyle = '#5a3e2c'; g.fillRect(x - 1, 79, 4, 2);
+    g.fillStyle = k > 0.5 ? '#a7f070' : '#c9a046'; g.fillRect(x, 79 - h, 2, h);
+    if (k > 0.7) { g.fillStyle = '#ffcd75'; g.fillRect(x, 78 - h, 2, 2); }
+  }
+  // the dam: logs stacked one by one
+  const logs = Math.min(5, Math.floor(k * 5.99));
+  for (let i = 0; i < logs; i++) { g.fillStyle = '#8a6248'; g.fillRect(94, 92 - i * 5, 8, 4); g.fillStyle = '#5a3e2c'; g.fillRect(94, 95 - i * 5, 8, 1); g.fillStyle = '#c28569'; g.fillRect(94, 92 - i * 5, 2, 4); }
+  // Дід Панас (big, straw hat, white beard) carries a log towards the dam, then stands proud
+  const carry = k < 1, px = carry ? 108 + Math.round(Math.sin(t * 3) * 5) : 106, py = 61 + (carry ? bob(t, 1.2) : 0); // on the bank right of the dam
+  const P = (x, y, w, h, c) => { g.fillStyle = c; g.fillRect(px + x, py + y, w, h); };
+  P(-1, 0, 12, 2, '#e8b04a'); P(2, -3, 6, 3, '#ffcd75'); // straw hat
+  P(2, 2, 6, 5, '#f2c6a0'); P(3, 4, 1, 1, '#1a1c2c'); P(6, 4, 1, 1, '#1a1c2c'); // face, eyes
+  P(2, 6, 6, 3, '#f4f4f4'); // white beard
+  P(1, 9, 8, 7, '#b13e53'); P(3, 9, 4, 7, '#3b5dc9'); // red shirt, blue overalls
+  P(2, 16, 2, 5, '#3b5dc9'); P(6, 16, 2, 5, '#3b5dc9'); P(1, 21, 3, 1, '#5a3e2c'); P(6, 21, 3, 1, '#5a3e2c'); // legs, boots
+  if (carry) { P(-4, 7, 18, 3, '#8a6248'); P(-4, 7, 2, 3, '#c28569'); } // the log on his shoulder
+  else if (Math.floor(t * 3) % 2) P(10, 6, 2, 3, '#f2c6a0'); // waving: done!
+  // ---- right: beyond the hill the stream dries out, the swamp turns to cracked mud ----
+  const dry = k;
+  g.fillStyle = '#a8805e'; g.fillRect(172, 84, 68, 10); // the dry stream bed
+  g.globalAlpha = 1 - dry; g.fillStyle = '#3b5dc9'; g.fillRect(172, 84, 68, 10); g.globalAlpha = 1;
+  const sw = Math.round(46 * (1 - dry * 0.75)); // the swamp shrinks
+  g.fillStyle = '#8a6248'; g.fillRect(182, 66, 54, 18); // mud
+  g.fillStyle = '#5a3e2c'; for (let i = 0; i < 9; i++) { const x = 184 + (i * 13) % 48, y = 68 + (i * 7) % 14; g.fillRect(x, y, 6, 1); g.fillRect(x + 5, y, 1, 3); } // cracks
+  g.fillStyle = '#257179'; g.fillRect(209 - sw / 2, 70, sw, 10); g.fillStyle = '#5d275d'; g.fillRect(209 - sw / 2, 70, sw, 2);
+  g.fillStyle = '#1a1c2c'; g.fillRect(186, 58, 1, 8); g.fillRect(232, 60, 1, 6); g.fillStyle = '#5a3e2c'; g.fillRect(185, 56, 3, 3); g.fillRect(231, 58, 3, 3); // dry reeds
+  // a sad slime looking at the mud, with a question mark
+  const s = SPRITES.slime;
+  g.drawImage(s, 200, 82 - s.height + (dry > 0.6 ? 1 : bob(t)));
+  if (dry > 0.5) { g.fillStyle = '#f4f4f4'; g.fillRect(212, 58, 4, 1); g.fillRect(215, 59, 1, 2); g.fillRect(213, 61, 2, 1); g.fillRect(213, 63, 2, 2); } // «?»
+  if (dry > 0.8) { g.fillStyle = '#73eff7'; g.fillRect(203, 74 + Math.floor(t * 6) % 4, 1, 2); } // a tear
+  // the old-photo look: sepia wash, a frame and grain
+  g.fillStyle = 'rgba(194,133,105,0.22)'; g.fillRect(0, 0, W, H);
+  g.fillStyle = 'rgba(26,28,44,0.45)'; g.fillRect(0, 0, W, 9); g.fillRect(0, H - 9, W, 9); g.fillRect(0, 0, 4, H); g.fillRect(W - 4, 0, 4, H);
+  g.fillStyle = 'rgba(244,244,244,0.12)'; for (let i = 0; i < 18; i++) g.fillRect((i * 97 + Math.floor(t * 30) * 13) % W, (i * 61 + Math.floor(t * 30) * 7) % H, 1, 1);
 }
 
-// the valley from above: swamp on the left, castle on the right, roads, the farm; the horde marches, the generals appear
+// The valley from above, drawn like a little game map: the swamp and its King on the left, two winding roads,
+// the farm in the middle, the castle on the right. The horde marches along the roads; the generals pop up one by one.
+const ROADS = [[[30, 28], [70, 28], [70, 50], [120, 50], [120, 34], [214, 34]], [[30, 86], [96, 86], [96, 70], [170, 70], [170, 44], [214, 44]]];
+function along(r, f) { // point at fraction f of a road polyline
+  const segs = r.slice(1).map((p, i) => [r[i], p, Math.hypot(p[0] - r[i][0], p[1] - r[i][1])]), total = segs.reduce((a, s) => a + s[2], 0);
+  let d = f * total;
+  for (const [a, b, l] of segs) { if (d <= l) return [a[0] + (b[0] - a[0]) * d / l, a[1] + (b[1] - a[1]) * d / l]; d -= l; }
+  return r[r.length - 1];
+}
 function map(g, t) {
   g.fillStyle = '#38b764'; g.fillRect(0, 0, W, H);
-  g.fillStyle = '#257179'; for (let i = 0; i < 40; i++) g.fillRect((i * 53) % W, (i * 29) % H, 2, 2);
-  g.fillStyle = '#5d275d'; g.fillRect(0, 20, 34, 70); g.fillStyle = '#29366f'; for (let i = 0; i < 6; i++) g.fillRect(4 + (i * 7) % 26, 26 + i * 10, 6, 3); // the swamp
-  g.fillStyle = '#566c86'; g.fillRect(212, 42, 22, 22); g.fillStyle = '#94b0c2'; g.fillRect(214, 38, 4, 6); g.fillRect(228, 38, 4, 6); g.fillStyle = '#b13e53'; g.fillRect(221, 34, 2, 6); // the castle
-  g.fillStyle = '#a8805e'; g.fillRect(118, 40, 14, 10); g.fillStyle = '#b13e53'; g.fillRect(116, 36, 18, 5); // the farm
-  const roads = [[[34, 30], [90, 30], [90, 60], [210, 60]], [[34, 80], [150, 80], [150, 55], [210, 55]]];
-  g.fillStyle = '#8a6248';
-  const along = (r, k) => { // point at fraction k of a road polyline
-    const segs = r.slice(1).map((p, i) => [r[i], p, Math.hypot(p[0] - r[i][0], p[1] - r[i][1])]), total = segs.reduce((a, s) => a + s[2], 0);
-    let d = k * total; for (const [a, b, l] of segs) { if (d <= l) return [a[0] + (b[0] - a[0]) * d / l, a[1] + (b[1] - a[1]) * d / l]; d -= l; } return r[r.length - 1];
-  };
-  for (const r of roads) for (let k = 0; k <= 1; k += 0.005) { const [x, y] = along(r, k); g.fillRect(Math.round(x) - 1, Math.round(y) - 1, 3, 3); }
-  // the horde: little slimes moving along the roads, the front creeps forward with time
-  for (const r of roads) for (let i = 0; i < 14; i++) {
-    const k = ((t * 0.12 + i * 0.05) % 0.75);
-    const [x, y] = along(r, k); g.fillStyle = i % 4 ? '#38b764' : '#a7f070'; g.fillRect(Math.round(x) - 1, Math.round(y) - 2, 3, 3); g.fillStyle = '#1a1c2c'; g.fillRect(Math.round(x), Math.round(y) - 1, 1, 1);
+  g.fillStyle = '#2f9e57'; for (let i = 0; i < 26; i++) g.fillRect((i * 53) % W, (i * 37) % H, 9, 5); // patches
+  g.fillStyle = '#a7f070'; for (let i = 0; i < 60; i++) g.fillRect((i * 41) % W, (i * 23) % H, 1, 2); // grass tufts
+  // trees
+  for (const [x, y] of [[140, 10], [150, 14], [60, 64], [190, 82], [205, 86], [128, 90], [40, 52]]) {
+    g.fillStyle = '#1a1c2c'; g.fillRect(x + 2, y + 6, 2, 3); g.fillStyle = '#257179'; g.fillRect(x, y, 6, 7); g.fillStyle = '#38b764'; g.fillRect(x + 1, y + 1, 3, 3);
   }
-  // the generals light up one by one (red markers with names)
-  const gens = [['Ґрок', 60, 22], ['Мама Слизу', 40, 92], ['Барон', 120, 88], ['КОРОЛЬ', 14, 12]];
-  gens.forEach(([name, x, y], i) => {
-    if (t < 0.6 + i * 0.8) return;
-    const pulse = Math.floor(t * 4) % 2;
-    g.fillStyle = '#1a1c2c'; g.fillRect(x - 3, y - 3, 7, 7); g.fillStyle = pulse ? '#b13e53' : '#ef7d57'; g.fillRect(x - 2, y - 2, 5, 5);
-    g.font = '7px monospace'; g.fillStyle = '#1a1c2c'; g.fillText(name, x + 5, y + 3); g.fillStyle = i === 3 ? '#ffcd75' : '#f4f4f4'; g.fillText(name, x + 4, y + 2);
+  // the swamp with reeds and bubbles
+  g.fillStyle = '#5d275d'; g.fillRect(0, 14, 32, 84); g.fillStyle = '#257179'; g.fillRect(2, 18, 28, 76);
+  for (let i = 0; i < 7; i++) { g.fillStyle = '#5a3e2c'; g.fillRect(4 + (i * 9) % 24, 20 + i * 11, 1, 5); }
+  for (let i = 0; i < 4; i++) { const f = (t * 0.7 + i * 0.25) % 1; g.fillStyle = '#a7f070'; g.fillRect(8 + i * 6, Math.round(90 - f * 60), 2, 2); }
+  // roads: dirt with a light rim
+  for (const r of ROADS) for (let f = 0; f <= 1; f += 0.003) { const [x, y] = along(r, f); g.fillStyle = '#c29a6b'; g.fillRect(Math.round(x) - 3, Math.round(y) - 3, 7, 7); }
+  for (const r of ROADS) for (let f = 0; f <= 1; f += 0.003) { const [x, y] = along(r, f); g.fillStyle = '#8a6248'; g.fillRect(Math.round(x) - 2, Math.round(y) - 2, 5, 5); }
+  // the farm (field + house) and the castle
+  g.fillStyle = '#5a3e2c'; g.fillRect(132, 56, 18, 10); g.fillStyle = '#a7f070'; for (let i = 0; i < 4; i++) g.fillRect(134 + i * 4, 58, 2, 6);
+  g.fillStyle = '#c28569'; g.fillRect(118, 58, 10, 8); g.fillStyle = '#b13e53'; g.fillRect(116, 54, 14, 4); g.fillStyle = '#5a3e2c'; g.fillRect(122, 62, 2, 4);
+  g.fillStyle = '#1a1c2c'; g.fillRect(213, 25, 26, 28); g.fillStyle = '#94b0c2'; g.fillRect(214, 26, 24, 26); g.fillStyle = '#566c86'; g.fillRect(214, 44, 24, 8);
+  g.fillStyle = '#94b0c2'; g.fillRect(213, 20, 6, 7); g.fillRect(233, 20, 6, 7); g.fillStyle = '#1a1c2c'; g.fillRect(223, 44, 6, 8);
+  g.fillStyle = '#b13e53'; g.fillRect(225, 10, 1, 12); g.fillRect(226, 10 + (Math.floor(t * 5) % 2), 6, 4); // flag
+  // the horde: little slimes march along both roads; the front creeps towards the castle
+  const m = SPRITES.mini;
+  for (const r of ROADS) for (let i = 0; i < 9; i++) {
+    const f = Math.min(0.82, (t * 0.07 + i * 0.075) % 0.82);
+    const [x, y] = along(r, f);
+    g.drawImage(m, Math.round(x - m.width / 2), Math.round(y - m.height / 2) + (Math.floor(t * 6 + i) % 2));
+  }
+  // the generals light up one by one: a red ring, the boss sprite (small) and a name plate
+  const gens = [['Ґрок', ROADS[0], 0.32], ['Мама Слизу', ROADS[1], 0.28], ['Барон', ROADS[1], 0.58], ['КОРОЛЬ', null, 0]];
+  gens.forEach(([name, r, f], i) => {
+    const appear = t - (0.5 + i * 0.75);
+    if (appear < 0) return;
+    const [x, y] = r ? along(r, f) : [16, 50];
+    const pop = Math.min(1, appear / 0.25), size = Math.round((i === 3 ? 18 : 12) * pop);
+    g.strokeStyle = Math.floor(t * 5) % 2 ? '#b13e53' : '#ef7d57'; g.beginPath(); g.arc(x + 0.5, y + 0.5, size / 2 + 3, 0, Math.PI * 2); g.stroke();
+    const spr = i === 3 ? SPRITES.king : SPRITES.boss;
+    g.drawImage(spr, Math.round(x - size / 2), Math.round(y - size / 2), size, size);
+    if (pop >= 1) {
+      g.font = 'bold 7px monospace';
+      const w = Math.ceil(g.measureText(name).width) + 4, lx = Math.min(W - w - 2, Math.round(x - w / 2)), ly = Math.round(y - size / 2 - 11);
+      g.fillStyle = '#1a1c2c'; g.fillRect(lx, ly, w, 9); g.fillStyle = i === 3 ? '#ffcd75' : '#f4f4f4'; g.fillText(name, lx + 2, ly + 7);
+    }
   });
 }
+
 
 // closing card: sunrise over the castle, the hero on the wall, the title
 function finale(g, t) {
