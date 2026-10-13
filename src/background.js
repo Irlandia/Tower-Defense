@@ -1,7 +1,7 @@
 // Static map background, drawn once per map: ground by season, water, roads with their decor, caves.
 // Pure drawing into an offscreen canvas; Renderer (render.js) caches the result.
 import { TILE, COLS, ROWS } from './sim/data.js';
-import { C, drawCave, ellipse, drawFarmHouse, drawField } from './sprites.js';
+import { C, drawCave, ellipse, drawFarmHouse, drawField, drawWinterDecor } from './sprites.js';
 
 export function edgeOf([x, y]) {
   if (x === 0) return "left";
@@ -99,6 +99,7 @@ export function makeBackground(map, season = 'summer') {
     g.fillRect(f.x * TILE + 2, f.y * TILE + 2, TILE - 4, f.h * TILE - 4);
     drawField(g, f.field[0], f.field[1], f.field[2], f.field[3], season, TILE);
   }
+  if (season === "winter") placeWinterDecor(g, map, road, water, rnd);
   for (const sp of map.spawns) {
     const [x, y] = sp, e = edgeOf(sp);
     if (e === "left") drawCave(g, 0, y * TILE);
@@ -107,6 +108,24 @@ export function makeBackground(map, season = 'summer') {
     else drawCave(g, x * TILE + 6, ROWS * TILE - 10);
   }
   return cv;
+}
+
+// Winter decor on free grass: two snowmen and two decorated Christmas trees, never on or next to a road, pond or the farm yard.
+function placeWinterDecor(g, map, road, water, rnd) {
+  const f = map.farm;
+  const inFarm = (tx, ty) => !!f && tx >= Math.min(f.x, f.field[0]) - 1 && tx <= Math.max(f.x + 3, f.field[0] + f.field[2]) && ty >= Math.min(f.y, f.field[1]) - 1 && ty <= Math.max(f.y + f.h, f.field[1] + f.field[3]);
+  const free = (tx, ty) => tx >= 1 && tx < COLS - 1 && ty >= 1 && ty < ROWS - 1 && !inFarm(tx, ty)
+    && [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]].every(([dx, dy]) => !road(tx + dx, ty + dy) && !water(tx + dx, ty + dy));
+  const placed = [];
+  for (const kind of ['snow', 'snow', 'tree', 'tree']) {
+    for (let tries = 0; tries < 300; tries++) {
+      const tx = 1 + Math.floor(rnd() * (COLS - 2)), ty = 1 + Math.floor(rnd() * (ROWS - 2));
+      if (!free(tx, ty) || placed.some(([px, py]) => Math.abs(px - tx) + Math.abs(py - ty) < 3)) continue;
+      placed.push([tx, ty]);
+      drawWinterDecor(g, tx * TILE + 6 + rnd() * 12, ty * TILE + 20, kind);
+      break;
+    }
+  }
 }
 
 // Atmosphere on the roads (static background only): wheel ruts, puddles / ice / dry cracks,

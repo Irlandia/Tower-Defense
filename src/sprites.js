@@ -496,6 +496,40 @@ export function drawCave(g, x, y) {
   ellipse(g, x + 6, y + 14, 7, 7, C.ink);
 }
 
+// Winter map decor (background only): a snowman with a carrot nose, scarf and top hat.
+const SNOWMAN_SPR = canvasOf(16, 28, (g) => {
+  const SNOW = [C.white, C.silver, C.slate, C.dark];
+  ellipse(g, 8, 26, 7, 2, 'rgba(0,0,0,0.3)');
+  sphere(g, 8, 20, 6, SNOW);
+  sphere(g, 8, 13, 4, SNOW);
+  sphere(g, 8, 6, 3, SNOW);
+  R(g, 5, 1, 6, 2, C.ink); R(g, 5, 2, 6, 1, C.red); R(g, 3, 3, 10, 1, C.ink); // top hat
+  R(g, 6, 6, 1, 1, C.ink); R(g, 9, 6, 1, 1, C.ink); // eyes
+  R(g, 8, 7, 3, 1, C.orange); // carrot nose
+  R(g, 5, 10, 6, 2, C.red); R(g, 9, 11, 2, 3, C.red); // scarf
+  R(g, 8, 14, 1, 1, C.ink); R(g, 8, 17, 1, 1, C.ink); // buttons
+  R(g, 0, 11, 4, 1, WOOD[1]); R(g, 12, 11, 4, 1, WOOD[1]); // stick arms
+});
+
+// Decorated Christmas tree: green pine with a star, baubles, tinsel and a gift at the foot.
+const XMAS_TREE_SPR = canvasOf(28, 38, (g) => {
+  ellipse(g, 14, 35, 9, 3, 'rgba(0,0,0,0.3)');
+  cyl(g, 14, 34, 2, 6, WOOD);
+  cone(g, 14, 30, 11, 10, GREENR);
+  cone(g, 14, 22, 9, 9, GREENR);
+  cone(g, 14, 15, 6, 9, GREENR);
+  R(g, 13, 2, 2, 4, C.yellow); R(g, 12, 3, 4, 2, C.yellow); // star on top
+  R(g, 8, 26, 2, 2, C.red); R(g, 18, 25, 2, 2, C.blue); R(g, 13, 28, 2, 2, C.yellow); // baubles
+  R(g, 10, 18, 2, 2, C.orange); R(g, 16, 16, 2, 2, C.red);
+  R(g, 12, 10, 2, 2, C.blue); R(g, 15, 12, 2, 2, C.yellow);
+  R(g, 6, 24, 1, 1, C.white); R(g, 20, 22, 1, 1, C.white); R(g, 11, 14, 1, 1, C.white); // tinsel
+  R(g, 21, 31, 5, 4, C.red); R(g, 23, 31, 1, 4, C.yellow); R(g, 21, 31, 5, 1, C.yellow); // gift
+});
+export function drawWinterDecor(g, x, y, kind) {
+  const spr = kind === 'tree' ? XMAS_TREE_SPR : SNOWMAN_SPR;
+  g.drawImage(spr, Math.round(x - spr.width / 2), Math.round(y - spr.height));
+}
+
 // Tiny 3x5 bitmap font for numbers in the HUD and floating damage.
 const GLYPHS = {
   0: '111101101101111', 1: '010110010010111', 2: '111001111100111', 3: '111001111001111', 4: '101101111001001',
