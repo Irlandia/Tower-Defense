@@ -408,7 +408,7 @@ export class Renderer {
       } else if (it.t) {
         const t = it.t;
         const lvl = TOWERS[t.kind].support ? t.aura.dmg + t.aura.rate : TOWERS[t.kind].from ? 4 : t.level;
-        if (t.master) this.drawMasterTower(t, lvl, s.tick); // the final upgrade: golden outline, orbiting lights, family sparks, crown
+        if (t.master) this.drawMasterTower(t, lvl, s.tick); // the final upgrade: golden outline, orbiting lights, family sparks
         else drawTower(g, t.kind, t.tx * TILE, t.ty * TILE, lvl, t.aim, s.tick, s.tick - t.fired < 2);
         if (s.players.length > 1) this.ownerMark(t.tx * TILE, t.ty * TILE, t.owner);
         if (s.players[t.owner] && s.players[t.owner].overT > 0 && !TOWERS[t.kind].support) this.buffMark(t.tx * TILE, t.ty * TILE, s.tick); // Overdrive sparks
@@ -970,7 +970,7 @@ export class Renderer {
   }
 
   // Mastered tower: drawn off-screen first so it can get a pulsing golden outline from its own silhouette,
-  // stands on a glowing plinth, has three family-coloured lights orbiting it, family sparks and a small crown.
+  // stands on a glowing plinth, has three family-coloured lights orbiting it and family sparks.
   drawMasterTower(t, lvl, tick) {
     const g = this.g, x = t.tx * TILE, y = t.ty * TILE;
     const W2 = 48, H2 = 72, ox = 12, oy = 44; // off-screen canvas, the tile's top-left lands at (ox, oy)
@@ -1002,11 +1002,6 @@ export class Renderer {
     g.globalAlpha = 1;
     g.drawImage(this.mCv, x - ox, y - oy);
     for (const o of orbs) if (o.front) orb(o);
-    // a small crown on top
-    const top = y - 22 + ((tick >> 4) % 2);
-    g.fillStyle = C.ink; g.fillRect(cx - 4, top - 1, 9, 5);
-    g.fillStyle = C.yellow; g.fillRect(cx - 3, top + 1, 7, 2); g.fillRect(cx - 3, top - 1, 1, 2); g.fillRect(cx, top - 2, 1, 3); g.fillRect(cx + 3, top - 1, 1, 2);
-    g.fillStyle = C.red; g.fillRect(cx, top + 1, 1, 1);
     // family sparks
     if ((tick + t.id) % 6 === 0) {
       const px = x + 3 + Math.random() * 18, py = y - 8 + Math.random() * 20;
