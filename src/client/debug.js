@@ -4,7 +4,7 @@
 import { TOWER_ORDER, brawlWeek, DAY, BRANCHES } from '../sim/data.js';
 import { canPlace, isRoad, posAt } from '../sim/sim.js';
 import * as Meta from '../meta.js';
-import { app, ui, meta } from './app.js';
+import { app, ui, meta, renderer } from './app.js';
 import { startGame, send } from './session.js';
 
 /** Returns true if a demo run was started (the caller then skips opening the menu). */
@@ -44,6 +44,7 @@ export function runDemoIfRequested() {
     }
   }, 400);
   if (q.has('enemies')) ['bat', 'ant', 'ant', 'shell', 'toad', 'ghost', 'sponge', 'bloater'].forEach((type, i) => s.queue.push({ type, lane: 0, at: s.tick + 5 + i * 8, hpMul: 20 })); // &enemies: one of each new type
+  if (q.has('mermaid')) setTimeout(() => { const m = renderer.critters.mermaid; if (m) { m.state = 'sit'; m.t = 999; } }, 300); // &mermaid: she is out on the shore
   if (q.has('time')) s.dayStart = Math.max(0, DAY.phases.findIndex((p) => p.id === q.get('time'))); // &time=day|evening|night|dawn
   // put each tower type on a free tile next to the road
   const spots = [];

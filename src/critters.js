@@ -108,6 +108,7 @@ export class Critters {
     this.season = season;
     this.initFarm(map);
     this.initValeria(npc === "valeria");
+    this.initWater();
     this.iceFish = [];
     this.list = [];
     this.jumps = [];
@@ -146,6 +147,7 @@ export class Critters {
     this.updateFish(dt);
     this.updateFarm(dt);
     this.updateValeria(dt, enemies);
+    this.updateWater(dt, this.mouse);
     for (const c of this.list) {
       const K = KIND[c.kind];
       c.t -= dt;
@@ -525,6 +527,7 @@ Object.assign(Critters.prototype, {
   // farmer's and dog's lines, drawn after everything else so they stay readable (even at night)
   drawFarmSay(g) {
     this.drawValeriaSay();
+    this.drawWaterSay();
     const F = this.farm;
     if (!F) return;
     for (const k of [F.farmer, F.dog]) {
@@ -672,5 +675,141 @@ Object.assign(Critters.prototype, {
   drawValeriaSay() {
     const v = this.valeria;
     if (v && v.sayT > 0 && v.say && v.sayAt) say(v.sayAt[0], v.sayAt[1], hero(v.say), '', '#ffcd75');
+  },
+});
+
+// ---------- water decor: a tiny waterfall into a pond, and a mermaid who sometimes sits on the shore ----------
+// Decoration only. The mermaid admires herself in a mirror; when the cursor comes close she dives and is gone for a while.
+const MER_COL = { h: '#ef7d57', H: '#b13e53', s: '#f2c6a0', k: '#1a1c2c', p: '#f4b6d2', t: '#38b764', T: '#257179', c: '#73eff7', w: '#f4f4f4', y: '#ffcd75' };
+const MERMAID = {
+  sit: ['..hhhh....', '.hhhhhh...', 'hhsssshh..', 'hhsksksh..', 'hhssssshh.', '.hhsssshh.', '.hppsspph.', '.hsssssh..', '..ttttt...', '..tTtTtt..', '...ttttTt.', '....ttTtcc', '.....tt.cc'],
+  comb: ['..hhhh....', '.hhhhhh.y.', 'hhsssshhy.', 'hhsksksh..', 'hhssssshhs', '.hhsssshh.', '.hppsspph.', '.hsssssh..', '..ttttt...', '..tTtTtt..', '...ttttTt.', '....ttTtcc', '.....tt.cc'],
+  scared: ['..hhhh....', '.hhhhhh...', 'hhsssshh..', 'hhskskshs.', 'hhsssksh..', '.hhsssshh.', 's.hppsph..', '..hsssh...', '..ttttt...', '..tTtTtt..', '...ttttTt.', '....ttTtcc', '.....tt.cc'],
+};
+function merSprite(rows, flip) {
+  const cv = document.createElement('canvas');
+  cv.width = rows[0].length; cv.height = rows.length;
+  const g = cv.getContext('2d');
+  rows.forEach((row, y) => { for (let x = 0; x < row.length; x++) { const c = MER_COL[row[x]]; if (!c) continue; g.fillStyle = c; g.fillRect(flip ? row.length - 1 - x : x, y, 1, 1); } });
+  return cv;
+}
+const MER_SPR = Object.fromEntries(Object.entries(MERMAID).map(([k, rows]) => [k, [merSprite(rows, false), merSprite(rows, true)]]));
+const MER_SAY = ['Яка я гарна…', 'Ля-ля-ля~', 'Дзеркальце, скажи…', 'Сонечко сьогодні!', 'Мої кучерики!'];
+const MER_SCARED = ['Ой!', 'Ай!', 'Не дивись!', 'Бульк!'];
+
+Object.assign(Critters.prototype, {
+  initWater() {
+    const W = this.map.water;
+    const taken = this.taken || new Set(); // barrels and rocks/trees on the map (set by the renderer)
+    const free = (x, y) => x >= 0 && y >= 0 && x < COLS && y < ROWS && !W.has(x + ',' + y) && !this.map.tiles.has(x + ',' + y) && !taken.has(x + ',' + y);
+    const pond = [...W].map((k) => k.split(',').map(Number));
+    // waterfall: a pond tile with dry land right above it (the ledge the water falls from)
+    const fall = pond.filter(([x, y]) => free(x, y - 1) && W.has(x + ',' + (y + 1)))[0] || pond.filter(([x, y]) => free(x, y - 1))[0];
+    this.waterfall = fall ? { x: fall[0] * TILE, y: fall[1] * TILE, drops: [] } : null;
+    // mermaid: a pond tile with a free shore tile beside it; she sits on a rock on that shore
+    const spots = [];
+    for (const [x, y] of pond) for (const dx of [-1, 1]) {
+      if (free(x + dx, y) && (!fall || Math.abs(x - fall[0]) + Math.abs(y - fall[1]) > 1)) spots.push({ wx: x, wy: y, sx: x + dx, dir: -dx });
+    }
+    const sp = spots[Math.floor(Math.random() * spots.length)];
+    // in winter the pond is frozen: she sleeps under the ice
+    this.mermaid = sp && this.season !== 'winter' ? { ...sp, state: 'away', t: rnd(4, 9), say: null, sayT: 0, hearts: [] } : null;
+    this.waterSplash = [];
+  },
+
+  updateWater(dt, mouse) {
+    const wf = this.waterfall;
+    if (wf && this.season !== 'winter') {
+      if (Math.random() < 0.6) wf.drops.push({ x: wf.x + 6 + Math.random() * 12, y: wf.y + 14, vx: Math.random() * 30 - 15, vy: -20 - Math.random() * 20, life: 0.4 });
+      for (const d of wf.drops) { d.x += d.vx * dt; d.y += d.vy * dt; d.vy += 140 * dt; d.life -= dt; }
+      wf.drops = wf.drops.filter((d) => d.life > 0);
+    }
+    for (const sp of this.waterSplash) { sp.r += 30 * dt; sp.life -= dt; }
+    this.waterSplash = this.waterSplash.filter((s) => s.life > 0);
+    const m = this.mermaid;
+    if (!m) return;
+    m.t -= dt; m.sayT -= dt;
+    m.x = m.sx * TILE + 12 - m.dir * 5; m.y = m.wy * TILE + 16;
+    if (m.state === 'away' && m.t <= 0) { m.state = 'rise'; m.t = 0.7; this.splashAt(m.wx * TILE + 12, m.wy * TILE + 14); }
+    else if (m.state === 'rise' && m.t <= 0) { m.state = 'sit'; m.t = rnd(12, 22); m.combT = 0; }
+    else if (m.state === 'sit') {
+      m.combT -= dt;
+      if (m.combT <= 0) { m.comb = !m.comb; m.combT = rnd(0.6, 1.6); }
+      if (Math.random() < dt * 0.25 && m.sayT <= 0) { m.say = MER_SAY[Math.floor(Math.random() * MER_SAY.length)]; m.sayT = 2.2; }
+      if (Math.random() < dt * 1.2) m.hearts.push({ x: m.x + Math.random() * 10 - 5, y: m.y - 18, life: 1.2 });
+      const near = mouse && Math.hypot(mouse.x - m.x, mouse.y - (m.y - 8)) < 34;
+      if (near) { m.state = 'scared'; m.t = 0.45; m.say = MER_SCARED[Math.floor(Math.random() * MER_SCARED.length)]; m.sayT = 1; }
+      else if (m.t <= 0) { m.state = 'dive'; m.t = 0.5; }
+    } else if (m.state === 'scared' && m.t <= 0) { m.state = 'dive'; m.t = 0.4; }
+    else if (m.state === 'dive' && m.t <= 0) { m.state = 'away'; m.t = rnd(10, 22); this.splashAt(m.wx * TILE + 12, m.wy * TILE + 14); }
+    for (const h of m.hearts) { h.y -= 10 * dt; h.life -= dt; }
+    m.hearts = m.hearts.filter((h) => h.life > 0);
+  },
+
+  splashAt(x, y) {
+    this.waterSplash.push({ x, y, r: 2, life: 0.6 });
+    if (this.waterfall) for (let i = 0; i < 10; i++) this.waterfall.drops.push({ x, y, vx: Math.random() * 60 - 30, vy: -40 - Math.random() * 40, life: 0.5 });
+  },
+
+  // drawn right after the background (under towers and enemies)
+  drawWater(g) {
+    const wf = this.waterfall, t = performance.now() / 1000;
+    if (wf) {
+      const x = wf.x, y = wf.y;
+      // the ledge: a few stones on the shore above
+      g.fillStyle = '#566c86'; g.fillRect(x + 2, y - 5, 20, 6);
+      g.fillStyle = '#94b0c2'; g.fillRect(x + 3, y - 6, 6, 3); g.fillRect(x + 11, y - 7, 7, 4); g.fillRect(x + 18, y - 5, 4, 3);
+      if (this.season === 'winter') { // icicles instead of water
+        g.fillStyle = '#dff3fa'; g.fillRect(x + 5, y, 14, 3);
+        for (let i = 0; i < 6; i++) { g.fillStyle = i % 2 ? '#f4f4f4' : '#a9d6ea'; g.fillRect(Math.round(x + 5 + i * 2.5), y + 3, 2, 4 + (i * 3) % 6); }
+      } else {
+        // the falling sheet: light stripes scroll down
+        g.fillStyle = '#41a6f6'; g.fillRect(x + 6, y - 1, 12, 15);
+        for (let i = 0; i < 4; i++) {
+          const off = Math.floor((t * 28 + i * 7) % 14);
+          g.fillStyle = i % 2 ? '#73eff7' : '#f4f4f4';
+          g.fillRect(x + 7 + i * 3, y - 1 + off, 1, 3);
+        }
+        // foam at the bottom
+        for (let i = 0; i < 5; i++) { const b = Math.sin(t * 6 + i) > 0 ? 1 : 0; g.fillStyle = '#f4f4f4'; g.fillRect(x + 4 + i * 4, y + 13 + b, 3, 2); }
+        g.fillStyle = 'rgba(244,244,244,0.5)'; g.fillRect(x + 2, y + 16, 20, 1);
+        for (const d of wf.drops) { g.fillStyle = '#c7f2ff'; g.fillRect(Math.round(d.x), Math.round(d.y), 1, 1); }
+      }
+    }
+    for (const sp of this.waterSplash) {
+      g.strokeStyle = `rgba(244,244,244,${Math.max(0, sp.life).toFixed(2)})`;
+      g.beginPath(); g.ellipse(sp.x, sp.y, sp.r * 1.6, sp.r * 0.6, 0, 0, Math.PI * 2); g.stroke();
+    }
+    const m = this.mermaid;
+    if (!m || m.state === 'away' || m.x === undefined) return;
+    // her rock on the shore
+    g.fillStyle = '#566c86'; g.fillRect(Math.round(m.x) - 7, Math.round(m.y) - 2, 14, 5);
+    g.fillStyle = '#94b0c2'; g.fillRect(Math.round(m.x) - 6, Math.round(m.y) - 3, 9, 3);
+    const key = m.state === 'scared' ? 'scared' : m.comb ? 'comb' : 'sit';
+    const spr = MER_SPR[key][m.dir > 0 ? 0 : 1];
+    // rising out of / diving into the water: only the top part shows
+    let rise = 1;
+    if (m.state === 'rise') rise = 1 - m.t / 0.7;
+    if (m.state === 'dive') rise = Math.max(0, m.t / 0.5);
+    const h = Math.max(1, Math.round(spr.height * rise));
+    const dx = Math.round(m.x - spr.width / 2), dy = Math.round(m.y - h - 1);
+    g.drawImage(spr, 0, 0, spr.width, h, dx, dy, spr.width, h);
+    if (m.state === 'sit' || m.state === 'scared') { // hand mirror
+      const mx = m.dir > 0 ? dx + spr.width : dx - 3, my = dy + 5;
+      g.fillStyle = '#ffcd75'; g.fillRect(mx, my, 3, 4); g.fillStyle = '#c7f2ff'; g.fillRect(mx + 1, my + 1, 1, 2);
+    }
+    if (m.state === 'sit') for (const hh of m.hearts) {
+      g.globalAlpha = Math.min(1, hh.life);
+      const px = Math.round(hh.x), py = Math.round(hh.y);
+      g.fillStyle = Math.floor(hh.life * 5) % 2 ? '#f4b6d2' : '#ffcd75';
+      g.fillRect(px, py, 1, 1); g.fillRect(px + 2, py, 1, 1); g.fillRect(px, py + 1, 3, 1); g.fillRect(px + 1, py + 2, 1, 1);
+      g.globalAlpha = 1;
+    }
+    m.sayAt = [m.x, dy - 2];
+  },
+
+  drawWaterSay() {
+    const m = this.mermaid;
+    if (m && m.sayT > 0 && m.say && m.sayAt && m.state !== 'away') say(m.sayAt[0], m.sayAt[1], m.say, '', '#f4b6d2');
   },
 });

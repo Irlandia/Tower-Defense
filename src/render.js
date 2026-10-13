@@ -276,7 +276,7 @@ export class Renderer {
   draw(s, alpha, ui, dt) {
     SAY.length = 0; // HTML labels are re-queued every frame
     const g = this.g;
-    if (this.mapRef !== s.map) { this.mapRef = s.map; this.bg = makeBackground(s.map, s.season); this.critters.reset(s.map, s.season, s.mission && s.mission.npc); this.season = s.season; this.weather = s.brawl && s.brawl.weather; }
+    if (this.mapRef !== s.map) { this.mapRef = s.map; this.bg = makeBackground(s.map, s.season); this.critters.taken = new Set([...(s.barrels || []), ...(s.obstacles || [])].map((o) => o.tx + "," + o.ty)); this.critters.reset(s.map, s.season, s.mission && s.mission.npc); this.season = s.season; this.weather = s.brawl && s.brawl.weather; }
     this.critters.update(Math.min(dt, 0.1), s.enemies);
     this.updateFx(dt);
     g.save();
@@ -298,6 +298,8 @@ export class Renderer {
     g.drawImage(this.bg, 0, 0);
     this.drawWater(s);
     this.critters.drawFish(g);
+    this.critters.mouse = ui.mouse; // the mermaid hides from the cursor
+    this.critters.drawWater(g);
     if (!s.queue.length && !s.over) this.drawLanePreview(s);
 
     // relocation: highlight every free tile the tower can move to
