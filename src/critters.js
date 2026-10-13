@@ -1,7 +1,7 @@
 // Neutral wildlife: pure decoration living in the renderer (not in the sim, so never synced or blocking).
 // Cows graze and moo, deer wander and bolt from monsters, frogs sit by the ponds and hop.
 import { TILE, COLS, ROWS } from './sim/data.js';
-import { say } from "./say.js";
+import { say, hero } from "./say.js";
 
 const COLORS = {
   B: '#a8805e', H: '#8a6248', L: '#5a3e2c', b: '#5a3e2c', w: '#f4f4f4', n: '#1a1c2c',
@@ -617,7 +617,7 @@ function valSprite(rows, flip) {
 const VAL_SPR = Object.fromEntries(Object.entries(VALERIA).map(([k, rows]) => [k, [valSprite(rows, false), valSprite(rows, true)]]));
 const VAL_LINES = [
   'Хто замовляв слиз з підливою?', 'Я не панікую, я голосно думаю!', 'Мої кучері — не гніздо, гоблінам не сідати!',
-  'Тарасе, не стій — будуй!', 'Купуйте пиріжки! З… ну, з чимось!', 'Ще одна хвиля — і я в спа!',
+  '{hero}, не стій — будуй!', 'Купуйте пиріжки! З… ну, з чимось!', 'Ще одна хвиля — і я в спа!',
   'Слизи, ви хоч ноги витирайте!', 'Кудряшівна все бачить!', 'Монетки збирайте — на ярмарку все дороге!',
   'Дракони? Де дракони? Я хочу автограф!', 'Хто так будує? А, нормально будує.', 'Ой, вежечка! Яка гарненька!',
 ];
@@ -671,6 +671,6 @@ Object.assign(Critters.prototype, {
   },
   drawValeriaSay() {
     const v = this.valeria;
-    if (v && v.sayT > 0 && v.say && v.sayAt) say(v.sayAt[0], v.sayAt[1], v.say, '', '#ffcd75');
+    if (v && v.sayT > 0 && v.say && v.sayAt) say(v.sayAt[0], v.sayAt[1], hero(v.say), '', '#ffcd75');
   },
 });

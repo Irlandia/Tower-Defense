@@ -1,10 +1,12 @@
 // Campaign presentation: intro story lines, live progress of the side objective.
 import { app, bus, renderer, sfx } from '../app.js';
 import { banner } from './banner.js';
+import { hero } from '../../say.js';
 
 /** Intro lines appear one by one as speech bubbles over the farmer (client-side only, never pauses co-op). */
 export function tellStory(lines) {
-  lines.forEach(([who, text], i) => setTimeout(() => {
+  lines.forEach(([rawWho, rawText], i) => setTimeout(() => {
+    const who = hero(rawWho), text = hero(rawText); // {hero} = the player's nickname
     if (!app.running) return;
     const F = renderer.critters.farm;
     const line = who === 'Дід Панас' ? text : `${who}: ${text}`;

@@ -6,6 +6,7 @@ import { app, bus, net, meta, me, P } from '../app.js';
 import { $, esc } from '../dom.js';
 import { others } from '../roster.js';
 import { newRun, send, enterLobby } from '../session.js';
+import { hero } from '../../say.js';
 
 // "New in the bestiary" line: bosses met / beaten for the first time, better medals.
 function bestiaryLine(b) {
@@ -33,7 +34,7 @@ bus.on('run:end', ({ won, earned, record, level, levelUp, bestiary }) => {
     const next = CAMPAIGN.find((x) => x.id === M.id + 1);
     camp = `<p class="stars">${'★'.repeat(st)}${'☆'.repeat(3 - st)}</p>
       <p class="hint">★ перемога · ★ ${esc(M.side.text)} · ★ ранній виклик хвиль ×${M.early}</p>
-      ${won ? `<p class="outro"><b>${esc(M.story.outro[0])}:</b> «${esc(M.story.outro[1])}»</p>` : ''}
+      ${won ? `<p class="outro"><b>${esc(hero(M.story.outro[0]))}:</b> «${esc(hero(M.story.outro[1]))}»</p>` : ""}
       ${won && next && net.role !== 'guest' ? '<button id="nextMission" class="big primary">Наступна місія ▶</button>' : ''}
       ${won && !next ? '<p class="rec">Кампанію пройдено! Долина врятована.</p>' : ''}`;
   }

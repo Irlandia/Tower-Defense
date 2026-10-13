@@ -10,6 +10,7 @@ import { validate } from '../src/client/protocol.js';
 import { COMMANDS } from '../src/sim/commands.js';
 import { createGame, step } from '../src/sim/sim.js';
 import { SONGS, songFor } from '../src/audio.js';
+import { HERO, hero } from '../src/say.js';
 import { CAMPAIGN as CAMP } from '../src/sim/data.js';
 
 const lines = [];
@@ -18,6 +19,10 @@ const check = (name, ok, extra = '') => { if (!ok) failed++; lines.push(`${ok ? 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ---- validator ----
+HERO.name = ''; const heroDefault = hero('{hero}, будуй!'); HERO.name = 'Богдан';
+check('story: {hero} becomes the nickname (Тарас without one)', heroDefault === 'Тарас, будуй!' && hero('{hero}, будуй!') === 'Богдан, будуй!');
+check('story: no campaign line names Тарас directly', !JSON.stringify(CAMP.map((m) => m.story)).includes('Тарас'));
+HERO.name = '';
 check('music: every campaign mission has its own theme', new Set(CAMP.map((m) => songFor({ mission: m, season: m.season }))).size === CAMP.length && CAMP.every((m) => songFor({ mission: m }) === 'm' + m.id));
 check('music: outside the campaign the season picks the theme', songFor({ season: 'winter' }) === 'winter' && songFor({ season: 'spring', mission: null }) === 'spring');
 check('music: themes are well-formed', Object.values(SONGS).every((S) => S.bpm > 0 && S.chords.every((c) => c.length === 4) && (!S.drums || S.drums.length === 8)));

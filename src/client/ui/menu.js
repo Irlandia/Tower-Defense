@@ -11,6 +11,7 @@ import { newRun, enterLobby, resumeGame, canResume } from '../session.js';
 import { pixelIcon, MODE_ICONS } from './icons.js';
 import { hidePop } from './popup.js';
 import { renderBestiary } from './bestiary.js';
+import { HERO, hero } from '../../say.js';
 
 // ---------- rendering ----------
 const DIFF_NAMES = Object.fromEntries(Meta.DIFFS.map((d) => [d.id, d.name]));
@@ -67,7 +68,7 @@ function renderCampaign() {
   brief.className = 'camp-brief';
   brief.open = true;
   brief.innerHTML = `<summary><b>Місія ${M.id}. ${esc(M.title)}</b> <span class="hint">${rules.join(' · ')}</span></summary>
-    ${M.story.intro.map(([who, t]) => `<p><i>${esc(who)}:</i> «${esc(t)}»</p>`).join('')}
+    ${M.story.intro.map(([who, t]) => `<p><i>${esc(hero(who))}:</i> «${esc(hero(t))}»</p>`).join("")}
     <span class="hint">Перемога — вистояти всі хвилі. ★ ${esc(M.side.text)} · ★ ранній виклик хвиль ×${M.early}</span>`;
   cw.append(brief);
   for (const n of cw.querySelectorAll('[data-mission]')) n.addEventListener('click', () => { app.selectedMission = +n.dataset.mission; renderMenu(); });
@@ -131,6 +132,7 @@ async function saveNick() {
   if (v.length < 2) { $('nickMsg').textContent = 'Мінімум 2 символи'; return; }
   try {
     app.nick = await Api.setNick(v);
+    HERO.name = app.nick; // the story addresses the player by nickname
     $('nick').value = app.nick;
     $('nickMsg').textContent = '✓ збережено';
     net.send({ t: 'hello', nick: app.nick, v: VERSION, perks: Meta.perks(meta) });
@@ -138,7 +140,7 @@ async function saveNick() {
 }
 $('nickSave').addEventListener('click', saveNick);
 $('nick').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') saveNick(); });
-Api.getNick().then((n) => { app.nick = n; $('nick').value = n; });
+Api.getNick().then((n) => { app.nick = n; HERO.name = n; $("nick").value = n; });
 
 // ---------- room / start buttons ----------
 function updatePlayButton() {

@@ -6,3 +6,8 @@ export const SAY = [];
 export function say(x, y, text, cls = '', color = '') {
   SAY.push({ x, y, text, cls, color });
 }
+
+// The player is the hero of the story: lines are written with {hero}, which becomes the player's nickname
+// (the client sets HERO.name; without a nick the hero is «Тарас»).
+export const HERO = { name: '' };
+export const hero = (text) => String(text).replace(/\{hero\}/g, HERO.name || 'Тарас');
