@@ -830,7 +830,7 @@ Object.assign(Critters.prototype, {
 });
 
 // ---------- the farm family: little Кирилло sneaks out, mum runs after him and carries him home ----------
-// Decoration only. About once a minute: the toddler crawls out of the door and away; 2 s later mum runs out,
+// Decoration only. About once a minute: the toddler crawls out of the door and away (over grass only); 4 s later mum runs out,
 // shouts, picks him up and carries him back inside.
 const FAM_COL = { b: '#f2c6a0', h: '#ffcd75', B: '#73eff7', w: '#f4f4f4', k: '#1a1c2c', m: '#8a4a2a', d: '#b13e53', a: '#f4f4f4', s: '#f2c6a0', r: '#ef7d57' };
 const FAMILY = {
@@ -859,7 +859,9 @@ Object.assign(Critters.prototype, {
     const door = { x: F.home.x, y: F.home.y + 1 };
     F.kidWait = (F.kidWait ?? (this.kidDemo ? 10 : 40 + Math.random() * 30)) - dt; // demo: first escape after 10 s
     if (!F.kid && F.kidWait <= 0) {
-      const dir = Math.random() < 0.5 ? -1 : 1;
+      // crawl towards the side with more grass (never onto a road where monsters walk, or into the water)
+      const room = (d) => { let n = 0; while (n < 40 && !this.offGrass(door.x + d * (n + 4), door.y)) n++; return n; };
+      const dir = room(1) === room(-1) ? (Math.random() < 0.5 ? -1 : 1) : room(1) > room(-1) ? 1 : -1;
       F.kid = { x: door.x, y: door.y, dir, t: 0, say: KID_SAY[Math.floor(Math.random() * KID_SAY.length)], sayT: 1.2 };
       F.mom = null;
       F.kidWait = this.kidDemo ? 5 : 55 + Math.random() * 15; // about once a minute (demo: every 5 s)
@@ -867,8 +869,9 @@ Object.assign(Critters.prototype, {
     const kid = F.kid;
     if (!kid) return;
     kid.t += dt; kid.sayT -= dt;
-    if (!kid.carried) kid.x += kid.dir * 7 * dt; // a determined little crawl
-    if (!F.mom && kid.t >= 2) F.mom = { x: door.x, y: door.y, dir: kid.dir, state: 'run', say: MOM_SHOUT[Math.floor(Math.random() * MOM_SHOUT.length)], sayT: 2.4 };
+    // a determined little crawl, stopping short of roads and water
+    if (!kid.carried && !this.offGrass(kid.x + kid.dir * 4, kid.y)) kid.x += kid.dir * 7 * dt;
+    if (!F.mom && kid.t >= 4) F.mom = { x: door.x, y: door.y, dir: kid.dir, state: 'run', say: MOM_SHOUT[Math.floor(Math.random() * MOM_SHOUT.length)], sayT: 2.4 };
     const mom = F.mom;
     if (!mom) return;
     mom.sayT -= dt;
@@ -913,3 +916,9 @@ Object.assign(Critters.prototype, {
     else if (F.kid && F.kid.sayT > 0 && F.kid.say && F.kid.sayAt) say(F.kid.sayAt[0], F.kid.sayAt[1], F.kid.say, '', '#73eff7');
   },
 });
+
+// Is this map point off the grass (road, water or outside the map)? Keeps the farm family off the monsters' roads.
+Critters.prototype.offGrass = function (x, y) {
+  const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE);
+  return tx < 0 || ty < 0 || tx >= COLS || ty >= ROWS || this.map.tiles.has(tx + ',' + ty) || this.map.water.has(tx + ',' + ty);
+};
