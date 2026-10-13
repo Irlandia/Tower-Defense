@@ -733,3 +733,4 @@ details.camp-brief summary::-webkit-details-marker { display: none; }
 #campIntro .ci-bar { height: 6px; background: #1a1c2c; }
 #campIntro .ci-bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #ef7d57, #ffcd75); }
 #campIntro .ci-skip { padding: 6px 12px; }
+#waveBar.endless { background: linear-gradient(90deg, #5d275d, #b13e53); } /* endless: progress to the next curse */

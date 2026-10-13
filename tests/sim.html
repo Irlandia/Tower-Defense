@@ -7,7 +7,7 @@ import { createGame, step, canPlace, canEvolve, isRoad, posAt, towerStats, vsMul
 import { TOWERS, TOWER_ORDER, BRANCHES, COLS, ROWS, CARDS, BRAWLS, brawlOf, ENEMIES, UNLOCKS } from '../src/sim/data.js';
 import { ABILITIES, CASINO } from '../src/sim/data.js';
 import * as Meta from '../src/meta.js';
-import { sellRatioOf, abilityMax, stateHash, dayPhase, nightSight, canMaster, masterCost, towerDef, spinCost, canMerge } from '../src/sim/sim.js';
+import { sellRatioOf, abilityMax, stateHash, dayPhase, nightSight, canMaster, masterCost, towerDef, spinCost, canMerge, endlessMods, abilityDmg } from '../src/sim/sim.js';
 import { kill, spawn, damage, infect, ignite, explode } from '../src/sim/combat.js';
 import { VERSION, BOSSES, BOSS_POOL, CAMPAIGN, ROTATION, CONFIG } from '../src/sim/data.js';
 const CAMPAIGN_NPC = CAMPAIGN.find((m) => m.id === 7).npc;
@@ -732,6 +732,24 @@ try {
     check('endless: spawned enemies carry the armour', !e0 || e0.armor >= ENEMIES[e0.type].armor + m10.armor, e0 && `${e0.type} armor ${e0.armor}`);
     const nc = createGame(9, { mode: 'circle' });
     check('endless: no pressure before endless', !nc.endMods || nc.endMods.armor === 0);
+    // gold floor depends on the difficulty; bosses grow by a percentage every endless wave
+    const at = (diff, n) => { const g = createGame(9, { mode: 'circle', diff }); g.endless = true; g.wave = g.winWave + n; return endlessMods(g); };
+    check('endless: harder difficulty dries the gold up further', at('nightmare', 60).gold < at('hard', 60).gold && at('hard', 60).gold < at('normal', 60).gold, `${at('normal', 60).gold} ${at('hard', 60).gold} ${at('nightmare', 60).gold}`);
+    check('endless: bosses get +12% HP per endless wave', Math.abs(at('normal', 10).bossHp / at('normal', 9).bossHp - 1.12) < 1e-9);
+    // talents in endless: one choice every 4 waves, not one per boss
+    const dg = createGame(9, { mode: 'circle' });
+    dg.endless = true;
+    const killBoss = (bw) => { const e = { type: 'boss', x: 0, y: 0, lap: 0, dead: false, bossWave: bw }; kill(dg, e, 0); };
+    killBoss(dg.winWave + 2); const d2 = dg.players[0].drafts.length;
+    killBoss(dg.winWave + 4); killBoss(dg.winWave + 4); const d4 = dg.players[0].drafts.length;
+    // abilities in endless hit for a share of max HP (less on bosses)
+    const ag = createGame(9, { mode: 'circle' });
+    const fat = { type: 'slime', maxHp: 100000 }, boss = { type: 'boss', maxHp: 100000 };
+    check('abilities: before endless only the flat damage', abilityDmg(ag, fat, 50, 'meteor') === 50);
+    ag.endless = true;
+    check('abilities: endless meteor hits 15% of max HP (bosses 5%)', abilityDmg(ag, fat, 50, 'meteor') === 15000 && abilityDmg(ag, boss, 50, 'meteor') === 5000);
+    check('abilities: the flat damage still wins on small enemies', abilityDmg(ag, { type: 'slime', maxHp: 100 }, 50, 'quake') === 50);
+    check('endless: talents only every 4 waves, once per wave', d2 === 0 && d4 === 1, `after +2: ${d2}, after two kills at +4: ${d4}`);
   }
 
   { // Casino: no building, spins place random towers, merges rank them up to mastery, 60 waves, late bosses from 20
@@ -1343,7 +1361,7 @@ try {
 
   // Golden replay: a fixed bot run must give the same fingerprint until VERSION is bumped.
   // When you change src/sim on purpose: VERSION++ and paste the new hash printed below.
-  const GOLDEN = { version: 60, hash: 2070823479 };
+  const GOLDEN = { version: 62, hash: 2070823479 };
   const gh = stateHash(runBot(4242, 6).s);
   if (VERSION === GOLDEN.version) check('golden replay: sim unchanged at this VERSION (else bump VERSION)', gh === GOLDEN.hash, `got ${gh}`);
   else log(`NOTE golden replay: VERSION ${VERSION} — set GOLDEN = { version: ${VERSION}, hash: ${gh} }`);

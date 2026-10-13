@@ -10,7 +10,7 @@ import {
 } from './data.js';
 import { rand, randInt } from './rng.js';
 import { center, key, genClassic, genCircle, placeFarm, posAt } from './mapgen.js';
-import { isFree, player, family, towerStats, missionStars, towerDef } from './queries.js';
+import { isFree, player, family, towerStats, missionStars, towerDef, abilityDmg } from './queries.js';
 import { spawn, ignite, damage, explode, infect, resolveSpores, reveal } from './combat.js';
 import { planLanes, startWave, waveHpMul, planRotation } from './waves.js';
 import { applyCmd } from './commands.js';
@@ -637,7 +637,7 @@ function updateDragon(s, d) {
   for (const e of s.enemies) {
     if (e.dead || d.hit.includes(e.id) || Math.hypot(e.x - d.x, e.y - d.y) > A.width) continue;
     d.hit.push(e.id);
-    damage(s, e, dmg, d.owner, { pierce: true, src: 'fire' });
+    damage(s, e, abilityDmg(s, e, dmg, 'dragon'), d.owner, { pierce: true, src: 'fire' });
     ignite(s, e, A.burn, A.burnTime, d.owner, 'fire');
   }
 }

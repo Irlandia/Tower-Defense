@@ -6,7 +6,7 @@ export const COLS = 26;
 export const ROWS = 14;
 export const TICK_RATE = 20;
 // Bump on every change to sim/data: co-op peers refuse to play with a different version.
-export const VERSION = 60;
+export const VERSION = 62;
 // Spores: at most this many new infections per tick across the whole map (chain reactions stay readable and cheap).
 export const SPORE_CAP = 6;
 
@@ -28,17 +28,18 @@ export const CONFIG = {
   speedCap: 110, // px/s: the final speed of any enemy, whatever the multipliers (laps, haste, brawl)
 };
 
+// latePct / lateBossPct: in endless a damaging ability hits for at least this share of the target max HP (queries.js abilityDmg).
 // Player abilities. A player's loadout (talent tree, src/meta.js) puts them in slots Q / W / E / R.
 // Base: meteor, nova, wall. From the tree: goldrain, overdrive, quake.
 export const ABILITIES = {
-  meteor: { name: 'Метеор', cd: 30, radius: 54, desc: 'Клік по карті: вибух + підпал.' },
+  meteor: { name: 'Метеор', cd: 30, radius: 54, latePct: 0.15, lateBossPct: 0.05, desc: 'Клік по карті: вибух + підпал.' },
   nova: { name: 'Крижана нова', cd: 45, freeze: 2, wet: 5, desc: 'Заморожує ВСІХ ворогів на 2 с і робить їх мокрими.' },
   wall: { name: 'Барикада', cd: 35, hp: 80, hpPerWave: 15, desc: 'Клік по дорозі: стіна, яку вороги мусять зламати. Одна на гравця.' },
   goldrain: { name: 'Золотий дощ', cd: 40, radius: 60, coins: 5, value: 8, desc: 'Клік по карті: на полі падає 5 монет — збери мишкою.' },
   overdrive: { name: 'Овердрайв', cd: 60, dur: 6, bonus: 0.4, desc: 'Твої вежі стріляють на 40% швидше.' },
-  dragon: { name: 'Дракон', cd: 60, speed: 320, width: 20, dmg: 30, dmgPerWave: 6, burn: 12, burnTime: 3,
+  dragon: { name: 'Дракон', cd: 60, speed: 320, width: 20, latePct: 0.12, lateBossPct: 0.04, dmg: 30, dmgPerWave: 6, burn: 12, burnTime: 3,
     desc: 'Клік по дорозі: дракон пролітає всією цією лінією від замку до печери й випалює ворогів.' },
-  quake: { name: 'Землетрус', cd: 40, radius: 70, dmg: 25, dmgPerWave: 4, slow: 2, slowF: 0.5, desc: 'Клік по карті: удар по площі (ігнорує броню) і сповільнення.' },
+  quake: { name: 'Землетрус', cd: 40, radius: 70, latePct: 0.08, lateBossPct: 0.03, dmg: 25, dmgPerWave: 4, slow: 2, slowF: 0.5, desc: 'Клік по карті: удар по площі (ігнорує броню) і сповільнення.' },
 };
 
 export const TOWERS = {
@@ -138,7 +139,7 @@ export const BRANCHES = {
 export const MODES = {
   classic: { name: "Класика", desc: "Вороги йдуть до замку. Пропустив — втратив життя." },
   casino: { name: "Казино", desc: "Будувати не можна: крути барабан за золото й зливай однакові вежі, щоб прокачати. 60 хвиль по колу." },
-  circle: { name: "Коло", desc: "Вороги крутяться по колу й накопичуються. Забагато живих — поразка.", maxAlive: 45, lapSpeed: 0.06, lapHeal: 0.1, lapMax: 8, endlessBossEvery: 2, endlessHpGrowth: 1.15 },
+  circle: { name: "Коло", desc: "Вороги крутяться по колу й накопичуються. Забагато живих — поразка.", maxAlive: 45, lapSpeed: 0.06, lapHeal: 0.1, lapMax: 8, endlessBossEvery: 2, endlessHpGrowth: 1.18 },
 };
 
 // Casino: a 60-wave circle where you cannot build. Spin the reel for gold: a random tower (level 1, sometimes 2) lands
@@ -154,7 +155,10 @@ export const CASINO = {
 // more enemies (budget), armour every few waves, a little speed, less gold per kill; and every `curseEvery`
 // waves a random curse that stays for the rest of the run.
 export const ENDLESS = {
-  budgetGrowth: 1.07, armorEvery: 4, speedPerWave: 0.02, speedMax: 1.4, goldPerWave: 0.97, goldMin: 0.4, curseEvery: 5,
+  budgetGrowth: 1.07, armorEvery: 4, speedPerWave: 0.02, speedMax: 1.4, goldPerWave: 0.95, goldMin: 0.4, curseEvery: 5,
+  goldMinByDiff: { normal: 0.4, hard: 0.28, nightmare: 0.18 }, // harder difficulty: the gold dries up further
+  bossHpPerWave: 0.12, // endless bosses: +12% HP per endless wave on top of the mob growth (compounding)
+  draftEvery: 4, // endless: one talent choice every 4 waves (not one per boss)
   curses: [
     { id: 'armor', name: 'Броньовані', desc: '+2 броні всім ворогам', armor: 2 },
     { id: 'swift', name: 'Швидкі', desc: 'вороги на 15% швидші', speed: 1.15 },

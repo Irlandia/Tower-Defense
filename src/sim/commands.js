@@ -6,7 +6,7 @@ import { rand, randInt } from './rng.js';
 import { center, posAt } from './mapgen.js';
 import {
   canPlace, isRoad, isLocked, placeCost, upgradeCost, canEvolve, canMove, sellValue, clearCost,
-  auraCost, abilityMax, hasWall, hasAbility, sellRatioOf, canMaster, masterCost, spinCost, canMerge,
+  auraCost, abilityMax, hasWall, hasAbility, sellRatioOf, canMaster, masterCost, spinCost, canMerge, abilityDmg,
 } from './queries.js';
 import { damage, ignite, pickCards } from './combat.js';
 import { startWave } from './waves.js';
@@ -224,7 +224,7 @@ export const COMMANDS = {
     const dmg = (40 + s.wave * 6) * pl.mods.meteorDmg;
     for (const e of s.enemies) {
       if (e.dead || Math.hypot(e.x - c.x, e.y - c.y) > ABILITIES.meteor.radius) continue;
-      damage(s, e, dmg, pi, { pierce: true, blast: true });
+      damage(s, e, abilityDmg(s, e, dmg, 'meteor'), pi, { pierce: true, blast: true });
       ignite(s, e, 8, 3, pi);
     }
     s.events.push({ type: 'meteor', x: c.x, y: c.y, r: ABILITIES.meteor.radius, p: pi });
@@ -272,7 +272,7 @@ export const COMMANDS = {
     const A = ABILITIES.quake, dmg = A.dmg + s.wave * A.dmgPerWave;
     for (const e of s.enemies) {
       if (e.dead || Math.hypot(e.x - c.x, e.y - c.y) > A.radius) continue;
-      damage(s, e, dmg, pi, { pierce: true, blast: true });
+      damage(s, e, abilityDmg(s, e, dmg, 'quake'), pi, { pierce: true, blast: true });
       e.slowT = Math.round(A.slow * T * (ENEMIES[e.type].lives ? 0.5 : 1));
       e.slowF = A.slowF;
     }

@@ -224,7 +224,10 @@ export function updateUI() {
   const dp = DAY.phases[dayPhase(s)];
   $("waveInfo").textContent = `${dp.icon} ${s.mission ? "Місія " + s.mission.id : s.brawl ? s.brawl.name : (s.casino ? MODES.casino : MODES[s.mode]).name} · ${s.wave} / ${s.winWave}`;
   $("waveInfo").title = dp.name + (dp.range ? ": вежі бачать на 10% ближче, +25% золота за вбивства" : "");
-  $('waveBar').style.width = (100 * s.wave) / s.winWave + '%';
+  // endless: the bar counts down to the next curse instead of running past 100%
+  const endN = s.endless ? Math.max(0, s.wave - s.winWave) : 0;
+  $('waveBar').style.width = (s.endless ? (100 * (endN % ENDLESS.curseEvery)) / ENDLESS.curseEvery : Math.min(100, (100 * s.wave) / s.winWave)) + '%';
+  $('waveBar').classList.toggle('endless', !!s.endless);
   const coop = s.players.length > 1;
   $('coopInfo').classList.toggle('hidden', !coop);
   if (coop) {

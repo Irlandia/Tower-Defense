@@ -1,6 +1,6 @@
 // Combat primitives: spawning, damage, kills, burning, explosions, talent draws.
 // Everything here mutates the state passed in and draws randomness only from state.rngState.
-import { ENEMIES, BOSSES, MODES, CARDS, RARITY, DRAFT, DAY, COIN, SPORE_CAP, TICK_RATE as T } from './data.js';
+import { ENEMIES, BOSSES, MODES, CARDS, RARITY, DRAFT, DAY, COIN, SPORE_CAP, ENDLESS, TICK_RATE as T } from './data.js';
 import { rand, randInt } from './rng.js';
 import { posAt } from './mapgen.js';
 import { player, isLocked, vsMult, family, dayPhase } from './queries.js';
@@ -203,7 +203,12 @@ export function kill(s, e, owner, src = null) {
     s.events.push({ type: 'pop', x: e.x, y: e.y, r: def.deathStun.r });
   }
   // Talents come only from bosses: every player gets a personal choice (never pauses co-op)
-  if (def.lives) {
+  // endless circle: one choice every ENDLESS.draftEvery waves (bosses come every 2 waves and in numbers there)
+  const bw = e.bossWave ?? s.wave; // the wave the boss came with (it may die a wave later)
+  const endN = s.endless ? bw - s.winWave : 0;
+  const draftOk = !s.endless || (endN % ENDLESS.draftEvery === 0 && s.lastDraftWave !== bw);
+  if (def.lives && draftOk) {
+    if (s.endless) s.lastDraftWave = bw;
     for (let i = 0; i < s.players.length; i++) {
       const q = s.players[i];
       q.drafts.push(pickCards(s, q.mods.cards, q, s.wave >= DRAFT.epicFrom || s.endless ? "epic" : "rare"));

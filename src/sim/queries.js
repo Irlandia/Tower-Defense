@@ -171,7 +171,8 @@ export function endlessMods(s) {
   const id = { n: 0, armor: 0, speed: 1, gold: 1, regen: 0, bossHp: 1 };
   if (!s.endless) return id;
   const E = ENDLESS, n = Math.max(0, s.wave - s.winWave);
-  const out = { n, armor: Math.floor(n / E.armorEvery), speed: Math.min(E.speedMax, 1 + E.speedPerWave * n), gold: Math.max(E.goldMin, E.goldPerWave ** n), regen: 0, bossHp: 1 };
+  const floor = (E.goldMinByDiff && E.goldMinByDiff[s.opts.diff]) ?? E.goldMin; // harder difficulty: less gold late
+  const out = { n, armor: Math.floor(n / E.armorEvery), speed: Math.min(E.speedMax, 1 + E.speedPerWave * n), gold: Math.max(floor, E.goldPerWave ** n), regen: 0, bossHp: (1 + E.bossHpPerWave) ** n };
   for (const cid of s.curses || []) {
     const c = E.curses.find((k) => k.id === cid);
     if (!c) continue;
@@ -193,4 +194,11 @@ export function canMerge(a, b) {
   if (TOWERS[a.kind].support) return false;
   if (TOWERS[a.kind].from) return !!MASTERY[a.kind]; // evolution + the same evolution = mastery
   return a.level === b.level; // base towers: same level (3+3 evolves)
+}
+
+/** Ability damage past the last wave (endless): at least a share of the target's max HP, so abilities never fall off. */
+export function abilityDmg(s, e, flat, id) {
+  const A = ABILITIES[id];
+  if (!s.endless || !A || !A.latePct) return flat;
+  return Math.max(flat, e.maxHp * (ENEMIES[e.type].lives ? A.lateBossPct : A.latePct));
 }
