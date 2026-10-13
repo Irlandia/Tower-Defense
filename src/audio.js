@@ -24,7 +24,7 @@ export const SHOTS = {
   cluster: [['triangle', 170, 55, 0.14, 0.06], ['square', 900, 900, 0.02, 0.01, 0.09], ['square', 1100, 1100, 0.02, 0.01, 0.13]], // boom, pop-pop
   frost: [['sine', 1560, 1150, 0.08, 0.03], ['sine', 2340, 2300, 0.12, 0.008, 0.01]], // ting + sparkle
   glacier: [['triangle', 880, 700, 0.1, 0.03], ['sine', 1760, 1740, 0.22, 0.012, 0.02], ['sine', 2640, 2620, 0.18, 0.006, 0.05]], // ice bell
-  blizzard: [['noise', 3000, 0.22, 0.02, 0, 'highpass'], ['sine', 1900, 1500, 0.2, 0.008]], // cold whoosh
+  blizzard: [['noise', 3200, 0.18, 0.006, 0, 'highpass'], ['sine', 1900, 1500, 0.16, 0.003]], // soft cold whoosh (quiet: it pulses often)
   tesla: [['square', 720, 640, 0.06, 0.012], ['square', 745, 660, 0.06, 0.012], ['sawtooth', 1600, 320, 0.07, 0.01]], // bzzt
   storm: [['sawtooth', 1900, 260, 0.1, 0.012], ['square', 520, 480, 0.09, 0.014], ['noise', 2500, 0.08, 0.02, 0, 'highpass']], // thunder-zap
   overload: [['square', 380, 1250, 0.07, 0.014], ['triangle', 760, 2400, 0.07, 0.01]], // rising wee-u
