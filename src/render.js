@@ -1,6 +1,6 @@
 // Canvas renderer + visual juice. Reads sim state, never mutates it.
 import { TILE, COLS, ROWS, TICK_RATE, TOWERS, CONFIG, ABILITIES, BARREL, BOSSES, bossFor, DAY } from './sim/data.js';
-import { towerStats, canPlace, posAt, isRoad, canMove, dayPhase } from './sim/sim.js';
+import { towerStats, canPlace, posAt, isRoad, canMove, dayPhase, family } from './sim/sim.js';
 import {
   C, SPRITES, FLASH, FROZEN, ENEMY_COLOR, drawTower, drawCastle, drawCave, drawNum, numWidth, drawIcon,
   drawObstacle, drawBarrel, drawCoin, drawChest, drawWall, ellipse, drawFarmHouse, drawField, bossSprites,
@@ -354,8 +354,9 @@ export class Renderer {
         drawCastle(g, s.map.castle[0] * TILE, s.map.castle[1] * TILE);
       } else if (it.t) {
         const t = it.t;
-        drawTower(g, t.kind, t.tx * TILE, t.ty * TILE, TOWERS[t.kind].support ? t.aura.dmg + t.aura.rate : TOWERS[t.kind].from ? 4 : t.level, t.aim, s.tick, s.tick - t.fired < 2);
-        if (t.master) this.masterMark(t.tx * TILE, t.ty * TILE, s.tick); // the final upgrade: a crown and golden sparks
+        const lvl = TOWERS[t.kind].support ? t.aura.dmg + t.aura.rate : TOWERS[t.kind].from ? 4 : t.level;
+        if (t.master) this.drawMasterTower(t, lvl, s.tick); // the final upgrade: golden outline, orbiting lights, family sparks, crown
+        else drawTower(g, t.kind, t.tx * TILE, t.ty * TILE, lvl, t.aim, s.tick, s.tick - t.fired < 2);
         if (s.players.length > 1) this.ownerMark(t.tx * TILE, t.ty * TILE, t.owner);
         if (s.players[t.owner] && s.players[t.owner].overT > 0 && !TOWERS[t.kind].support) this.buffMark(t.tx * TILE, t.ty * TILE, s.tick); // Overdrive sparks
         this.auraMarks(s, t);
@@ -770,14 +771,54 @@ export class Renderer {
     }
   }
 
-  // Mastered tower: a little golden crown over it and a slow sparkle.
-  masterMark(x, y, tick) {
-    const g = this.g, cx = x + 12, top = y - 18 + ((tick >> 4) % 2);
-    g.fillStyle = C.ink; g.fillRect(cx - 5, top - 1, 11, 6);
-    g.fillStyle = C.yellow; g.fillRect(cx - 4, top + 1, 9, 3); g.fillRect(cx - 4, top - 1, 1, 2); g.fillRect(cx, top - 2, 1, 3); g.fillRect(cx + 4, top - 1, 1, 2);
-    g.fillStyle = C.orange; g.fillRect(cx - 4, top + 3, 9, 1);
+  // Mastered tower: drawn off-screen first so it can get a pulsing golden outline from its own silhouette,
+  // stands on a glowing plinth, has three family-coloured lights orbiting it, family sparks and a small crown.
+  drawMasterTower(t, lvl, tick) {
+    const g = this.g, x = t.tx * TILE, y = t.ty * TILE;
+    const W2 = 48, H2 = 72, ox = 12, oy = 44; // off-screen canvas, the tile's top-left lands at (ox, oy)
+    if (!this.mCv) {
+      this.mCv = document.createElement('canvas'); this.mCv.width = W2; this.mCv.height = H2;
+      this.mSil = document.createElement('canvas'); this.mSil.width = W2; this.mSil.height = H2;
+    }
+    const m = this.mCv.getContext('2d'), sl = this.mSil.getContext('2d');
+    m.clearRect(0, 0, W2, H2);
+    drawTower(m, t.kind, ox, oy, lvl, t.aim, tick, tick - t.fired < 2);
+    sl.globalCompositeOperation = 'source-over'; sl.clearRect(0, 0, W2, H2);
+    sl.drawImage(this.mCv, 0, 0);
+    sl.globalCompositeOperation = 'source-in'; sl.fillStyle = C.yellow; sl.fillRect(0, 0, W2, H2);
+    const fam = family(t.kind);
+    const col = { arrow: C.yellow, cannon: C.orange, frost: C.cyan, tesla: C.sky, fire: C.red, totem: C.lime }[fam] || C.yellow;
+    const cx = x + 12, cy = y + 6, pulse = 0.5 + 0.5 * Math.sin(tick / 5);
+    // glowing plinth
+    g.globalAlpha = 0.35 + 0.25 * pulse;
+    ellipse(g, cx, y + 23, 14, 5, C.yellow);
+    g.globalAlpha = 1;
+    ellipse(g, cx, y + 23, 11, 3, col);
+    // orbiting lights: the ones behind the tower first, dimmer
+    const orbs = [0, 1, 2].map((i) => { const a = tick * 0.09 + i * 2.094; return { x: cx + Math.cos(a) * 15, y: cy + Math.sin(a) * 5, front: Math.sin(a) > 0 }; });
+    const orb = (o) => { g.fillStyle = C.ink; g.fillRect(Math.round(o.x) - 2, Math.round(o.y) - 2, 4, 4); g.fillStyle = col; g.fillRect(Math.round(o.x) - 1, Math.round(o.y) - 1, 2, 2); g.fillStyle = C.white; g.fillRect(Math.round(o.x) - 1, Math.round(o.y) - 1, 1, 1); };
+    g.globalAlpha = 0.6; for (const o of orbs) if (!o.front) orb(o); g.globalAlpha = 1;
+    // golden outline from the silhouette, then the tower itself
+    g.globalAlpha = 0.55 + 0.45 * pulse;
+    for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) g.drawImage(this.mSil, x - ox + dx, y - oy + dy);
+    g.globalAlpha = 1;
+    g.drawImage(this.mCv, x - ox, y - oy);
+    for (const o of orbs) if (o.front) orb(o);
+    // a small crown on top
+    const top = y - 22 + ((tick >> 4) % 2);
+    g.fillStyle = C.ink; g.fillRect(cx - 4, top - 1, 9, 5);
+    g.fillStyle = C.yellow; g.fillRect(cx - 3, top + 1, 7, 2); g.fillRect(cx - 3, top - 1, 1, 2); g.fillRect(cx, top - 2, 1, 3); g.fillRect(cx + 3, top - 1, 1, 2);
     g.fillStyle = C.red; g.fillRect(cx, top + 1, 1, 1);
-    if ((tick + x) % 9 === 0) this.parts.push({ x: x + 4 + Math.random() * 16, y: y + 4 + Math.random() * 14, vx: 0, vy: -14, life: 0.6, c: C.yellow });
+    // family sparks
+    if ((tick + t.id) % 6 === 0) {
+      const px = x + 3 + Math.random() * 18, py = y - 8 + Math.random() * 20;
+      if (fam === 'arrow') this.parts.push({ x: px, y: py, vx: Math.random() * 10 - 5, vy: 12, life: 0.9, c: C.yellow, s: 2 }); // golden feathers drift down
+      else if (fam === 'cannon') this.parts.push({ x: cx + Math.random() * 6 - 3, y: y - 12, vx: Math.random() * 6 - 3, vy: -12, life: 1, c: C.slate, s: 2 }); // smoke from the barrel
+      else if (fam === 'frost') this.parts.push({ x: px, y: py, vx: 0, vy: 8, life: 1, c: C.white }); // snowflakes
+      else if (fam === 'tesla') { this.parts.push({ x: cx + Math.random() * 10 - 5, y: y - 14, vx: Math.random() * 60 - 30, vy: Math.random() * 30 - 20, life: 0.15, c: C.cyan, s: 2 }); }
+      else if (fam === 'fire') this.parts.push({ x: px, y: py + 8, vx: Math.random() * 8 - 4, vy: -26, life: 0.7, c: Math.random() < 0.5 ? C.orange : C.yellow }); // embers
+      else this.parts.push({ x: cx + Math.cos(tick) * 14, y: cy + 6, vx: 0, vy: -16, life: 0.8, c: C.lime, s: 2 }); // totem runes
+    }
   }
 
   buffMark(x, y, tick) {
