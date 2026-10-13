@@ -55,7 +55,7 @@ bus.on('sim:events', (events) => {
       case 'explode': case 'steam': case 'barrel': sfx.play('explode'); break;
       case 'meteor': sfx.play('meteor'); app.freezeUntil = performance.now() + 80; break;
       case 'build': case 'upgrade': case 'clear': sfx.play('build'); break;
-      case 'evolve': sfx.play('card'); resetPopup(); break;
+      case 'evolve': case 'master': sfx.play('card'); resetPopup(); break;
       case 'sell': case 'coin': case 'chest': if (mine(e)) sfx.play('sell'); break;
       case 'leak': case 'stolen': sfx.play('leak'); break;
       case 'lap': sfx.play('click'); break;

@@ -7,6 +7,7 @@
  *   {type:'place', kind:string, tx:number, ty:number} |
  *   {type:'upgrade', id:number} |
  *   {type:'evolve', id:number, kind:string} |
+ *   {type:'master', id:number} |
  *   {type:'aura', id:number, aura:'dmg'|'rate'} |
  *   {type:'move', id:number, tx:number, ty:number} |
  *   {type:'sell', id:number} |

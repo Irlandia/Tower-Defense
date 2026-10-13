@@ -158,6 +158,11 @@ export class Renderer {
           this.burst(e.x, e.y, 24, '#c28569', 80, -20);
           this.shake = Math.max(this.shake, 3);
           break;
+        case 'master': // the final upgrade: a bigger golden burst
+          this.rings.push({ x: e.x, y: e.y, r: 2, max: 56, c: C.orange, life: 1.2 });
+          this.burst(e.x, e.y - 8, 30, C.orange, 110, -30);
+          this.labels.push({ x: e.x, y: e.y - 40, text: '♛ Майстерність!', color: '#ffcd75', life: 1.6 });
+        // falls through: plus the evolution sparkle
         case 'evolve':
           this.rings.push({ x: e.x, y: e.y, r: 2, max: 40, c: C.yellow, life: 1 });
           this.burst(e.x, e.y - 8, 40, C.yellow, 90, -25);
@@ -350,6 +355,7 @@ export class Renderer {
       } else if (it.t) {
         const t = it.t;
         drawTower(g, t.kind, t.tx * TILE, t.ty * TILE, TOWERS[t.kind].support ? t.aura.dmg + t.aura.rate : TOWERS[t.kind].from ? 4 : t.level, t.aim, s.tick, s.tick - t.fired < 2);
+        if (t.master) this.masterMark(t.tx * TILE, t.ty * TILE, s.tick); // the final upgrade: a crown and golden sparks
         if (s.players.length > 1) this.ownerMark(t.tx * TILE, t.ty * TILE, t.owner);
         if (s.players[t.owner] && s.players[t.owner].overT > 0 && !TOWERS[t.kind].support) this.buffMark(t.tx * TILE, t.ty * TILE, s.tick); // Overdrive sparks
         this.auraMarks(s, t);
@@ -415,7 +421,7 @@ export class Renderer {
       if (p.streak) { g.globalAlpha = 0.5; g.fillRect(Math.round(p.x), Math.round(p.y), 1, 4); g.globalAlpha = 1; continue; } // rain
       g.fillRect(Math.round(p.x), Math.round(p.y), p.s || 1, p.s || 1);
     }
-    for (const l of this.labels) say(l.x, l.y, l.text, "bar combo", l.color);
+    for (const l of this.labels) say(l.x, Math.max(14, l.y), l.text, "bar combo", l.color); // never above the map
     for (const t of this.texts) {
       g.globalAlpha = Math.min(1, t.life * 3);
       drawNum(g, t.str, t.x - numWidth(t.str, t.scale) / 2, t.y, t.c, t.scale, C.ink);
@@ -762,6 +768,16 @@ export class Renderer {
         this.jaggedLine({ x: t.x, y: t.y - 12 }, { x: e.x, y: e.y - 8 });
       }
     }
+  }
+
+  // Mastered tower: a little golden crown over it and a slow sparkle.
+  masterMark(x, y, tick) {
+    const g = this.g, cx = x + 12, top = y - 18 + ((tick >> 4) % 2);
+    g.fillStyle = C.ink; g.fillRect(cx - 5, top - 1, 11, 6);
+    g.fillStyle = C.yellow; g.fillRect(cx - 4, top + 1, 9, 3); g.fillRect(cx - 4, top - 1, 1, 2); g.fillRect(cx, top - 2, 1, 3); g.fillRect(cx + 4, top - 1, 1, 2);
+    g.fillStyle = C.orange; g.fillRect(cx - 4, top + 3, 9, 1);
+    g.fillStyle = C.red; g.fillRect(cx, top + 1, 1, 1);
+    if ((tick + x) % 9 === 0) this.parts.push({ x: x + 4 + Math.random() * 16, y: y + 4 + Math.random() * 14, vx: 0, vy: -14, life: 0.6, c: C.yellow });
   }
 
   buffMark(x, y, tick) {

@@ -1,7 +1,7 @@
 // URL debug switches (for screenshots and manual checks):
 //   ?tutorial — fresh solo classic run with the first-run hints
 //   ?demo[=circle|circle2|circle4|boss|brawl|campaign][&season=winter][&week=N][&mission=N][&select=I]
-import { TOWER_ORDER, brawlWeek, DAY } from '../sim/data.js';
+import { TOWER_ORDER, brawlWeek, DAY, BRANCHES } from '../sim/data.js';
 import { canPlace, isRoad, posAt } from '../sim/sim.js';
 import * as Meta from '../meta.js';
 import { app, ui, meta } from './app.js';
@@ -37,6 +37,12 @@ export function runDemoIfRequested() {
     const p = posAt(s.map, 0, s.map.lanes[0].total / 2);
     setTimeout(() => send({ type: 'dragon', x: p.x, y: p.y }), +(q.get('dragon') || 300));
   }
+  if (q.has('master')) setTimeout(() => { // &master: every demo tower evolved and mastered (screenshots)
+    for (const t of app.state.towers) {
+      if (BRANCHES[t.kind]) { t.level = 3; send({ type: 'evolve', id: t.id, kind: BRANCHES[t.kind][t.id % 2] }); send({ type: 'master', id: t.id }); }
+      else if (t.aura) { t.aura.dmg = 3; send({ type: 'master', id: t.id }); }
+    }
+  }, 400);
   if (q.has('time')) s.dayStart = Math.max(0, DAY.phases.findIndex((p) => p.id === q.get('time'))); // &time=day|evening|night|dawn
   // put each tower type on a free tile next to the road
   const spots = [];

@@ -1,7 +1,7 @@
 // On-map popup for the selected tower / obstacle: stats, upgrade, evolve, aura, move, sell, clear.
 // The HTML is rebuilt only when `key` changes, so it does not flicker or eat clicks.
-import { TICK_RATE, TOWERS, BRANCHES, CONFIG, AURA } from '../../sim/data.js';
-import { family, towerStats, upgradeCost, canEvolve, sellValue, sellRatioOf, clearCost, auraCost } from '../../sim/sim.js';
+import { TICK_RATE, TOWERS, BRANCHES, CONFIG, AURA, MASTERY } from '../../sim/data.js';
+import { family, towerStats, upgradeCost, canEvolve, sellValue, sellRatioOf, clearCost, auraCost, canMaster, masterCost, towerDef } from '../../sim/sim.js';
 import { W, MX, MY, PLAYER_COLORS } from '../../render.js';
 import { TILE } from '../../sim/data.js';
 import { app, ui, canvas, me, P } from '../app.js';
@@ -24,6 +24,7 @@ $('pop').addEventListener('click', (ev) => {
   if (a.dataset.act === 'move') startMove();
   if (a.dataset.act === 'aura' && t) send({ type: 'aura', id: t.id, aura: a.dataset.aura });
   if (a.dataset.act === 'evolve' && t) send({ type: 'evolve', id: t.id, kind: a.dataset.kind });
+  if (a.dataset.act === 'master' && t) send({ type: 'master', id: t.id });
   if (a.dataset.act === 'clear') { const o = selObstacle(); if (o) send({ type: 'clear', id: o.id }); ui.selected = null; }
 });
 
@@ -49,15 +50,16 @@ const act = (attr, cls, label, sub, price, off) =>
 
 function towerHtml(t, gold) {
   const s = app.state;
-  const def = TOWERS[t.kind];
+  const def = towerDef(t);
   const st = towerStats(s, t);
   const mine = t.owner === me();
+  const ms = MASTERY[t.kind];
   const up = upgradeCost(t);
   const evo = canEvolve(t);
-  let key = `t${t.id}:${t.kind}:${t.level}:${Math.floor(gold / 5)}:${Math.round(st.dmg)}:${st.buff}:${Math.ceil((t.moveCd || 0) / TICK_RATE)}:${sellValue(t, sellRatioOf(s, t.owner))}`;
+  let key = `t${t.id}:${t.kind}:${t.level}:${t.master ? 1 : 0}:${Math.floor(gold / 5)}:${Math.round(st.dmg)}:${st.buff}:${Math.ceil((t.moveCd || 0) / TICK_RATE)}:${sellValue(t, sellRatioOf(s, t.owner))}`;
   // header: tower icon on a family-coloured tile, name, level badge
   let html = `<div class="pop-title" style="--fam: var(--fam-${family(t.kind)})"><span class="pop-ico" data-icon="${t.kind}"></span>
-      <b>${def.name}</b><span class="lvl-badge">${def.from ? '★ еволюція' : 'рів. ' + t.level}</span></div>
+      <b>${def.name}</b><span class="lvl-badge">${t.master ? "♛ майстерність" : def.from ? "★ еволюція" : def.support ? "тотем" : "рів. " + t.level}</span></div>
     ${def.support
       ? `<div class="pop-stats"><span>◎ ${def.range}</span><span class="buff">⚔ +${Math.round((t.aura.dmg ? AURA.dmg.bonus[t.aura.dmg - 1] : 0) * 100)}%</span><span>⏱ +${Math.round((t.aura.rate ? AURA.rate.bonus[t.aura.rate - 1] : 0) * 100)}%</span></div>`
       : `<div class="pop-stats"><span>⚔ ${Math.round(st.dmg)}</span><span>◎ ${Math.round(st.range)}</span><span>⏱ ${(TICK_RATE / st.period).toFixed(1)}/с</span>${st.buff ? `<span class="buff">⚡+${Math.round(st.buff * 100)}%</span>` : ''}</div>`}`;
@@ -85,6 +87,13 @@ function towerHtml(t, gold) {
     }
     html += '</div>';
   }
+  // the final upgrade: shown as a goal once the tower is evolved (Totem: an aura at level 3), then as done
+  if (ms && !t.master && (canMaster(t) || def.from)) {
+    const cost = masterCost(s, me(), t);
+    html += act('data-act="master"', 'pa-master', `♛ ${ms.name}`, ms.desc, `● ${cost}`, !canMaster(t) || gold < cost);
+  } else if (ms && def.support && !t.master) {
+    html += act('', 'pa-master', `♛ ${ms.name}`, 'спершу прокачай одну з аур до 3 рівня', '', true);
+  } else if (t.master) html += `<div class="pop-stats master-done"><span>♛ ${ms.name}: ${ms.desc}</span></div>`;
   const mcd = Math.ceil((t.moveCd || 0) / TICK_RATE);
   html += '<div class="pa-row">'
     + act('data-act="move"', 'pa-move', '↔ Перемістити', mcd ? `зачекай ${mcd} с` : `до ${CONFIG.moveRange} клітинок · M`, '', mcd)

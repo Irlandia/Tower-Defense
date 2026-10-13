@@ -7,7 +7,7 @@ import { createGame, step, canPlace, canEvolve, isRoad, posAt, towerStats, vsMul
 import { TOWERS, TOWER_ORDER, BRANCHES, COLS, ROWS, CARDS, BRAWLS, brawlOf } from '../src/sim/data.js';
 import { ABILITIES } from '../src/sim/data.js';
 import * as Meta from '../src/meta.js';
-import { sellRatioOf, abilityMax, stateHash, dayPhase, nightSight } from '../src/sim/sim.js';
+import { sellRatioOf, abilityMax, stateHash, dayPhase, nightSight, canMaster, masterCost, towerDef } from '../src/sim/sim.js';
 import { kill, spawn, damage } from '../src/sim/combat.js';
 import { VERSION, BOSSES, BOSS_POOL, CAMPAIGN } from '../src/sim/data.js';
 const CAMPAIGN_NPC = CAMPAIGN.find((m) => m.id === 7).npc;
@@ -46,7 +46,9 @@ function runBot(seed, maxWaves, opts = {}) {
     else if (pl.gold > 250) {
       const e = s.towers.find(canEvolve);
       const t = s.towers.find((t) => t.level < 3 && !TOWERS[t.kind].from);
+      const mt = s.towers.find((k) => canMaster(k) && pl.gold >= 400);
       if (e) cmds.push({ type: 'evolve', id: e.id, kind: BRANCHES[e.kind][e.id % 2] });
+      else if (mt) cmds.push({ type: 'master', id: mt.id });
       else if (t) cmds.push({ type: 'upgrade', id: t.id });
     }
     if (s.enemies.length > 4) {
@@ -782,14 +784,15 @@ try {
 
   // Golden replay: a fixed bot run must give the same fingerprint until VERSION is bumped.
   // When you change src/sim on purpose: VERSION++ and paste the new hash printed below.
-  const GOLDEN = { version: 51, hash: 419548047 };
+  const GOLDEN = { version: 52, hash: 419548047 };
   const gh = stateHash(runBot(4242, 6).s);
   if (VERSION === GOLDEN.version) check('golden replay: sim unchanged at this VERSION (else bump VERSION)', gh === GOLDEN.hash, `got ${gh}`);
   else log(`NOTE golden replay: VERSION ${VERSION} — set GOLDEN = { version: ${VERSION}, hash: ${gh} }`);
 
   // Training dummy: one level-3 tower vs stationary enemies next to it, 20 s.
   // "crowd" = 8 slimes, "single" = one armored knight, "boss" = one boss. Damage per 100 gold spent.
-  const bench = (kind, scene) => {
+  let benchRaw = 0;
+  const bench = (kind, scene, master = false) => {
     const b = createGame(7, { mode: 'classic' });
     b.players[0].gold = 99999; b.queue = []; b.countdown = 1e9;
     const lane = b.map.lanes[0], mid = lane.segs[Math.floor(lane.segs.length / 2)];
@@ -800,10 +803,12 @@ try {
     const t = b.towers[0];
     step(b, [{ type: 'upgrade', id: t.id, p: 0 }]); step(b, [{ type: 'upgrade', id: t.id, p: 0 }]);
     if (kind !== base) step(b, [{ type: 'evolve', id: t.id, kind, p: 0 }]);
+    if (master) step(b, [{ type: 'master', id: t.id, p: 0 }]);
     const types = scene === 'crowd' ? Array(8).fill('slime') : [scene === 'boss' ? 'boss' : 'knight'];
     const foes = types.map((ty, i) => { const e = spawnAt(b, ty, at + (i - 3.5) * 6); return e; });
     for (let i = 0; i < 400; i++) step(b);
     const dealt = foes.reduce((a, e) => a + (e.maxHp - Math.max(0, e.hp)), 0);
+    benchRaw = dealt;
     return Math.round(dealt / t.spent * 100);
   };
   function spawnAt(b, type, dist) {
@@ -826,6 +831,47 @@ try {
     const dom = (x, y) => B[x].every((v, i) => v > B[y][i] * 1.25);
     check(`branches ${a}/${b2}: neither dominates in every scene`, !dom(a, b2) && !dom(b2, a), `${a}=${B[a]} ${b2}=${B[b2]}`);
   }
+
+  // Mastery: clearly stronger in raw damage, still fair per gold (not a must-buy trap, not a waste)
+  log('Mastery bench (per 100 gold crowd / single / boss, raw x vs evolution):');
+  for (const base of Object.keys(BRANCHES)) for (const k of BRANCHES[base]) {
+    const evo = [], mst = [], gain = [];
+    for (const sc of ['crowd', 'single', 'boss']) {
+      evo.push(bench(k, sc)); const r0 = benchRaw;
+      mst.push(bench(k, sc, true)); gain.push(benchRaw / Math.max(1, r0));
+    }
+    log(`  ${(k + '♛').padEnd(10)} ${mst.join(' / ')}  raw x${gain.map((v) => v.toFixed(2)).join(' / ')}`);
+    check(`mastery ${k}: +30% raw damage in its best scene`, Math.max(...gain) >= 1.3, gain.map((v) => v.toFixed(2)).join(','));
+    // Frost is utility (slow/freeze): its tiny damage numbers make per-gold ratios meaningless, so only the floor applies
+    if (base !== 'frost') check(`mastery ${k}: per-gold value stays within 70–150% of the evolution`, mst.every((v, i) => v >= evo[i] * 0.7 - 1) && Math.max(...mst.map((v, i) => v / Math.max(1, evo[i]))) <= 1.5, `${evo} -> ${mst}`);
+  }
+  // rules: only evolved towers (Totem: an aura at 3), own towers, once, costs gold, discounts apply
+  const mg = createGame(3, { bonusGold: 5000, players: 2 });
+  const [mx2, my2] = free(mg, 1)[0];
+  step(mg, [{ type: 'place', kind: 'arrow', tx: mx2, ty: my2, p: 0 }]);
+  const mt0 = mg.towers[0];
+  step(mg, [{ type: 'master', id: mt0.id, p: 0 }]);
+  check('mastery: not before evolution', !mt0.master);
+  step(mg, [{ type: 'upgrade', id: mt0.id, p: 0 }]); step(mg, [{ type: 'upgrade', id: mt0.id, p: 0 }]); step(mg, [{ type: 'evolve', id: mt0.id, kind: 'sniper', p: 0 }]);
+  const g0m = mg.players[0].gold, cost0 = masterCost(mg, 0, mt0);
+  step(mg, [{ type: 'master', id: mt0.id, p: 1 }]);
+  check('mastery: only the owner', !mt0.master);
+  step(mg, [{ type: 'master', id: mt0.id, p: 0 }]);
+  check('mastery: bought once, costs gold, stats replaced', mt0.master && mg.players[0].gold === g0m - cost0 && towerDef(mt0).dmg === 100 && towerStats(mg, mt0).range > 180);
+  step(mg, [{ type: 'master', id: mt0.id, p: 0 }]);
+  check('mastery: only once', mg.players[0].gold === g0m - cost0);
+  CARDS.find((c) => c.id === 'workshop').apply(mg, mg.players[0]);
+  check('mastery: «Майстерня» makes it cheaper', masterCost(mg, 0, { kind: 'ranger' }) < 210);
+  check('mastery: tree «Майстер-зброяр» is in the tree', !!Meta.TREE.find((n) => n.id === 'g10'));
+  const tmG = createGame(3, { bonusGold: 5000 });
+  const [tx3, ty3] = free(tmG, 1)[0];
+  step(tmG, [{ type: "place", kind: "totem", tx: tx3, ty: ty3, p: 0 }]);
+  const tt = tmG.towers[0];
+  step(tmG, [{ type: "master", id: tt.id, p: 0 }]);
+  check('mastery: totem needs an aura at level 3', !tt.master);
+  for (let i = 0; i < 3; i++) step(tmG, [{ type: "aura", id: tt.id, aura: "dmg", p: 0 }]);
+  step(tmG, [{ type: "master", id: tt.id, p: 0 }]);
+  check('mastery: Великий тотем — wider and stronger auras', tt.master && towerDef(tt).range === 84 && towerDef(tt).auraMul === 1.5);
 
   log('');
   log('Balance bot (seed, wave reached, lanes, towers):');

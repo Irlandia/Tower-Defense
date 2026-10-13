@@ -577,3 +577,8 @@ details.camp-brief summary::-webkit-details-marker { display: none; }
 #reroll { margin-top: 10px; }
 #reroll:disabled { opacity: .45; }
 #waveInfo { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* the final upgrade (mastery): golden row */
+#pop .pa.pa-master { background: #4a2a12; color: #ffe9b0; box-shadow: inset -3px -3px 0 #1a1c2c, inset 3px 3px 0 #ef7d57, 0 0 0 2px #ffcd75; }
+#pop .pa.pa-master:disabled { opacity: .55; }
+#pop .pa.pa-master small { color: #ffcd75; }
+.pop-stats.master-done span { color: #ffcd75; font-size: 11px; }

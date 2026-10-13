@@ -1,6 +1,6 @@
 // Player actions shared by mouse, keyboard and the tower popup. Each one either changes local UI state
 // (selection, build mode) or sends a command through session.send().
-import { isLocked, hasWall } from '../../sim/sim.js';
+import { isLocked, hasWall, canMaster } from '../../sim/sim.js';
 import { app, ui, net, sfx, me, P } from '../app.js';
 import { $ } from '../dom.js';
 import { send } from '../session.js';
@@ -38,7 +38,12 @@ export function useAbility(id) {
 }
 
 export function nextWave() { sfx.unlock(); send({ type: 'nextWave' }); }
-export function upgradeSel() { const t = selTower(); if (t) send({ type: 'upgrade', id: t.id }); }
+export function upgradeSel() {
+  const t = selTower();
+  if (!t) return;
+  if (canMaster(t)) send({ type: 'master', id: t.id }); // evolved: the same key buys the final upgrade
+  else send({ type: 'upgrade', id: t.id });
+}
 export function sellSel() { const t = selTower(); if (t && t.owner === me()) { send({ type: 'sell', id: t.id }); ui.selected = null; } }
 
 export function toggleSpeed() {

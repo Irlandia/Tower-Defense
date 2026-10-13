@@ -10,7 +10,7 @@ import {
 } from './data.js';
 import { rand, randInt } from './rng.js';
 import { center, key, genClassic, genCircle, placeFarm, posAt } from './mapgen.js';
-import { isFree, player, family, towerStats, missionStars } from './queries.js';
+import { isFree, player, family, towerStats, missionStars, towerDef } from './queries.js';
 import { spawn, ignite, damage, explode } from './combat.js';
 import { planLanes, startWave, waveHpMul } from './waves.js';
 import { applyCmd } from './commands.js';
@@ -38,7 +38,7 @@ function newPlayer(opts, i = 0) {
       cdAll: k.cdAll ?? 1, meteorCd: (k.meteorCd || opts.meteorCd || 1) * (BR.meteorCd || 1), novaCd: k.novaCd || 1, wallCd: k.wallCd || 1,
       goldrainCd: 1, overdriveCd: 1, quakeCd: 1, dragonCd: 1,
       wall: k.wall || 1, meteorDmg: k.meteorDmg || 1, novaFreeze: k.novaFreeze || 0, overSec: k.overSec || 0,
-      aura: k.aura || 1, moveCd: k.moveCd || 1, barrel: 1, lapDmg: 0, hunter: 0, thief: 0, wallRegen: 0,
+      aura: k.aura || 1, moveCd: k.moveCd || 1, barrel: 1, lapDmg: 0, hunter: 0, thief: 0, wallRegen: 0, masterDisc: k.masterDisc || 0,
       towerRate: { ...(k.rate || {}) }, towerRange: { ...(k.range || {}) }, multi: { ...(k.multi || {}) }, splash: k.splash || 1, discount: { ...(k.discount || {}) },
       cards: k.cards || opts.cards || 3,
     },
@@ -390,7 +390,7 @@ function updateTower(s, t) {
   if (TOWERS[t.kind].support) return;
   if (t.stunT > 0) { t.stunT--; return; } // stunned by the King's decree
   if (t.cd > 0) { t.cd--; return; }
-  const def = TOWERS[t.kind];
+  const def = towerDef(t); // mastery replaces stats and specials
   const st = towerStats(s, t);
   const targets = inRange(s, t.x, t.y, st.range);
   if (!targets.length) return;
@@ -410,7 +410,7 @@ function updateTower(s, t) {
   const extra = player(s, t.owner).mods.multi[family(t.kind)] || 0;
   for (const e of targets.slice(0, (def.multi || 1) + extra)) {
     s.projs.push({
-      kind: def.proj, tower: t.kind, owner: t.owner, level: t.level, dmg: st.dmg, speed: def.speed,
+      kind: def.proj, tower: t.kind, master: !!t.master, owner: t.owner, level: t.level, dmg: st.dmg, speed: def.speed,
       x: t.x, y: t.y - 14, px: t.x, py: t.y - 14, target: e.id, tx: e.x, ty: e.y, done: false,
     });
   }
@@ -487,7 +487,7 @@ function updateProj(s, p) {
 
 
 function hit(s, p, target) {
-  const def = TOWERS[p.tower];
+  const def = towerDef({ kind: p.tower, master: p.master });
   const m = player(s, p.owner).mods;
   const src = family(p.tower);
   const lvMul = def.from ? 1.6 : 1 + 0.6 * (p.level - 1);

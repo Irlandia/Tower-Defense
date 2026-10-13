@@ -75,6 +75,7 @@ export const TREE = [
   { id: 'g7', branch: 'eng', tier: 3, max: 2, name: 'Резерв', desc: '+40 стартового золота за рівень', fx: (p, r) => { p.bonusGold += 40 * r; } },
   { id: 'g8', branch: 'eng', tier: 3, max: 2, name: 'Швидкий монтаж', desc: 'Барикада: перезарядка −20% за рівень', fx: (p, r) => { p.wallCd *= 0.8 ** r; } },
   { id: 'g9', branch: 'eng', tier: 3, max: 1, name: 'Дешеві тотеми', desc: 'Тотем: −20% вартості', fx: (p) => add(p.discount, 'totem', 0.2) },
+  { id: 'g10', branch: 'eng', tier: 3, max: 2, name: 'Майстер-зброяр', desc: 'Фінальне покращення веж (майстерність): −15% ціни за рівень', fx: (p, r) => { p.masterDisc += 0.15 * r; } },
   { id: 'k_forge', branch: 'eng', tier: 4, max: 1, key: true, name: 'Ковальня', desc: 'Продаж повертає 90% вартості; вежі −10%', fx: (p) => { p.sell += 0.2; add(p.discount, 'all', 0.1); } },
   // --- Командир: здібності, золото, життя ---
   { id: 'm1', branch: 'cmd', tier: 1, max: 3, name: 'Міцні мури', desc: '+3 життя замку за рівень', fx: (p, r) => { p.bonusLives += 3 * r; } },
@@ -179,7 +180,7 @@ export function perks(m) {
     bonusGold: 0, bonusLives: 0, cards: 3, slots: 3,
     cdAll: 1, meteorCd: 1, novaCd: 1, wallCd: 1, moveCd: 1, wall: 1, meteorDmg: 1, novaFreeze: 0, overSec: 0,
     gold: 1, wage: 0, sell: 0, dmgAll: 1, crit: 0, critMul: 0, wet: 0, wetChain: 0, chain: 0, burn: 1,
-    steam: 1, steamR: 1, aura: 1, splash: 1, multi: {},
+    steam: 1, steamR: 1, aura: 1, splash: 1, multi: {}, masterDisc: 0,
     dmg: {}, rate: {}, range: {}, discount: {},
     locked: Object.keys(UNLOCK_LEVEL).filter((k) => L < UNLOCK_LEVEL[k]),
   };

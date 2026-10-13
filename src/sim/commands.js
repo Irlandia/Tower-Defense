@@ -6,7 +6,7 @@ import { rand } from './rng.js';
 import { center, posAt } from './mapgen.js';
 import {
   canPlace, isRoad, isLocked, placeCost, upgradeCost, canEvolve, canMove, sellValue, clearCost,
-  auraCost, abilityMax, hasWall, hasAbility, sellRatioOf,
+  auraCost, abilityMax, hasWall, hasAbility, sellRatioOf, canMaster, masterCost,
 } from './queries.js';
 import { damage, ignite, pickCards } from './combat.js';
 import { startWave } from './waves.js';
@@ -81,6 +81,19 @@ export const COMMANDS = {
     t.kind = c.kind;
     t.cd = 0;
     s.events.push({ type: 'evolve', x: t.x, y: t.y, kind: c.kind, p: pi });
+  },
+
+  // the final upgrade (Mastery) of an evolved tower / a Totem with an aura at level 3
+  master(s, pl, pi, c) {
+    const t = own(s, pi, c.id);
+    if (!t || !canMaster(t)) return;
+    const cost = masterCost(s, pi, t);
+    if (pl.gold < cost) return;
+    pl.gold -= cost;
+    t.spent += cost;
+    t.master = true;
+    t.cd = 0;
+    s.events.push({ type: "master", x: t.x, y: t.y, kind: t.kind, p: pi });
   },
 
   aura(s, pl, pi, c) {

@@ -1,5 +1,5 @@
 // Pure read-only queries on the game state. Used by the simulation, the renderer and the client UI.
-import { TOWERS, CONFIG, OBSTACLES, ABILITIES, AURA, BRANCHES, ENEMIES, BOSSES, TICK_RATE as T, COLS, ROWS, DAY } from './data.js';
+import { TOWERS, CONFIG, OBSTACLES, ABILITIES, AURA, BRANCHES, ENEMIES, BOSSES, TICK_RATE as T, COLS, ROWS, DAY , MASTERY, MASTERED } from './data.js';
 import { key } from './mapgen.js';
 
 export function isFree(s, tx, ty) {
@@ -52,8 +52,9 @@ export function auraOf(s, t) {
   const a = { dmg: 0, rate: 0 };
   if (TOWERS[t.kind].support) return a;
   for (const o of s.towers) {
-    if (!TOWERS[o.kind].support || Math.hypot(o.x - t.x, o.y - t.y) > TOWERS[o.kind].range) continue;
-    const boost = player(s, o.owner).mods.aura;
+    const od = towerDef(o);
+    if (!od.support || Math.hypot(o.x - t.x, o.y - t.y) > od.range) continue;
+    const boost = player(s, o.owner).mods.aura * (od.auraMul || 1); // Великий тотем: stronger auras
     for (const k of ["dmg", "rate"]) if (o.aura[k]) a[k] = Math.max(a[k], AURA[k].bonus[o.aura[k] - 1] * boost);
   }
   return a;
@@ -74,7 +75,7 @@ export function litByFire(s, t) {
 }
 
 export function towerStats(s, t) {
-  const def = TOWERS[t.kind];
+  const def = towerDef(t);
   const pl = player(s, t.owner), m = pl.mods;
   if (def.support) return { range: def.range, dmg: 0, period: 0, buff: 0, aura: auraOf(s, t) };
   const lv = def.from ? 0 : t.level - 1;
@@ -150,4 +151,17 @@ export function stateHash(s) {
 export function dayPhase(s) {
   if ((s.mission && s.mission.night) || s.dark) return 2; // Нічна Мара: night while she lives
   return ((s.dayStart || 0) + Math.floor(Math.max(0, s.wave - 1) / DAY.every)) % DAY.phases.length;
+}
+
+// ---------- Mastery: the final upgrade after evolution ----------
+/** The tower's definition, with its mastery applied once bought. Use instead of TOWERS[t.kind] for live towers. */
+export const towerDef = (t) => (t.master && MASTERED[t.kind]) || TOWERS[t.kind];
+/** Can this tower take its final upgrade now? Evolved towers; a Totem once one of its auras is at level 3. */
+export function canMaster(t) {
+  if (t.master || !MASTERY[t.kind]) return false;
+  return TOWERS[t.kind].support ? Math.max(t.aura.dmg, t.aura.rate) >= AURA.dmg.cost.length : true;
+}
+/** Price of the final upgrade for player p (tree «Майстер-зброяр», card «Майстерня»). */
+export function masterCost(s, p, t) {
+  return Math.round(MASTERY[t.kind].cost * (1 - Math.min(0.6, player(s, p).mods.masterDisc || 0)));
 }

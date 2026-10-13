@@ -6,7 +6,7 @@ export const COLS = 26;
 export const ROWS = 14;
 export const TICK_RATE = 20;
 // Bump on every change to sim/data: co-op peers refuse to play with a different version.
-export const VERSION = 51;
+export const VERSION = 52;
 
 export const CONFIG = {
   startGold: 160,
@@ -92,7 +92,25 @@ export const AURA = {
   dmg: { name: "Аура шкоди", bonus: [0.1, 0.2, 0.3], cost: [60, 110, 180] },
   rate: { name: "Аура швидкості", bonus: [0.1, 0.2, 0.3], cost: [60, 110, 180] },
 };
-export const TOWER_ORDER = ["arrow", "cannon", "frost", "tesla", "fire", "totem"];
+// Mastery: the final upgrade, after evolution (Totem: once one of its auras is at level 3).
+// set = fields that replace the tower's own (stats and specials); cost before discounts.
+export const MASTERY = {
+  sniper: { name: 'Око бога', cost: 230, desc: 'Шкода 100, радіус 190: прошиває будь-яку броню з пів карти', set: { dmg: 100, range: 190, rate: 0.65 } },
+  ranger: { name: 'Буря стріл', cost: 210, desc: 'Стріляє одразу в 5 цілей, шкода 11', set: { multi: 5, dmg: 11 } },
+  mortar: { name: 'Гірський молот', cost: 240, desc: 'Шкода 100, вибух ще ширший', set: { dmg: 100, splash: 58 } },
+  cluster: { name: 'Килимове бомбардування', cost: 220, desc: '7 міні-бомб, шкода 40, стріляє частіше', set: { dmg: 40, bomblets: 7, rate: 1 } },
+  blizzard: { name: 'Полярна ніч', cost: 210, desc: 'Сповільнення до 30%, ширша хвиля, мокрі на 7 с', set: { dmg: 7, slow: 0.3, range: 80, wetTime: 7 } },
+  glacier: { name: 'Вічна мерзлота', cost: 210, desc: 'Шкода 28, частіше, заморожує довше', set: { dmg: 28, rate: 0.6, slowTime: 1.8 } },
+  storm: { name: 'Гнів небес', cost: 260, desc: 'Блискавка стрибає по 10 цілях, шкода 20', set: { dmg: 20, chain: 9, chainRange: 84 } },
+  overload: { name: 'Ядерне ядро', cost: 220, desc: 'Заряд +60% за удар, до ×5', set: { dmg: 18, overcharge: 0.6, overMax: 5 } },
+  inferno: { name: 'Серце вулкана', cost: 230, desc: 'Шкода 7, горіння 16, ширше полумʼя', set: { dmg: 7, burn: 16, range: 66 } },
+  magma: { name: 'Лавове поле', cost: 220, desc: 'Калюжі більші, гарячіші й довші', set: { dmg: 12, puddle: { r: 28, dps: 17, time: 5 } } },
+  totem: { name: 'Великий тотем', cost: 200, desc: 'Аури сильніші на 50%, радіус 84', set: { range: 84, auraMul: 1.5 } },
+};
+// Full definitions of mastered towers (TOWERS entry with the mastery fields on top).
+export const MASTERED = Object.fromEntries(Object.entries(MASTERY).map(([k, m]) => [k, { ...TOWERS[k], ...m.set, mastered: true }]));
+
+export const TOWER_ORDER =["arrow", "cannon", "frost", "tesla", "fire", "totem"];
 export const BRANCHES = {
   arrow: ['sniper', 'ranger'], cannon: ['mortar', 'cluster'], frost: ['blizzard', 'glacier'],
   tesla: ["storm", "overload"], fire: ['inferno', 'magma'],
@@ -158,6 +176,7 @@ export const CARDS = [
   { id: 'bounty', name: 'Нагорода', desc: '+25% золота за вбивства', rarity: 'common', max: 2, apply: (s, p) => { p.mods.gold *= 1.25; } },
   { id: 'cash', name: 'Скарб', desc: 'Одразу +80 золота і ще +12 за кожну пройдену хвилю', rarity: 'common', max: 99, apply: (s, p) => { p.gold += 80 + 12 * s.wave; } },
   { id: 'cheap', name: 'Цехова знижка', desc: 'Нові вежі на 12% дешевші', rarity: 'common', max: 2, apply: (s, p) => { p.mods.discount.all = (p.mods.discount.all || 0) + 0.12; } },
+  { id: 'workshop', name: 'Майстерня', desc: 'Фінальні покращення веж (майстерність) на 25% дешевші', rarity: 'common', max: 2, apply: (s, p) => { p.mods.masterDisc += 0.25; } },
   { id: 'mason', name: 'Каменяр', desc: 'Барикада: утричі міцніша і −30% перезарядки', rarity: 'common', max: 1, apply: (s, p) => { p.mods.wall *= 3; p.mods.wallCd *= 0.7; } },
   { id: 'repair', name: 'Ремонт барикади', desc: 'Твоя барикада лагодиться: +5% міцності щосекунди, а на початку хвилі — повністю', rarity: 'common', max: 2,
     apply: (s, p) => { p.mods.wallRegen += 0.05; } },
