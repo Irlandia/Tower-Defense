@@ -5,18 +5,38 @@ const PREFIX = 'pixeltd-v1-';
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 export const MAX_GUESTS = 3;
 const JOIN_TRIES = 3, JOIN_WAIT = 12000; // guest: dial the host up to 3 times, 12 s each (a relayed link takes longer)
-// More ways to find a route between two players: several public STUN servers, plus the PeerJS TURN relay
-// as the fallback when a direct link is impossible (strict NAT). PeerJS defaults have only one of each.
-const PEER_OPTS = {
-  config: {
-    iceServers: [
-      { urls: 'stun:stun.l.google.com:19302' }, // keep the list short: 5+ servers make Chrome slow down route discovery
-      { urls: 'stun:stun.cloudflare.com:3478' },
-      { urls: ['turn:eu-0.turn.peerjs.com:3478', 'turn:us-0.turn.peerjs.com:3478'], username: 'peerjs', credential: 'peerjsp' },
-    ],
-    sdpSemantics: 'unified-plan',
-  },
-};
+// Routes between two players (ICE). Mobile internet sits behind the operator's NAT (CGNAT) and often blocks UDP,
+// so a direct link is impossible there and the traffic must go through a TURN relay — ideally over TCP/TLS 443,
+// which looks like ordinary HTTPS. The order is: our Metered relay (if configured) → public fallbacks.
+// To set up Metered (free tier): metered.ca → TURN Server → create an app, copy its name and an API key here.
+export const METERED = { app: '', apiKey: '' };
+const BASE_ICE = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun.cloudflare.com:3478' },
+  // public relays without our own account: may be overloaded or gone, but they cost nothing to try
+  { urls: ['turn:openrelay.metered.ca:443?transport=tcp', 'turns:openrelay.metered.ca:443'], username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: ['turn:eu-0.turn.peerjs.com:3478', 'turn:us-0.turn.peerjs.com:3478'], username: 'peerjs', credential: 'peerjsp' },
+];
+let iceCache = null, iceAt = 0;
+/** ICE servers for a new peer: fresh Metered credentials when configured (cached for 30 min), else the base list. */
+async function iceServers() {
+  if (!METERED.app || !METERED.apiKey) return BASE_ICE;
+  if (iceCache && performance.now() - iceAt < 30 * 60 * 1000) return iceCache;
+  try {
+    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 5000);
+    const r = await fetch(`https://${METERED.app}.metered.live/api/v1/turn/credentials?apiKey=${encodeURIComponent(METERED.apiKey)}`, { signal: ctl.signal });
+    clearTimeout(timer);
+    const list = await r.json();
+    if (!Array.isArray(list) || !list.length) throw new Error('empty');
+    iceCache = [...list, ...BASE_ICE.slice(0, 1)]; // our relay first, one STUN as a spare
+    iceAt = performance.now();
+    return iceCache;
+  } catch (e) {
+    console.warn('Metered TURN unavailable, using public relays', e);
+    return BASE_ICE;
+  }
+}
+const peerOpts = async () => ({ config: { iceServers: await iceServers(), sdpSemantics: 'unified-plan' } });
 
 // 5 symbols from a 32-letter alphabet, unpredictable (crypto RNG) so rooms cannot be guessed by a script.
 // Rejection sampling is unnecessary: 256 is a multiple of 32, so the modulo is unbiased.
@@ -49,12 +69,13 @@ export class Net {
 
   status(text, kind = '') { if (this.onStatus) this.onStatus(text, kind); }
 
-  host() {
+  async host() {
+    const opts = await peerOpts(); // relays first (a fresh Metered credential if configured)
     return new Promise((resolve, reject) => {
       if (!window.Peer) return reject(new Error('PeerJS не завантажився (немає інтернету?)'));
       const code = roomCode();
       this.role = 'host';
-      this.peer = new window.Peer(PREFIX + code, PEER_OPTS);
+      this.peer = new window.Peer(PREFIX + code, opts);
       this.peer.on('open', () => { this.status('Чекаємо гравців…'); resolve(code); });
       this.peer.on('error', (e) => {
         // a guest that gave up mid-handshake is not the host's problem; everything else is reported
@@ -85,11 +106,12 @@ export class Net {
     });
   }
 
-  join(code) {
+  async join(code) {
+    const opts = await peerOpts();
     return new Promise((resolve, reject) => {
       if (!window.Peer) return reject(new Error('PeerJS не завантажився (немає інтернету?)'));
       this.role = 'guest';
-      const peer = (this.peer = new window.Peer(PEER_OPTS));
+      const peer = (this.peer = new window.Peer(opts));
       const target = PREFIX + code.trim().toUpperCase();
       let done = false, attempt = 0;
       const fail = (text, err) => { if (done) return; done = true; clearTimeout(this.joinTimer); this.status(text, 'bad'); reject(err); };
