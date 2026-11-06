@@ -4,13 +4,13 @@
 const PREFIX = 'pixeltd-v1-';
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 export const MAX_GUESTS = 3;
-const JOIN_TRIES = 3, JOIN_WAIT = 8000; // guest: dial the host up to 3 times, 8 s each
+const JOIN_TRIES = 3, JOIN_WAIT = 12000; // guest: dial the host up to 3 times, 12 s each (a relayed link takes longer)
 // More ways to find a route between two players: several public STUN servers, plus the PeerJS TURN relay
 // as the fallback when a direct link is impossible (strict NAT). PeerJS defaults have only one of each.
 const PEER_OPTS = {
   config: {
     iceServers: [
-      { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] },
+      { urls: 'stun:stun.l.google.com:19302' }, // keep the list short: 5+ servers make Chrome slow down route discovery
       { urls: 'stun:stun.cloudflare.com:3478' },
       { urls: ['turn:eu-0.turn.peerjs.com:3478', 'turn:us-0.turn.peerjs.com:3478'], username: 'peerjs', credential: 'peerjsp' },
     ],
@@ -104,9 +104,12 @@ export class Net {
         this.conn = conn;
         this.joinTimer = setTimeout(() => {
           if (conn.open || done) return;
+          // where the route got stuck (shown to the player, so a bug report tells us the stage)
+          const pc = conn.peerConnection, stage = pc ? `${pc.iceGatheringState}/${pc.iceConnectionState}` : 'no-offer';
+          console.warn('join attempt', attempt, 'stalled at', stage);
           try { conn.close(); } catch { /* never opened */ }
           if (attempt < JOIN_TRIES) dial();
-          else fail("Не вдалося з'єднатися з кімнатою. Перевір код, попроси хоста перестворити кімнату або спробуй іншу мережу", new Error('timeout'));
+          else fail(`Не вдалося з'єднатися з кімнатою (${stage}). Перевір код, попроси хоста перестворити кімнату або спробуй іншу мережу`, new Error('timeout'));
         }, JOIN_WAIT);
         conn.on('open', () => {
           if (done || this.conn !== conn) { try { conn.close(); } catch { /* a stale attempt */ } return; }
