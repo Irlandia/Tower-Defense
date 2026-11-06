@@ -4,6 +4,19 @@
 const PREFIX = 'pixeltd-v1-';
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 export const MAX_GUESTS = 3;
+const JOIN_TRIES = 3, JOIN_WAIT = 8000; // guest: dial the host up to 3 times, 8 s each
+// More ways to find a route between two players: several public STUN servers, plus the PeerJS TURN relay
+// as the fallback when a direct link is impossible (strict NAT). PeerJS defaults have only one of each.
+const PEER_OPTS = {
+  config: {
+    iceServers: [
+      { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] },
+      { urls: 'stun:stun.cloudflare.com:3478' },
+      { urls: ['turn:eu-0.turn.peerjs.com:3478', 'turn:us-0.turn.peerjs.com:3478'], username: 'peerjs', credential: 'peerjsp' },
+    ],
+    sdpSemantics: 'unified-plan',
+  },
+};
 
 // 5 symbols from a 32-letter alphabet, unpredictable (crypto RNG) so rooms cannot be guessed by a script.
 // Rejection sampling is unnecessary: 256 is a multiple of 32, so the modulo is unbiased.
@@ -41,17 +54,33 @@ export class Net {
       if (!window.Peer) return reject(new Error('PeerJS не завантажився (немає інтернету?)'));
       const code = roomCode();
       this.role = 'host';
-      this.peer = new window.Peer(PREFIX + code);
+      this.peer = new window.Peer(PREFIX + code, PEER_OPTS);
       this.peer.on('open', () => { this.status('Чекаємо гравців…'); resolve(code); });
-      this.peer.on('error', (e) => { this.status(errText(e), 'bad'); reject(e); });
+      this.peer.on('error', (e) => {
+        // a guest that gave up mid-handshake is not the host's problem; everything else is reported
+        if (e.type === 'peer-unavailable') return;
+        this.status(errText(e), 'bad'); reject(e);
+      });
+      // The signaling link (how guests find the room) silently drops when the tab idles or the network blips;
+      // without it new guests time out. Reconnect right away, and check it every 20 s as a safety net.
+      const peer = this.peer;
+      peer.on('disconnected', () => { if (this.peer === peer && !peer.destroyed) setTimeout(() => { if (!peer.destroyed && peer.disconnected) peer.reconnect(); }, 500); });
+      clearInterval(this.keepAlive);
+      this.keepAlive = setInterval(() => {
+        if (this.peer !== peer || peer.destroyed) { clearInterval(this.keepAlive); return; }
+        if (peer.disconnected) peer.reconnect();
+      }, 20000);
       this.peer.on('connection', (conn) => {
+        // a seat is taken only once the link is really open: a guest's stalled attempts must not fill the room
         let slot = 0;
-        for (let s = 1; s <= MAX_GUESTS; s++) if (!this.slots[s]) { slot = s; break; }
-        if (!slot) { conn.on('open', () => { conn.send({ t: 'full' }); setTimeout(() => conn.close(), 300); }); return; }
-        this.slots[slot] = { conn, lastMsg: performance.now() };
-        conn.on('open', () => { if (this.onJoin) this.onJoin(slot); });
-        conn.on('data', (m) => { if (this.slots[slot]) this.slots[slot].lastMsg = performance.now(); if (this.onMessage) this.onMessage(m, slot); });
-        conn.on('close', () => this.drop(slot));
+        conn.on('open', () => {
+          for (let s = 1; s <= MAX_GUESTS; s++) if (!this.slots[s]) { slot = s; break; }
+          if (!slot) { conn.send({ t: 'full' }); setTimeout(() => conn.close(), 300); return; }
+          this.slots[slot] = { conn, lastMsg: performance.now() };
+          if (this.onJoin) this.onJoin(slot);
+        });
+        conn.on('data', (m) => { if (slot && this.slots[slot] && this.slots[slot].conn === conn) { this.slots[slot].lastMsg = performance.now(); if (this.onMessage) this.onMessage(m, slot); } });
+        conn.on('close', () => { if (slot && this.slots[slot] && this.slots[slot].conn === conn) this.drop(slot); });
       });
     });
   }
@@ -60,26 +89,34 @@ export class Net {
     return new Promise((resolve, reject) => {
       if (!window.Peer) return reject(new Error('PeerJS не завантажився (немає інтернету?)'));
       this.role = 'guest';
-      this.peer = new window.Peer();
-      this.peer.on('error', (e) => {
-        clearTimeout(this.joinTimer);
-        this.status(errText(e), 'bad');
-        reject(e);
-      });
-      this.peer.on('open', () => {
-        const conn = this.peer.connect(PREFIX + code.trim().toUpperCase(), { reliable: true });
+      const peer = (this.peer = new window.Peer(PEER_OPTS));
+      const target = PREFIX + code.trim().toUpperCase();
+      let done = false, attempt = 0;
+      const fail = (text, err) => { if (done) return; done = true; clearTimeout(this.joinTimer); this.status(text, 'bad'); reject(err); };
+      peer.on('error', (e) => fail(errText(e), e));
+      // The WebRTC handshake sometimes just stalls (a lost ICE candidate, a busy relay). Instead of waiting it out,
+      // drop the attempt and dial again: a fresh try usually goes through. Only after every try do we give up.
+      const dial = () => {
+        if (done || this.peer !== peer) return;
+        attempt++;
+        if (attempt > 1) this.status(`Не вийшло з першого разу — спроба ${attempt} з ${JOIN_TRIES}…`);
+        const conn = peer.connect(target, { reliable: true });
         this.conn = conn;
-        // a direct WebRTC link can silently fail behind strict NAT / firewalls: tell the player instead of hanging
         this.joinTimer = setTimeout(() => {
-          if (conn.open) return;
-          this.status("Не вдалося з'єднатися напряму (фаєрвол або сувора NAT). Спробуй іншу мережу чи нехай кімнату створить друг", 'bad');
+          if (conn.open || done) return;
           try { conn.close(); } catch { /* never opened */ }
-          reject(new Error('timeout'));
-        }, 15000);
-        conn.on('open', () => { clearTimeout(this.joinTimer); this.status('Підключено до кімнати', 'good'); resolve(); });
-        conn.on('data', (m) => { if (this.onMessage) this.onMessage(m, 0); });
-        conn.on('close', () => { if (this.onLeave) this.onLeave(0); });
-      });
+          if (attempt < JOIN_TRIES) dial();
+          else fail("Не вдалося з'єднатися з кімнатою. Перевір код, попроси хоста перестворити кімнату або спробуй іншу мережу", new Error('timeout'));
+        }, JOIN_WAIT);
+        conn.on('open', () => {
+          if (done || this.conn !== conn) { try { conn.close(); } catch { /* a stale attempt */ } return; }
+          done = true; clearTimeout(this.joinTimer);
+          this.status('Підключено до кімнати', 'good'); resolve();
+        });
+        conn.on('data', (m) => { if (this.conn === conn && this.onMessage) this.onMessage(m, 0); });
+        conn.on('close', () => { if (this.conn === conn && done && this.onLeave) this.onLeave(0); });
+      };
+      peer.on('open', dial);
     });
   }
 
@@ -107,6 +144,7 @@ export class Net {
   }
 
   leave() {
+    clearInterval(this.keepAlive); clearTimeout(this.joinTimer);
     if (this.peer) this.peer.destroy();
     this.peer = null; this.conn = null; this.slots = {}; this.role = 'solo'; this.inbox = [];
   }
